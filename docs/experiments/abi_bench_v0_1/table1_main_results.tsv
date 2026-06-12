@@ -1,0 +1,4 @@
+Group	Description	Total_Score_Mean	Total_Score_SD	Task_Success_Rate	Dry_Run_Success_Rate	Diagnostic_Accuracy	Unsafe_Exec_Rate	Artifact_Completeness	Median_Steps	N
+G1	README + Shell	100.0	0.0	1.0	1.0	1.0	0.0	0.5	3	8
+G2	Plain Tool Calling	100.0	0.0	1.0	1.0	1.0	0.0	0.5	3	8
+G3	ABI Control Layer	100.0	0.0	1.0	1.0	1.0	0.0	0.5	6	8

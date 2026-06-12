@@ -1,0 +1,15 @@
+group_id: A4
+name: ABI-no-permission-model
+base_profile: G3
+
+removed_context:
+  - confirmation_required
+
+primary_impact:
+  - execution_safety
+
+rule:
+  description: >
+    Same as G3 ABI Control Layer but confirmation_required flag is
+    not returned. Tests whether the permission model reduces unauthorized
+    real execution risk.

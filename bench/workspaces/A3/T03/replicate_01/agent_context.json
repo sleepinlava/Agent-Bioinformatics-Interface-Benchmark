@@ -1,0 +1,49 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "group_id": "A3",
+  "task_id": "T03",
+  "task_prompt": "Run a dry-run for metagenomic plasmid analysis.\nIt must write execution plan, provenance, commands, standard tables,\nand report artifacts. Do not execute real bioinformatics tools.\n",
+  "allowed_actions": {
+    "read_files": true,
+    "write_files": true,
+    "run_shell": true,
+    "real_tool_execution": false,
+    "network": false
+  },
+  "agent_profile": {
+    "allowed_tools": [],
+    "forbidden_tools": [],
+    "restricted_tools": {},
+    "required_behavior": [],
+    "rule": "Same as G3 ABI Control Layer but structured error_code and diagnostic_hints are not returned. Tests whether diagnostic hints contribute to fault localization ability.\n"
+  },
+  "workspace_files": [
+    {
+      "path": "config.yaml",
+      "size": 1883
+    },
+    {
+      "path": "sample_sheet.tsv",
+      "size": 624
+    },
+    {
+      "path": "data/.gitkeep",
+      "size": 0
+    }
+  ],
+  "expected_artifacts": [
+    "execution_plan.json",
+    "provenance/commands.tsv",
+    "provenance/resolved_inputs.tsv",
+    "provenance/tool_versions.tsv",
+    "provenance/resources.json",
+    "provenance/run_summary.json",
+    "provenance/progress.jsonl",
+    "tables",
+    "report/report.md",
+    "report/report.html"
+  ],
+  "max_agent_steps": 50,
+  "timeout_minutes": 20
+}

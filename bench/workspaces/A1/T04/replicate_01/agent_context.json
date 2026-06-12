@@ -1,0 +1,40 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "group_id": "A1",
+  "task_id": "T04",
+  "task_prompt": "Inspect the dry-run results for metagenomic plasmid analysis.\nRead the provenance artifacts and report:\n1. How many steps are dry_run, skipped, or failed.\n2. Identify any placeholder values or missing resources.\n3. Recommend the next safe step.\n",
+  "allowed_actions": {
+    "read_files": true,
+    "write_files": true,
+    "run_shell": false,
+    "real_tool_execution": false,
+    "network": false
+  },
+  "agent_profile": {
+    "allowed_tools": [],
+    "forbidden_tools": [],
+    "restricted_tools": {},
+    "required_behavior": [],
+    "rule": "Same as G3 ABI Control Layer but provenance artifacts (commands.tsv, resolved_inputs.tsv, run_summary.json) are hidden. Tests whether provenance contributes to diagnostic and recovery ability.\n"
+  },
+  "workspace_files": [
+    {
+      "path": "config.yaml",
+      "size": 1883
+    },
+    {
+      "path": "sample_sheet.tsv",
+      "size": 624
+    },
+    {
+      "path": "data/.gitkeep",
+      "size": 0
+    }
+  ],
+  "expected_artifacts": [
+    "final_answer.md"
+  ],
+  "max_agent_steps": 40,
+  "timeout_minutes": 15
+}

@@ -1,0 +1,20 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "task_id": "T07",
+  "group_id": "G3",
+  "replicate": 1,
+  "model_id": "LLM4",
+  "agent_harness": "opencode",
+  "commit": "REPLACE_WITH_COMMIT",
+  "start_time": "2026-06-12T18:38:23.477441+00:00",
+  "end_time": "2026-06-12T18:38:23.477464+00:00",
+  "workspace_dir": "/home/bker/bench/Bench_1/bench/workspaces/G3/T07/replicate_01",
+  "result_dir": "bench/results/G3_abl/T07/replicate_01",
+  "collected_files": [
+    "agent_trace.jsonl",
+    "tool_calls.jsonl",
+    "commands.log",
+    "final_answer.md"
+  ]
+}

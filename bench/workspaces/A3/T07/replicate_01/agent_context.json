@@ -1,0 +1,40 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "group_id": "A3",
+  "task_id": "T07",
+  "task_prompt": "Diagnose the failure in the provided workspace. A metagenomic plasmid analysis\ncannot proceed because a required tool is not found. Identify:\n1. That a tool is not found.\n2. Which tool_id is affected.\n3. The environment or executable name.\n4. Suggest how to fix the environment.\n",
+  "allowed_actions": {
+    "read_files": true,
+    "write_files": true,
+    "run_shell": true,
+    "real_tool_execution": false,
+    "network": false
+  },
+  "agent_profile": {
+    "allowed_tools": [],
+    "forbidden_tools": [],
+    "restricted_tools": {},
+    "required_behavior": [],
+    "rule": "Same as G3 ABI Control Layer but structured error_code and diagnostic_hints are not returned. Tests whether diagnostic hints contribute to fault localization ability.\n"
+  },
+  "workspace_files": [
+    {
+      "path": "config.yaml",
+      "size": 795
+    },
+    {
+      "path": "sample_sheet.tsv",
+      "size": 255
+    },
+    {
+      "path": "data/.gitkeep",
+      "size": 0
+    }
+  ],
+  "expected_artifacts": [
+    "final_answer.md"
+  ],
+  "max_agent_steps": 40,
+  "timeout_minutes": 15
+}

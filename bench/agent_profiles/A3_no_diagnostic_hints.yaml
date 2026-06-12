@@ -1,0 +1,16 @@
+group_id: A3
+name: ABI-no-diagnostic-hints
+base_profile: G3
+
+removed_context:
+  - error_code
+  - diagnostic_hints
+
+primary_impact:
+  - fault_localization
+
+rule:
+  description: >
+    Same as G3 ABI Control Layer but structured error_code and
+    diagnostic_hints are not returned. Tests whether diagnostic hints
+    contribute to fault localization ability.

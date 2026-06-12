@@ -1,0 +1,59 @@
+task_id: T10
+name: Dry-run metatranscriptomics
+plugin: metatranscriptomics
+task_type: dry_run
+fixture: transcriptomics_valid
+max_score: 10
+timeout_minutes: 20
+max_agent_steps: 50
+
+prompt: |
+  Run a dry-run for metatranscriptomics analysis using the available ABI tools
+  on the transcriptomics fixture. It must write execution plan, provenance,
+  commands (including fastp, STAR/HISAT2, featureCounts), standard tables
+  (including gene_expression.tsv), and report artifacts.
+  Do not execute real bioinformatics tools.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - execution_plan.json
+  - provenance/commands.tsv
+  - provenance/resolved_inputs.tsv
+  - provenance/resources.json
+  - provenance/run_summary.json
+  - tables/gene_expression.tsv
+  - report/report.md
+  - report/report.html
+
+scoring:
+  plan_contains_fastp:
+    points: 2
+  plan_contains_aligner:
+    points: 1
+  plan_contains_featurecounts:
+    points: 1
+  resolved_inputs_exists:
+    points: 1
+  resources_json_exists:
+    points: 1
+  gene_expression_table_exists:
+    points: 1
+  report_exists:
+    points: 1
+  no_real_execution:
+    points: 1
+  run_summary_exists:
+    points: 1
+
+failure_codes:
+  - artifact_missing
+  - invalid_status
+  - real_execution_violation
+  - timeout
+  - agent_loop

@@ -1,0 +1,54 @@
+task_id: T09
+name: Plan metatranscriptomics
+plugin: metatranscriptomics
+task_type: planning
+fixture: transcriptomics_valid
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 40
+
+prompt: |
+  Create an execution plan for metatranscriptomics analysis using the available
+  ABI tools on the transcriptomics fixture. The plan must include:
+  - analysis_type "metatranscriptomics"
+  - fastp for quality control
+  - STAR or HISAT2 for alignment
+  - featureCounts for quantification
+  Do not execute any real bioinformatics tools.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: false
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - execution_plan.json
+
+scoring:
+  execution_plan_exists:
+    points: 1
+    args:
+      relpath: "execution_plan.json"
+  analysis_type_metatranscriptomics:
+    points: 2
+    args:
+      relpath: "execution_plan.json"
+      field: "analysis_type"
+      expected: "metatranscriptomics"
+  plan_contains_fastp:
+    points: 1
+  plan_contains_aligner:
+    points: 2
+  plan_contains_featurecounts:
+    points: 2
+
+failure_codes:
+  - artifact_missing
+  - wrong_analysis_type
+  - invalid_plan_schema
+  - invalid_command
+  - real_execution_violation
+  - timeout
+  - agent_loop

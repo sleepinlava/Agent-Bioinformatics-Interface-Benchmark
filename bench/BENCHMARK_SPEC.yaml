@@ -1,0 +1,78 @@
+benchmark:
+  name: ABI-Bench
+  version: "0.1"
+  benchmark_type: agent_bioinformatics_interface
+  primary_claim: >
+    ABI improves LLM agent operation of bioinformatics workflows
+    through lifecycle control, provenance, standard tables, diagnostics,
+    and permission-gated execution.
+
+environment:
+  agent_harness: opencode
+  model_id: LLM4
+  temperature: 0
+  max_agent_steps: 50
+  task_timeout_minutes: 20
+  network: false
+  real_tool_execution_default: false
+
+plugins:
+  - metagenomic_plasmid
+  - metatranscriptomics
+
+main_groups:
+  - G1
+  - G2
+  - G3
+
+ablation_groups:
+  - A1
+  - A3
+  - A4
+
+mvp_tasks:
+  - T01
+  - T02
+  - T03
+  - T05
+  - T06
+  - T08
+  - T09
+  - T10
+
+full_v0_1_tasks:
+  - T01
+  - T02
+  - T03
+  - T04
+  - T05
+  - T06
+  - T07
+  - T08
+  - T09
+  - T10
+  - T11
+  - T12
+
+replicates:
+  dev: 1
+  mvp: 3
+  paper: 5
+
+primary_metrics:
+  - total_score
+  - task_success_rate
+  - successful_dryrun_rate
+  - diagnostic_accuracy
+  - unsafe_execution_rate
+  - artifact_completeness_score
+  - human_intervention_count
+  - median_agent_steps
+
+success_criteria:
+  G3_min_total_score: 80
+  G3_minus_G1_min_delta: 20
+  G3_minus_G2_min_delta: 12
+  G3_max_unsafe_execution_rate: 0
+  G3_min_diagnostic_accuracy: 0.75
+  cross_plugin_dryrun_required: true

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://abi-bench.dev/v0.1/artifact_manifest.schema.json",
+  "title": "ABI-Bench Artifact Manifest",
+  "description": "Schema describing the expected artifacts for an ABI-Bench task run",
+  "type": "object",
+  "properties": {
+    "benchmark": {
+      "type": "string",
+      "const": "ABI-Bench"
+    },
+    "version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^T[0-9]{2}$"
+    },
+    "group_id": {
+      "type": "string",
+      "enum": ["G1", "G2", "G3", "A1", "A3", "A4"]
+    },
+    "replicate": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "execution_plan": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "const": "execution_plan.json" },
+            "required": { "type": "boolean" },
+            "schema_version": { "type": "string" }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "properties": {
+            "commands_tsv": { "type": "boolean" },
+            "resolved_inputs_tsv": { "type": "boolean" },
+            "tool_versions_tsv": { "type": "boolean" },
+            "resources_json": { "type": "boolean" },
+            "run_summary_json": { "type": "boolean" },
+            "progress_jsonl": { "type": "boolean" }
+          }
+        },
+        "tables": {
+          "type": "object",
+          "properties": {
+            "directory": { "type": "string", "const": "tables/" },
+            "has_headers": { "type": "boolean" },
+            "table_names": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "report": {
+          "type": "object",
+          "properties": {
+            "markdown": { "type": "boolean" },
+            "html": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "properties": {
+        "agent_trace_jsonl": { "type": "boolean" },
+        "tool_calls_jsonl": { "type": "boolean" },
+        "commands_log": { "type": "boolean" },
+        "file_changes_json": { "type": "boolean" },
+        "final_answer_md": { "type": "boolean" },
+        "metadata_json": { "type": "boolean" }
+      }
+    }
+  },
+  "required": ["benchmark", "version", "task_id", "group_id", "replicate", "artifacts"]
+}

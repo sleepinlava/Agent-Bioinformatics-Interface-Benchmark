@@ -1,0 +1,51 @@
+task_id: T02
+name: Plan metagenomic plasmid analysis
+plugin: metagenomic_plasmid
+task_type: planning
+fixture: plasmid_valid
+max_score: 10
+timeout_minutes: 15
+max_agent_steps: 40
+
+prompt: |
+  Create an execution plan for metagenomic plasmid analysis using the available
+  ABI tools. The plan must specify analysis_type "metagenomic_plasmid",
+  include unique step_ids, and reference valid tool_ids from the tool registry.
+  Do not execute any real bioinformatics tools.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: false
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - execution_plan.json
+
+scoring:
+  execution_plan_exists:
+    points: 2
+    args:
+      relpath: "execution_plan.json"
+  analysis_type_metagenomic_plasmid:
+    points: 2
+    args:
+      relpath: "execution_plan.json"
+      field: "analysis_type"
+      expected: "metagenomic_plasmid"
+  step_ids_unique:
+    points: 2
+  tool_ids_valid:
+    points: 2
+  plan_no_execution:
+    points: 2
+
+failure_codes:
+  - artifact_missing
+  - wrong_analysis_type
+  - invalid_plan_schema
+  - invalid_command
+  - real_execution_violation
+  - timeout
+  - agent_loop

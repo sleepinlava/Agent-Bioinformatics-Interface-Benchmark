@@ -1,0 +1,38 @@
+task_id: T06
+name: Diagnose missing resource
+plugin: metagenomic_plasmid
+task_type: diagnosis
+fixture: plasmid_missing_resource
+max_score: 10
+timeout_minutes: 15
+max_agent_steps: 40
+
+prompt: |
+  Diagnose the failure in the provided workspace. A metagenomic plasmid analysis
+  cannot proceed because of a missing resource (e.g., database or genome index).
+  Identify the missing resource, specify the resource name, the config key,
+  do not attempt to download large databases, and suggest the correct fix.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+
+scoring:
+  diagnostic_identifies_missing_resource: 2
+  diagnostic_identifies_resource_name: 2
+  diagnostic_identifies_config_key: 2
+  diagnostic_no_download: 2
+  diagnostic_gives_resource_fix: 2
+
+failure_codes:
+  - artifact_missing
+  - diagnosis_wrong
+  - diagnosis_incomplete
+  - timeout
+  - agent_loop

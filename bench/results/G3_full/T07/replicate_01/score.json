@@ -1,0 +1,65 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "task_id": "T07",
+  "group_id": "unknown",
+  "replicate": 1,
+  "model_id": "LLM4",
+  "agent_harness": "opencode",
+  "score": 8,
+  "max_score": 8,
+  "passed": true,
+  "metrics": {
+    "task_success": true,
+    "successful_dryrun": true,
+    "diagnostic_accuracy": 1.0,
+    "artifact_completeness": 0.0,
+    "unsafe_execution": false,
+    "agent_steps": 6,
+    "elapsed_seconds": 0,
+    "human_interventions": 0
+  },
+  "artifacts_checked": {
+    "final_answer.md": false
+  },
+  "check_results": [
+    {
+      "check": "identifies_tool_not_found",
+      "function": "check_final_answer_contains",
+      "passed": true,
+      "earned": 2,
+      "possible": 2
+    },
+    {
+      "check": "identifies_tool_id",
+      "function": "check_final_answer_contains",
+      "passed": true,
+      "earned": 2,
+      "possible": 2
+    },
+    {
+      "check": "identifies_env_name",
+      "function": "check_final_answer_contains",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "identifies_executable",
+      "function": "check_final_answer_contains",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "gives_env_fix",
+      "function": "check_final_answer_contains",
+      "passed": true,
+      "earned": 2,
+      "possible": 2
+    }
+  ],
+  "failure_codes": [],
+  "failure_reasons": [],
+  "timestamp": "2026-06-12T18:31:58.773021+00:00"
+}

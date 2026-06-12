@@ -1,0 +1,19 @@
+group_id: A1
+name: ABI-no-provenance
+base_profile: G3
+
+removed_context:
+  - commands.tsv
+  - resolved_inputs.tsv
+  - run_summary.json
+
+primary_impact:
+  - inspect
+  - diagnosis
+  - recovery
+
+rule:
+  description: >
+    Same as G3 ABI Control Layer but provenance artifacts
+    (commands.tsv, resolved_inputs.tsv, run_summary.json) are hidden.
+    Tests whether provenance contributes to diagnostic and recovery ability.

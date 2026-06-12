@@ -1,0 +1,24 @@
+group_id: G2
+name: Plain Tool Calling Baseline
+
+allowed_tools:
+  - run_command
+  - read_file
+  - list_files
+  - write_file
+  - run_cli
+
+forbidden_tools:
+  - abi_plan
+  - abi_dry_run
+  - abi_inspect
+  - abi_report
+  - abi_export_nextflow
+  - abi_lifecycle_envelope
+  - diagnostic_hints
+  - standard_table_schema_hints
+
+rule:
+  description: >
+    Agent receives general tool execution ability, but not ABI lifecycle
+    control, provenance reasoning interface, or structured diagnostic hints.

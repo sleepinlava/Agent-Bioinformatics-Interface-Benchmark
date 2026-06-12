@@ -1,0 +1,33 @@
+task_id: T01
+name: List analysis types
+plugin: all
+task_type: discovery
+fixture: plasmid_valid
+max_score: 5
+timeout_minutes: 5
+max_agent_steps: 20
+
+prompt: |
+  List all available bioinformatics analysis types that you can perform.
+  Use the available tools to discover what analysis types are supported.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: false
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+
+scoring:
+  discover_metagenomic_plasmid: 2
+  discover_metatranscriptomics: 2
+  uses_allowed_entry_points: 1
+
+failure_codes:
+  - artifact_missing
+  - wrong_analysis_type
+  - timeout
+  - agent_loop

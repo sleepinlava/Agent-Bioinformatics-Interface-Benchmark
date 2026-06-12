@@ -1,0 +1,40 @@
+task_id: T07
+name: Diagnose tool-not-found
+plugin: metagenomic_plasmid
+task_type: diagnosis
+fixture: plasmid_tool_missing
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 40
+
+prompt: |
+  Diagnose the failure in the provided workspace. A metagenomic plasmid analysis
+  cannot proceed because a required tool is not found. Identify:
+  1. That a tool is not found.
+  2. Which tool_id is affected.
+  3. The environment or executable name.
+  4. Suggest how to fix the environment.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+
+scoring:
+  identifies_tool_not_found: 2
+  identifies_tool_id: 2
+  identifies_env_name: 1
+  identifies_executable: 1
+  gives_env_fix: 2
+
+failure_codes:
+  - artifact_missing
+  - diagnosis_wrong
+  - diagnosis_incomplete
+  - timeout
+  - agent_loop

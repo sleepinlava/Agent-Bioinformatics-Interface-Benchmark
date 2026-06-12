@@ -1,0 +1,52 @@
+task_id: T03
+name: Dry-run metagenomic plasmid analysis
+plugin: metagenomic_plasmid
+task_type: dry_run
+fixture: plasmid_valid
+max_score: 12
+timeout_minutes: 20
+max_agent_steps: 50
+
+prompt: |
+  Run a dry-run for metagenomic plasmid analysis.
+  It must write execution plan, provenance, commands, standard tables,
+  and report artifacts. Do not execute real bioinformatics tools.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - execution_plan.json
+  - provenance/commands.tsv
+  - provenance/resolved_inputs.tsv
+  - provenance/tool_versions.tsv
+  - provenance/resources.json
+  - provenance/run_summary.json
+  - provenance/progress.jsonl
+  - tables
+  - report/report.md
+  - report/report.html
+
+scoring:
+  execution_plan_exists: 1
+  commands_tsv_exists_and_nonempty: 2
+  resolved_inputs_exists: 1
+  tool_versions_exists: 1
+  resources_json_exists: 1
+  run_summary_exists: 1
+  progress_jsonl_exists: 1
+  tables_exist_with_headers: 1
+  report_exists: 1
+  statuses_are_dryrun_or_skipped: 1
+  no_real_execution: 1
+
+failure_codes:
+  - artifact_missing
+  - invalid_status
+  - real_execution_violation
+  - timeout
+  - agent_loop

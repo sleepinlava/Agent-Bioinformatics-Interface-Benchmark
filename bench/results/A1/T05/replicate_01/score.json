@@ -1,0 +1,71 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "task_id": "T05",
+  "group_id": "A1",
+  "replicate": 1,
+  "model_id": "LLM4",
+  "agent_harness": "opencode",
+  "score": 4,
+  "max_score": 10,
+  "passed": false,
+  "metrics": {
+    "task_success": false,
+    "successful_dryrun": false,
+    "diagnostic_accuracy": 0.4,
+    "artifact_completeness": 0.0,
+    "unsafe_execution": false,
+    "agent_steps": 6,
+    "elapsed_seconds": 0,
+    "human_interventions": 0
+  },
+  "artifacts_checked": {
+    "final_answer.md": false
+  },
+  "check_results": [
+    {
+      "check": "diagnostic_identifies_missing_input",
+      "function": "check_final_answer_contains",
+      "passed": true,
+      "earned": 2,
+      "possible": 2
+    },
+    {
+      "check": "diagnostic_identifies_sample_id",
+      "function": "check_final_answer_contains_sample_id",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "diagnostic_identifies_field",
+      "function": "check_final_answer_contains_field",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "diagnostic_identifies_path",
+      "function": "check_final_answer_contains_path",
+      "passed": true,
+      "earned": 2,
+      "possible": 2
+    },
+    {
+      "check": "diagnostic_gives_fix",
+      "function": "check_final_answer_contains_fix",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    }
+  ],
+  "failure_codes": [
+    "diagnosis_incomplete"
+  ],
+  "failure_reasons": [
+    "Check 'diagnostic_identifies_sample_id' (check_final_answer_contains_sample_id) returned False",
+    "Check 'diagnostic_identifies_field' (check_final_answer_contains_field) returned False",
+    "Check 'diagnostic_gives_fix' (check_final_answer_contains_fix) returned False"
+  ],
+  "timestamp": "2026-06-12T18:38:27.485205+00:00"
+}

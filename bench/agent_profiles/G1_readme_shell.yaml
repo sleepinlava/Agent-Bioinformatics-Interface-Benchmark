@@ -1,0 +1,29 @@
+group_id: G1
+name: README + Shell Baseline
+
+allowed_context:
+  - README.md
+  - docs/
+  - cli_usage.md
+  - workflow.md
+  - command_help
+
+allowed_tools:
+  - shell
+  - read_file
+  - list_files
+  - write_file
+
+forbidden_tools:
+  - abi_plan
+  - abi_dry_run
+  - abi_inspect
+  - abi_report
+  - abi_export_nextflow
+  - abi_structured_envelope
+  - diagnostic_hints
+
+rule:
+  description: >
+    Agent may use shell and documentation but cannot receive structured ABI
+    lifecycle tool descriptors or diagnostic hints.

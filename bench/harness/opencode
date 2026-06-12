@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Wrapper to run opencode CLI via bun from the opencode repo
+# This makes 'opencode' available as a command for the SDK's createOpencodeServer()
+
+OPENEROOT="$(cd "$(dirname "$0")/../../agent/opencode" && pwd)"
+export PATH="$HOME/.bun/bin:$PATH"
+exec bun run --cwd "$OPENEROOT" packages/cli/src/index.ts "$@"

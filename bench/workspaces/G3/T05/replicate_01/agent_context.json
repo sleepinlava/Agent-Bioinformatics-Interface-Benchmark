@@ -1,0 +1,59 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "group_id": "G3",
+  "task_id": "T05",
+  "task_prompt": "Diagnose the failure in the provided workspace. A metagenomic plasmid analysis\ncannot proceed because of a missing input. Identify the missing input,\nspecify the affected sample_id, the missing field, the incorrect path,\nand suggest a minimal safe fix.\n",
+  "allowed_actions": {
+    "read_files": true,
+    "write_files": true,
+    "run_shell": true,
+    "real_tool_execution": false,
+    "network": false
+  },
+  "agent_profile": {
+    "allowed_tools": [
+      "abi_list_types",
+      "abi_plan",
+      "abi_dry_run",
+      "abi_inspect",
+      "abi_report",
+      "abi_export_nextflow",
+      "read_file",
+      "list_files"
+    ],
+    "forbidden_tools": [],
+    "restricted_tools": {
+      "abi_run": {
+        "requires_confirm_execution": true,
+        "default_available": false
+      }
+    },
+    "required_behavior": [
+      "use_lifecycle_operations",
+      "use_provenance_for_diagnosis",
+      "respect_permission_gate",
+      "do_not_upload_large_bio_payloads"
+    ],
+    "rule": ""
+  },
+  "workspace_files": [
+    {
+      "path": "config.yaml",
+      "size": 800
+    },
+    {
+      "path": "sample_sheet.tsv",
+      "size": 668
+    },
+    {
+      "path": "data/.gitkeep",
+      "size": 0
+    }
+  ],
+  "expected_artifacts": [
+    "final_answer.md"
+  ],
+  "max_agent_steps": 40,
+  "timeout_minutes": 15
+}

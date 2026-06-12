@@ -1,0 +1,74 @@
+# MetaPlasmid Analysis Configuration
+# Valid fixture for metagenomic plasmid analysis
+
+analysis:
+  type: metagenomic_plasmid
+  description: "Plasmid identification and annotation from metagenomic assemblies"
+
+samples:
+  sample_sheet: sample_sheet.tsv
+
+tools:
+  prodigal:
+    executable: prodigal
+    version: "2.6.3"
+    env: metagenomic_plasmid
+    purpose: "Gene prediction for plasmid sequences"
+  hmmer:
+    executable: hmmscan
+    version: "3.3.2"
+    env: metagenomic_plasmid
+    purpose: "Protein domain annotation via HMM profiles"
+  genomad:
+    executable: genomad
+    version: "1.5.2"
+    env: genomad
+    purpose: "Plasmid and virus identification from contigs"
+  blast:
+    executable: blastn
+    version: "2.14.1"
+    env: blast
+    purpose: "Nucleotide similarity search against reference databases"
+
+resources:
+  plasmid_db:
+    path: /data/databases/plasmid/plasmid_db.fasta
+    type: fasta
+    description: "Reference plasmid sequence database"
+  genomad_db:
+    path: /data/databases/genomad/genomad_db
+    type: directory
+    description: "geNomad model and database directory"
+  pfam_hmm:
+    path: /data/databases/pfam/Pfam-A.hmm
+    type: hmm
+    description: "Pfam HMM profiles for protein domain annotation"
+
+output:
+  tables:
+    - plasmid_annotations.tsv
+    - plasmid_sequences.fasta
+  provenance_dir: provenance
+  report_dir: report
+
+workflow:
+  steps:
+    - id: predict_genes
+      tool: prodigal
+      input: assembly
+      output: genes.faa
+    - id: annotate_domains
+      tool: hmmer
+      input: genes.faa
+      database: pfam_hmm
+      output: domain_annotations.tsv
+    - id: classify_plasmids
+      tool: genomad
+      input: assembly
+      database: genomad_db
+      output: plasmid_classification.tsv
+    - id: similarity_search
+      tool: blast
+      input: plasmid_sequences.fasta
+      database: plasmid_db
+      output: blast_results.tsv

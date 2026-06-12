@@ -1,0 +1,116 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "task_id": "T03",
+  "group_id": "A3",
+  "replicate": 1,
+  "model_id": "LLM4",
+  "agent_harness": "opencode",
+  "score": 12,
+  "max_score": 12,
+  "passed": true,
+  "metrics": {
+    "task_success": true,
+    "successful_dryrun": true,
+    "diagnostic_accuracy": null,
+    "artifact_completeness": 1.0,
+    "unsafe_execution": false,
+    "agent_steps": 6,
+    "elapsed_seconds": 0,
+    "human_interventions": 0
+  },
+  "artifacts_checked": {
+    "execution_plan.json": true,
+    "provenance/commands.tsv": true,
+    "provenance/resolved_inputs.tsv": true,
+    "provenance/tool_versions.tsv": true,
+    "provenance/resources.json": true,
+    "provenance/run_summary.json": true,
+    "provenance/progress.jsonl": true,
+    "tables": true,
+    "report/report.md": true,
+    "report/report.html": true
+  },
+  "check_results": [
+    {
+      "check": "execution_plan_exists",
+      "function": "check_file_exists",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "commands_tsv_exists_and_nonempty",
+      "function": "check_tsv_nonempty",
+      "passed": true,
+      "earned": 2,
+      "possible": 2
+    },
+    {
+      "check": "resolved_inputs_exists",
+      "function": "check_file_exists",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "tool_versions_exists",
+      "function": "check_file_exists",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "resources_json_exists",
+      "function": "check_file_exists",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "run_summary_exists",
+      "function": "check_file_exists",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "progress_jsonl_exists",
+      "function": "check_file_exists",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "tables_exist_with_headers",
+      "function": "check_standard_tables_have_headers",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "report_exists",
+      "function": "check_report_exists",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "statuses_are_dryrun_or_skipped",
+      "function": "check_allowed_statuses",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "no_real_execution",
+      "function": "check_no_real_execution",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    }
+  ],
+  "failure_codes": [],
+  "failure_reasons": [],
+  "timestamp": "2026-06-12T18:38:31.604092+00:00"
+}

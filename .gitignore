@@ -1,0 +1,24 @@
+# API keys — NEVER commit these
+bench/.env
+.env
+*.env
+
+# Runtime artifacts (generated per run)
+bench/workspaces/
+bench/traces/
+bench/results/
+docs/experiments/
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# Plan is the spec, not code
+Plan.md

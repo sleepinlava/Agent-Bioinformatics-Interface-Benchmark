@@ -1,0 +1,39 @@
+task_id: T04
+name: Inspect plasmid dry-run
+plugin: metagenomic_plasmid
+task_type: inspection
+fixture: plasmid_valid
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 40
+
+prompt: |
+  Inspect the dry-run results for metagenomic plasmid analysis.
+  Read the provenance artifacts and report:
+  1. How many steps are dry_run, skipped, or failed.
+  2. Identify any placeholder values or missing resources.
+  3. Recommend the next safe step.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: false
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+
+scoring:
+  reads_provenance_correctly: 2
+  counts_statuses_correctly: 2
+  identifies_placeholders: 2
+  gives_safe_next_step: 2
+
+failure_codes:
+  - artifact_missing
+  - diagnosis_wrong
+  - diagnosis_incomplete
+  - overclaim_result
+  - timeout
+  - agent_loop
