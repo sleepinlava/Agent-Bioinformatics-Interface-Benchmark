@@ -211,6 +211,17 @@ function authHeaders(): Record<string, string> {
   return { Authorization: `Basic ${token}` }
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function which(cmd: string): string | null {
+  const paths = (process.env.PATH || "").split(":").filter(Boolean)
+  for (const dir of paths) {
+    const full = join(dir, cmd)
+    if (existsSync(full)) return full
+  }
+  return null
+}
+
 // ── Server Management ───────────────────────────────────────────────────────
 
 /**
@@ -226,14 +237,31 @@ async function createServer(options: {
   const port = options.port || 4096
   const timeout = options.timeout || 30000
 
-  // Determine the opencode repo root
+  // Try global opencode binary first; fall back to vendored source
   const scriptDir = resolve(import.meta.dir || ".")
   const opencodeRoot = resolve(scriptDir, "../../agent/opencode")
+  const isVendored = existsSync(opencodeRoot)
 
-  const args = ["run", "packages/cli/src/index.ts", "serve", `--hostname=${hostname}`, `--port=0`]
+  let procArgs: string[]
+  let procCwd: string | undefined
 
-  console.log(`  Spawning: bun ${args.join(" ")}`)
-  console.log(`  Working dir: ${opencodeRoot}`)
+  if (which("opencode")) {
+    // Global install — use opencode CLI directly
+    procArgs = ["opencode", "serve", `--hostname=${hostname}`, `--port=0`]
+    procCwd = undefined
+    console.log(`  Spawning: opencode serve (global install)`)
+  } else if (isVendored) {
+    // Vendored copy — use bun run from the opencode repo
+    procArgs = ["run", "packages/cli/src/index.ts", "serve", `--hostname=${hostname}`, `--port=0`]
+    procCwd = opencodeRoot
+    console.log(`  Spawning: bun ${procArgs.join(" ")} (vendored)`)
+    console.log(`  Working dir: ${opencodeRoot}`)
+  } else {
+    throw new Error(
+      "opencode not found. Install globally: npm install -g opencode, " +
+      "or clone into agent/opencode"
+    )
+  }
 
   // Merge provider config into the existing OPENCODE_CONFIG_CONTENT
   const providerConfig = buildProviderConfig()
@@ -245,8 +273,8 @@ async function createServer(options: {
     ;(configContent as any).model = args["model"]
   }
 
-  const proc = launch("bun", args, {
-    cwd: opencodeRoot,
+  const proc = launch(procArgs[0], procArgs.slice(1), {
+    ...(procCwd ? { cwd: procCwd } : {}),
     env: {
       ...process.env,
       OPENCODE_CONFIG_CONTENT: JSON.stringify(configContent),

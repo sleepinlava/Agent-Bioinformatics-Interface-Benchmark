@@ -306,11 +306,43 @@ bench/
 
 ---
 
-## 9. Agent 运行模式
+## 9. 环境准备
 
-ABI-Bench 支持两种 agent 运行模式。
+### 9.1 必需依赖
 
-### 9.1 Simulated 模式（默认，零依赖）
+| 依赖 | 用途 | 安装方式 |
+|---|---|---|
+| **Python ≥ 3.10** | harness 执行、scoring | 系统包管理器 |
+| **PyYAML** | 读取 task/group 配置 | `pip install pyyaml` |
+| **OpenCode** | Agent harness（运行时引擎） | 见下方 |
+| **Bun** | 运行 OpenCode server | `curl -fsSL https://bun.sh/install \| bash` |
+
+### 9.2 安装 OpenCode
+
+ABI-Bench 使用 **OpenCode** 作为 agent harness——即包装 LLM 与 tool-calling 循环
+的运行时。OpenCode 是外部依赖，**不属于** ABI-Bench 仓库的一部分（`agent/` 目录
+已被 gitignore）。
+
+**方案 A：全局安装（推荐）**
+
+```bash
+npm install -g opencode
+# 或
+bun install -g opencode
+```
+
+harness 自动从 PATH 检测 `opencode` 命令，无需本地 clone。
+
+**方案 B：本地 clone（用于 OpenCode 开发）**
+
+```bash
+git clone https://github.com/anomalyco/opencode.git agent/opencode
+cd agent/opencode && bun install
+```
+
+harness 会自动检测 `agent/opencode` 目录并在无全局安装时 fallback。
+
+### 9.3 Simulated 模式（无需 LLM / API）
 
 ```bash
 python bench/harness/run_task.py --group G3 --task T03 --agent-mode simulated
@@ -321,7 +353,7 @@ Simulated agent 不调用真实 LLM，直接生成符合预期的 artifact。用
 - CI 和快速回归测试
 - 消融实验的 group-aware 模拟（A1/A3/A4 产生差异化输出）
 
-### 9.2 OpenCode 模式（真实 LLM agent）
+### 9.4 OpenCode 模式（真实 LLM agent）
 
 使用真实 LLM 驱动 agent 行为。需要配置 provider 和 API key。
 
@@ -347,7 +379,7 @@ ABI_BENCH_API_BASE=https://api.deepseek.com \
   python bench/harness/run_group.py --group G3 --tasks mvp --agent-mode opencode
 ```
 
-### 9.3 支持的 Provider
+### 9.5 支持的 Provider
 
 | Provider | 所需环境变量 | 配置方式 |
 |----------|-------------|---------|
@@ -359,7 +391,7 @@ ABI_BENCH_API_BASE=https://api.deepseek.com \
 
 所有 API key 通过环境变量传入 OpenCode server 进程，不写入磁盘，不被 git 跟踪。
 
-### 9.4 单任务运行
+### 9.6 单任务运行
 
 ```bash
 # Simulated 模式（默认）
@@ -381,7 +413,7 @@ ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_task.py \
 4. **trace 收集**：保存 `agent_trace.jsonl`、`tool_calls.jsonl`、`commands.log`
 5. **scoring**：自动生成 `score.json`
 
-### 9.5 全 Benchmark 运行
+### 9.7 全 Benchmark 运行
 
 ```bash
 # 三组主实验（simulated 模式）

@@ -240,7 +240,12 @@ def _launch_agent_opencode(
     # Make opencode wrapper available in PATH
     opencode_wrapper = PROJECT_ROOT / "bench" / "harness" / "opencode"
     env = os.environ.copy()
-    env["PATH"] = f"{opencode_wrapper.parent}:{PROJECT_ROOT}/agent/opencode/packages/opencode/bin:{env.get('PATH', '')}"
+    # Prefer globally-installed opencode on PATH; fall back to vendored copy
+    opencode_vendored = PROJECT_ROOT / "agent" / "opencode" / "packages" / "opencode" / "bin"
+    if opencode_vendored.is_dir():
+        env["PATH"] = f"{opencode_wrapper.parent}:{opencode_vendored}:{env.get('PATH', '')}"
+    else:
+        env["PATH"] = f"{opencode_wrapper.parent}:{env.get('PATH', '')}"
     if str(home_bun.parent) not in env["PATH"]:
         env["PATH"] = f"{home_bun.parent}:{env['PATH']}"
 

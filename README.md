@@ -329,23 +329,56 @@ bench/
 
 ---
 
-## 9. Agent Execution Modes
+## 9. Setup & Dependencies
 
-ABI-Bench supports two agent execution modes.
+### 9.1 Prerequisites
 
-### 9.1 Simulated Mode (Default, Zero Dependencies)
+| Dependency | Purpose | Install |
+|---|---|---|
+| **Python ≥ 3.10** | Harness execution, scoring | System package manager |
+| **PyYAML** | Parse task/group YAML configs | `pip install pyyaml` |
+| **OpenCode** | Agent harness (runtime engine) | See below |
+| **Bun** | Run OpenCode server | `curl -fsSL https://bun.sh/install \| bash` |
+
+### 9.2 Installing OpenCode
+
+ABI-Bench uses **OpenCode** as its agent harness — the runtime that wraps the LLM
+and tool-calling loop. OpenCode is an external dependency, **not** part of the ABI-Bench
+repository (the `agent/` directory is gitignored).
+
+**Option A: Global install (recommended)**
+
+```bash
+npm install -g opencode
+# or
+bun install -g opencode
+```
+
+The harness auto-detects `opencode` on PATH. No local clone needed.
+
+**Option B: Local clone (for OpenCode development)**
+
+```bash
+git clone https://github.com/anomalyco/opencode.git agent/opencode
+cd agent/opencode && bun install
+```
+
+The harness auto-detects `agent/opencode` and falls back to it when no global
+install is found.
+
+### 9.3 Simulated Mode (No LLM / API Required)
 
 ```bash
 python bench/harness/run_task.py --group G3 --task T03 --agent-mode simulated
 ```
 
-The simulated agent produces expected artifacts directly without calling an LLM.
-Used for:
+The simulated agent produces expected artifacts directly without calling an LLM
+or starting OpenCode. Useful for:
 - Validating harness / scoring infrastructure
 - CI and rapid regression testing
 - Group-aware ablation simulation (A1/A3/A4 produce differentiated outputs)
 
-### 9.2 OpenCode Mode (Real LLM Agent)
+### 9.4 OpenCode Mode (Real LLM Agent)
 
 Uses the OpenCode agent harness with a real LLM backend. Requires provider
 configuration and an API key.
@@ -372,7 +405,7 @@ ABI_BENCH_API_BASE=https://api.deepseek.com \
   python bench/harness/run_group.py --group G3 --tasks mvp --agent-mode opencode
 ```
 
-### 9.3 Supported Providers
+### 9.5 Supported Providers
 
 | Provider | Required Env Var | Configuration |
 |----------|-----------------|---------------|
@@ -385,7 +418,7 @@ ABI_BENCH_API_BASE=https://api.deepseek.com \
 All API keys are passed to the OpenCode server process via environment
 variables and are never written to disk or tracked by git.
 
-### 9.4 Single Task Run
+### 9.6 Single Task Run
 
 ```bash
 # Simulated mode (default)
@@ -407,7 +440,7 @@ Before each task run, the harness automatically:
 4. **Trace collection**: Saves `agent_trace.jsonl`, `tool_calls.jsonl`, `commands.log`
 5. **Scoring**: Generates `score.json`
 
-### 9.5 Full Benchmark Run
+### 9.7 Full Benchmark Run
 
 ```bash
 # Main experiment — three groups (simulated mode)
