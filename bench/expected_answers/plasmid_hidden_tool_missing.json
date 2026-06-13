@@ -1,0 +1,8 @@
+{
+  "task_type": "diagnosis",
+  "cause": "tool_not_found",
+  "tool_id": "mob_suite",
+  "executable": "mob_recon",
+  "env": "mob_suite_env",
+  "fix_required": true
+}

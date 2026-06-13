@@ -20,6 +20,7 @@ Usage:
 """
 
 import argparse
+import csv
 import json
 import os
 import shutil
@@ -37,29 +38,22 @@ def run_task(
     replicate: int = 1,
     model_id: str = "LLM4",
     agent_harness: str = "opencode",
+    experiment_set: str = "dev",
+    fixture_set: str = "public",
     outdir: Path = None,
     dry_run_scoring_only: bool = False,
     use_real_agent: bool = False,
 ):
     """Run a single task end-to-end."""
-    # Paths
-    fixture_map = {
-        "T01": "plasmid_valid",
-        "T02": "plasmid_valid",
-        "T03": "plasmid_valid",
-        "T04": "plasmid_valid",
-        "T05": "plasmid_missing_input",
-        "T06": "plasmid_missing_resource",
-        "T07": "plasmid_tool_missing",
-        "T08": "plasmid_valid",
-        "T09": "transcriptomics_valid",
-        "T10": "transcriptomics_valid",
-        "T11": "transcriptomics_valid",
-        "T12": "plasmid_valid",
-    }
-
-    fixture_name = fixture_map.get(task_id, "plasmid_valid")
-    fixture_dir = PROJECT_ROOT / "bench" / "fixtures" / fixture_name
+    task_yaml = _task_yaml_path(task_id)
+    if task_yaml is None:
+        print(f"ERROR: No task YAML found for {task_id}")
+        return 1
+    task_def = _load_task_definition(task_yaml)
+    fixture_name, fixture_dir = _select_fixture(task_id, task_def, fixture_set)
+    if fixture_dir is None:
+        return 1
+    expected_answer_path = _expected_answer_path(fixture_name)
 
     if outdir is None:
         outdir = PROJECT_ROOT / "bench" / "results" / group_id / task_id / f"replicate_{replicate:02d}"
@@ -72,6 +66,8 @@ def run_task(
     print(f"  Group: {group_id}")
     print(f"  Task:  {task_id}")
     print(f"  Replicate: {replicate}")
+    print(f"  Experiment set: {experiment_set}")
+    print(f"  Fixture set: {fixture_set}")
     print(f"  Fixture: {fixture_name}")
     print(f"  Outdir: {outdir}")
     print(f"{'='*60}")
@@ -98,6 +94,8 @@ def run_task(
         str(PROJECT_ROOT / "bench" / "harness" / "export_agent_context.py"),
         "--group", group_id,
         "--task", task_id,
+        "--experiment-set", experiment_set,
+        "--fixture-set", fixture_set,
         "--workspace", str(workspace_dir),
         "--output", str(context_path),
     ], capture_output=True, text=True)
@@ -110,6 +108,8 @@ def run_task(
     print("\n[3/5] Launching agent...")
     agent_result = _launch_agent_opencode(
         group_id, task_id, workspace_dir, trace_dir, context_path,
+        replicate=replicate,
+        experiment_set=experiment_set,
         use_real_agent=use_real_agent,
     )
 
@@ -124,6 +124,7 @@ def run_task(
         "--task-id", task_id,
         "--group-id", group_id,
         "--replicate", str(replicate),
+        "--experiment-set", experiment_set,
     ], capture_output=True, text=True)
     if trace_result.returncode != 0:
         print(f"WARNING: Trace collection had issues:\n{trace_result.stderr}")
@@ -138,6 +139,9 @@ def run_task(
         meta["result_dir"] = str(outdir)
         meta["model_id"] = model_id
         meta["agent_harness"] = agent_harness
+        meta["experiment_set"] = experiment_set
+        meta["fixture_set"] = fixture_set
+        meta["fixture_name"] = fixture_name
         meta["agent_mode"] = "opencode" if use_real_agent else "simulated"
         meta["agent_exit_code"] = agent_result
         with open(metadata_path, "w") as f:
@@ -146,7 +150,7 @@ def run_task(
     # Copy artifacts from workspace to results
     print("\n[4.5/5] Copying artifacts...")
     outdir.mkdir(parents=True, exist_ok=True)
-    for artifact_dir in ["execution_plan.json", "provenance", "tables", "report",
+    for artifact_dir in ["execution_plan.json", "artifact_manifest.json", "provenance", "tables", "report",
                           "config.yaml", "sample_sheet.tsv"]:
         src = workspace_dir / artifact_dir
         dst = outdir / artifact_dir
@@ -159,23 +163,21 @@ def run_task(
 
     # Step 5: Score the run
     print("\n[5/5] Scoring run...")
-    task_yaml = PROJECT_ROOT / "bench" / "tasks" / f"{task_id}_*.yaml"
-    task_files = list(PROJECT_ROOT.glob(f"bench/tasks/{task_id}_*.yaml"))
-    if not task_files:
-        print(f"ERROR: No task YAML found for {task_id}")
-        return 1
-    task_yaml = task_files[0]
-
     outdir.mkdir(parents=True, exist_ok=True)
     score_output = outdir / "score.json"
-    score_result = subprocess.run([
+    score_cmd = [
         sys.executable,
         str(PROJECT_ROOT / "bench" / "scoring" / "score_run.py"),
         "--task", str(task_yaml),
         "--run-dir", str(outdir),
         "--trace-dir", str(trace_dir),
         "--output", str(score_output),
-    ], capture_output=True, text=True)
+        "--experiment-set", experiment_set,
+        "--fixture-set", fixture_set,
+    ]
+    if expected_answer_path is not None:
+        score_cmd.extend(["--expected-answer", str(expected_answer_path)])
+    score_result = subprocess.run(score_cmd, capture_output=True, text=True)
     if score_result.returncode != 0:
         print(f"Scoring completed with failures:\n{score_result.stderr}")
     print(score_result.stdout.strip())
@@ -191,12 +193,62 @@ def run_task(
     return 0
 
 
+def _task_yaml_path(task_id: str) -> Path | None:
+    task_files = list(PROJECT_ROOT.glob(f"bench/tasks/{task_id}_*.yaml"))
+    return task_files[0] if task_files else None
+
+
+def _load_task_definition(task_yaml: Path) -> dict:
+    import yaml
+    with open(task_yaml) as f:
+        return yaml.safe_load(f) or {}
+
+
+def _select_fixture(task_id: str, task_def: dict, fixture_set: str) -> tuple[str, Path | None]:
+    default_fixtures = {
+        "T01": "plasmid_valid",
+        "T02": "plasmid_valid",
+        "T03": "plasmid_valid",
+        "T04": "plasmid_valid",
+        "T05": "plasmid_missing_input",
+        "T06": "plasmid_missing_resource",
+        "T07": "plasmid_tool_missing",
+        "T08": "plasmid_valid",
+        "T09": "transcriptomics_valid",
+        "T10": "transcriptomics_valid",
+        "T11": "transcriptomics_valid",
+        "T12": "plasmid_valid",
+    }
+    if fixture_set == "hidden":
+        fixture_name = task_def.get("hidden_fixture")
+        fixture_root = PROJECT_ROOT / "bench" / "fixtures_hidden"
+        if not fixture_name:
+            print(f"ERROR: Task {task_id} does not define hidden_fixture")
+            return "", None
+    else:
+        fixture_name = task_def.get("public_fixture") or task_def.get("fixture") or default_fixtures.get(task_id, "plasmid_valid")
+        fixture_root = PROJECT_ROOT / "bench" / "fixtures"
+
+    fixture_dir = fixture_root / fixture_name
+    if not fixture_dir.is_dir():
+        print(f"ERROR: Fixture directory not found: {fixture_dir}")
+        return fixture_name, None
+    return fixture_name, fixture_dir
+
+
+def _expected_answer_path(fixture_name: str) -> Path | None:
+    path = PROJECT_ROOT / "bench" / "expected_answers" / f"{fixture_name}.json"
+    return path if path.is_file() else None
+
+
 def _launch_agent_opencode(
     group_id: str,
     task_id: str,
     workspace_dir: Path,
     trace_dir: Path,
     context_path: Path,
+    replicate: int = 1,
+    experiment_set: str = "dev",
     use_real_agent: bool = True,
 ) -> int:
     """
@@ -214,7 +266,15 @@ def _launch_agent_opencode(
     """
     if not use_real_agent:
         print("  Using simulated agent (use_real_agent=False)")
-        return _launch_agent(group_id, task_id, workspace_dir, trace_dir, context_path)
+        return _launch_agent(
+            group_id,
+            task_id,
+            workspace_dir,
+            trace_dir,
+            context_path,
+            replicate=replicate,
+            experiment_set=experiment_set,
+        )
 
     # Check for bun availability
     bun_path = shutil.which("bun")
@@ -348,7 +408,15 @@ def _write_agent_failure(trace_dir: Path, task_id: str, message: str):
         f.write(f"# Agent Launch Failed\n\n{message}\n")
 
 
-def _launch_agent(group_id: str, task_id: str, workspace_dir: Path, trace_dir: Path, context_path: Path) -> int:
+def _launch_agent(
+    group_id: str,
+    task_id: str,
+    workspace_dir: Path,
+    trace_dir: Path,
+    context_path: Path,
+    replicate: int = 1,
+    experiment_set: str = "dev",
+) -> int:
     """
     Launch the agent for this task.
 
@@ -428,10 +496,26 @@ def _launch_agent(group_id: str, task_id: str, workspace_dir: Path, trace_dir: P
     # Write simulated artifact files (group-aware)
     _write_simulated_artifacts(workspace_dir, group_id, task_id)
 
+    final_answer_json = _generate_final_answer_json(group_id, task_id, workspace_dir)
     # Write final_answer.md (group-aware)
-    final_answer = _generate_final_answer(group_id, task_id)
+    if final_answer_json is not None and group_id not in ("A1", "A3"):
+        final_answer = _format_diagnosis_markdown(final_answer_json)
+    else:
+        final_answer = _generate_final_answer(group_id, task_id)
     with open(log_dir / "final_answer.md", "w") as f:
         f.write(final_answer)
+
+    if final_answer_json is not None:
+        with open(log_dir / "final_answer.json", "w") as f:
+            json.dump(final_answer_json, f, indent=2)
+
+    _write_artifact_manifest(
+        workspace_dir,
+        group_id=group_id,
+        task_id=task_id,
+        replicate=replicate,
+        experiment_set=experiment_set,
+    )
 
     # Create trace_dir
     trace_dir.mkdir(parents=True, exist_ok=True)
@@ -532,6 +616,176 @@ def _write_simulated_artifacts(workspace_dir: Path, group_id: str, task_id: str)
         f.write("All steps completed. No real bioinformatics tools were executed.\n")
     with open(rep / "report.html", "w") as f:
         f.write("<html><body><h1>ABI-Bench Dry-Run Report</h1></body></html>\n")
+
+
+def _write_artifact_manifest(
+    workspace_dir: Path,
+    group_id: str,
+    task_id: str,
+    replicate: int,
+    experiment_set: str,
+):
+    """Write an artifact manifest for simulated runs."""
+    tables_dir = workspace_dir / "tables"
+    table_names = sorted(p.name for p in tables_dir.glob("*.tsv")) if tables_dir.is_dir() else []
+    manifest = {
+        "benchmark": "ABI-Bench",
+        "version": "0.1",
+        "task_id": task_id,
+        "group_id": group_id,
+        "experiment_set": experiment_set,
+        "replicate": replicate,
+        "artifacts": {
+            "execution_plan": {
+                "path": "execution_plan.json",
+                "required": True,
+                "schema_version": "abi-bench.plan.v1",
+            },
+            "provenance": {
+                "commands_tsv": (workspace_dir / "provenance" / "commands.tsv").is_file(),
+                "resolved_inputs_tsv": (workspace_dir / "provenance" / "resolved_inputs.tsv").is_file(),
+                "tool_versions_tsv": (workspace_dir / "provenance" / "tool_versions.tsv").is_file(),
+                "resources_json": (workspace_dir / "provenance" / "resources.json").is_file(),
+                "run_summary_json": (workspace_dir / "provenance" / "run_summary.json").is_file(),
+                "progress_jsonl": (workspace_dir / "provenance" / "progress.jsonl").is_file(),
+            },
+            "tables": {
+                "directory": "tables/",
+                "has_headers": _tables_have_headers(tables_dir),
+                "table_names": table_names,
+            },
+            "report": {
+                "markdown": (workspace_dir / "report" / "report.md").is_file(),
+                "html": (workspace_dir / "report" / "report.html").is_file(),
+            },
+        },
+        "trace": {
+            "agent_trace_jsonl": (workspace_dir / ".agent_log" / "agent_trace.jsonl").is_file(),
+            "tool_calls_jsonl": (workspace_dir / ".agent_log" / "tool_calls.jsonl").is_file(),
+            "commands_log": (workspace_dir / ".agent_log" / "commands.log").is_file(),
+            "file_changes_json": (workspace_dir / ".agent_log" / "file_changes.json").is_file(),
+            "final_answer_md": (workspace_dir / ".agent_log" / "final_answer.md").is_file(),
+            "final_answer_json": (workspace_dir / ".agent_log" / "final_answer.json").is_file(),
+            "metadata_json": False,
+        },
+    }
+    with open(workspace_dir / "artifact_manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2)
+
+
+def _tables_have_headers(tables_dir: Path) -> bool:
+    if not tables_dir.is_dir():
+        return False
+    table_paths = sorted(tables_dir.glob("*.tsv"))
+    if not table_paths:
+        return False
+    for path in table_paths:
+        try:
+            first_line = path.read_text().splitlines()[0]
+        except (IndexError, OSError):
+            return False
+        if not first_line.strip() or "\t" not in first_line:
+            return False
+    return True
+
+
+def _generate_final_answer_json(group_id: str, task_id: str, workspace_dir: Path) -> dict | None:
+    """Generate structured diagnosis sidecars for tasks that require them."""
+    if task_id not in ("T05", "T06", "T07"):
+        return None
+    base = {
+        "schema_version": "abi-bench.final_answer.v1",
+        "task_type": "diagnosis",
+        "sample_id": "",
+        "field": "",
+        "path": "",
+        "resource": "",
+        "config_key": "",
+        "tool_id": "",
+        "executable": "",
+        "env": "",
+        "confidence": "high",
+    }
+    if group_id == "A1":
+        return {
+            **base,
+            "cause": "unknown",
+            "confidence": "low",
+            "fix": "Check all inputs/resources/tools after regenerating provenance.",
+        }
+    if group_id == "A3":
+        return {
+            **base,
+            "cause": "unstructured_failure",
+            "confidence": "low",
+            "fix": "Inspect the workspace manually because no structured hint was available.",
+        }
+    diagnosis = _diagnose_workspace_structured(workspace_dir)
+    return {**base, **diagnosis}
+
+
+def _diagnose_workspace_structured(workspace_dir: Path) -> dict:
+    import yaml
+    config_path = workspace_dir / "config.yaml"
+    config = yaml.safe_load(config_path.read_text()) if config_path.is_file() else {}
+    sample_sheet = workspace_dir / str(config.get("samples", {}).get("sample_sheet", "sample_sheet.tsv"))
+
+    if sample_sheet.is_file():
+        with open(sample_sheet) as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            for row in reader:
+                for field, value in row.items():
+                    if isinstance(value, str) and "/missing/" in value:
+                        return {
+                            "cause": "missing_input",
+                            "sample_id": row.get("sample_id", "unknown"),
+                            "field": field,
+                            "path": value,
+                            "fix": f"Update sample_sheet.tsv to point {row.get('sample_id', 'the sample')} {field} to an existing input file.",
+                        }
+
+    for name, meta in config.get("resources", {}).items():
+        path = meta.get("path", "") if isinstance(meta, dict) else ""
+        if "/missing/" in str(path):
+            return {
+                "cause": "missing_resource",
+                "resource": name,
+                "config_key": f"resources.{name}.path",
+                "path": str(path),
+                "fix": f"Point resources.{name}.path to an installed local resource without downloading automatically.",
+            }
+
+    for tool_id, meta in config.get("tools", {}).items():
+        text = json.dumps(meta).lower() if isinstance(meta, dict) else ""
+        if "not installed" in text or tool_id == "plasflow":
+            executable = meta.get("executable", tool_id) if isinstance(meta, dict) else tool_id
+            env = meta.get("env", "") if isinstance(meta, dict) else ""
+            return {
+                "cause": "tool_not_found",
+                "tool_id": tool_id,
+                "executable": executable,
+                "env": env,
+                "fix": f"Install {executable} in the {env or 'expected'} Conda environment before real execution.",
+            }
+
+    return {
+        "cause": "none",
+        "fix": "No injected missing input, missing resource, or missing tool was detected.",
+        "confidence": "medium",
+    }
+
+
+def _format_diagnosis_markdown(diagnosis: dict) -> str:
+    cause = str(diagnosis.get("cause", "unknown")).replace("_", " ")
+    lines = ["# Diagnostic Report", "", f"Cause: {cause}"]
+    for key in ("sample_id", "field", "path", "resource", "config_key", "tool_id", "executable", "env"):
+        value = diagnosis.get(key)
+        if value:
+            lines.append(f"{key}: {value}")
+    fix = diagnosis.get("fix")
+    if fix:
+        lines.append(f"fix: {fix}")
+    return "\n".join(lines) + "\n"
 
 
 def _generate_final_answer(group_id: str, task_id: str) -> str:
@@ -776,6 +1030,20 @@ def main():
     parser.add_argument("--replicate", type=int, default=1, help="Replicate number")
     parser.add_argument("--model", type=str, default="LLM4", help="Model ID")
     parser.add_argument("--agent", type=str, default="opencode", help="Agent harness name")
+    parser.add_argument(
+        "--experiment-set",
+        type=str,
+        choices=["dev", "main", "ablation", "full"],
+        default="dev",
+        help="Experiment set label written into metadata and score files",
+    )
+    parser.add_argument(
+        "--fixture-set",
+        type=str,
+        choices=["public", "hidden"],
+        default="public",
+        help="Fixture set to use for tasks that define hidden fixtures",
+    )
     parser.add_argument("--outdir", type=Path, help="Output directory for results")
     parser.add_argument("--dry-run-scoring-only", action="store_true", help="Only score, skip agent run")
     parser.add_argument("--agent-mode", type=str, choices=["simulated", "opencode"], default="simulated",
@@ -787,6 +1055,8 @@ def main():
         replicate=args.replicate,
         model_id=args.model,
         agent_harness=args.agent,
+        experiment_set=args.experiment_set,
+        fixture_set=args.fixture_set,
         outdir=args.outdir,
         dry_run_scoring_only=args.dry_run_scoring_only,
         use_real_agent=(getattr(args, 'agent_mode', 'simulated') == 'opencode'),

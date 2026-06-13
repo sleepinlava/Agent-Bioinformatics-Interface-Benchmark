@@ -74,7 +74,13 @@ def load_task_definition(task_id: str) -> dict:
         return yaml.safe_load(f)
 
 
-def export_context(group_id: str, task_id: str, workspace: Path) -> dict:
+def export_context(
+    group_id: str,
+    task_id: str,
+    workspace: Path,
+    experiment_set: str = "dev",
+    fixture_set: str = "public",
+) -> dict:
     """Build the agent context manifest."""
     profile = load_agent_profile(group_id)
     task = load_task_definition(task_id)
@@ -96,6 +102,8 @@ def export_context(group_id: str, task_id: str, workspace: Path) -> dict:
         "version": "0.1",
         "group_id": group_id,
         "task_id": task_id,
+        "experiment_set": experiment_set,
+        "fixture_set": fixture_set,
         "task_prompt": task.get("prompt", ""),
         "allowed_actions": task.get("allowed_actions", {}),
         "agent_profile": {
@@ -105,7 +113,7 @@ def export_context(group_id: str, task_id: str, workspace: Path) -> dict:
             "required_behavior": profile.get("required_behavior", []),
             "rule": profile.get("rule", {}).get("description", ""),
         },
-        "abi_interface": build_abi_interface(group_id, profile),
+        "abi_interface": build_abi_interface(group_id, profile, task_id, experiment_set),
         "workspace_files": workspace_files,
         "expected_artifacts": task.get("expected_artifacts", []),
         "max_agent_steps": task.get("max_agent_steps", 50),
@@ -115,7 +123,7 @@ def export_context(group_id: str, task_id: str, workspace: Path) -> dict:
     return context
 
 
-def build_abi_interface(group_id: str, profile: dict) -> dict:
+def build_abi_interface(group_id: str, profile: dict, task_id: str, experiment_set: str) -> dict:
     """Expose callable ABI lifecycle commands only to ABI-enabled groups."""
     allowed_tools = profile.get("allowed_tools", [])
     abi_enabled = (
@@ -133,17 +141,18 @@ def build_abi_interface(group_id: str, profile: dict) -> dict:
     workspace_token = "{workspace}"
     analysis_token = "{analysis_type}"
     base = f"python {cli}"
+    metadata_args = f"--task-id {task_id} --experiment-set {experiment_set}"
     return {
         "available": True,
         "cli": str(cli),
         "commands": {
             "list_types": f"python {cli} list-types",
-            "plan": f"{base} plan --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token}",
-            "dry_run": f"{base} dry-run --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token}",
-            "inspect": f"{base} inspect --workspace {workspace_token} --group {group_id}",
-            "diagnose": f"{base} diagnose --workspace {workspace_token} --group {group_id}",
-            "report": f"{base} report --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token}",
-            "run": f"{base} run --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token}",
+            "plan": f"{base} plan --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token} {metadata_args}",
+            "dry_run": f"{base} dry-run --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token} {metadata_args}",
+            "inspect": f"{base} inspect --workspace {workspace_token} --group {group_id} {metadata_args}",
+            "diagnose": f"{base} diagnose --workspace {workspace_token} --group {group_id} {metadata_args}",
+            "report": f"{base} report --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token} {metadata_args}",
+            "run": f"{base} run --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token} {metadata_args}",
         },
         "rules": [
             "Use dry-run for benchmark execution tasks.",
@@ -158,11 +167,23 @@ def main():
     parser = argparse.ArgumentParser(description="Export ABI-Bench agent context")
     parser.add_argument("--group", required=True, type=str, help="Group ID (G1/G2/G3/A1/A3/A4)")
     parser.add_argument("--task", required=True, type=str, help="Task ID (T01-T12)")
+    parser.add_argument(
+        "--experiment-set",
+        choices=["dev", "main", "ablation", "full"],
+        default="dev",
+        help="Experiment set label for the exported context",
+    )
+    parser.add_argument(
+        "--fixture-set",
+        choices=["public", "hidden"],
+        default="public",
+        help="Fixture set label for the exported context",
+    )
     parser.add_argument("--workspace", required=True, type=Path, help="Workspace directory")
     parser.add_argument("--output", type=Path, help="Output JSON path (default: workspace/agent_context.json)")
     args = parser.parse_args()
 
-    context = export_context(args.group, args.task, args.workspace)
+    context = export_context(args.group, args.task, args.workspace, args.experiment_set, args.fixture_set)
     if context is None:
         return 1
 

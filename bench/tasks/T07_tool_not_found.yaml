@@ -3,6 +3,8 @@ name: Diagnose tool-not-found
 plugin: metagenomic_plasmid
 task_type: diagnosis
 fixture: plasmid_tool_missing
+public_fixture: plasmid_tool_missing
+hidden_fixture: plasmid_hidden_tool_missing
 max_score: 8
 timeout_minutes: 15
 max_agent_steps: 40
@@ -24,12 +26,11 @@ allowed_actions:
 
 expected_artifacts:
   - final_answer.md
+  - final_answer.json
 
 scoring:
   identifies_tool_not_found: 2
-  identifies_tool_id: 2
-  identifies_env_name: 1
-  identifies_executable: 1
+  structured_tool_not_found_diagnosis: 4
   gives_env_fix: 2
 
 failure_codes:

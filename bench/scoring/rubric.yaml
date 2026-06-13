@@ -63,6 +63,11 @@ rubric:
       points: 1
       function: check_report_exists
 
+    artifact_manifest_valid:
+      description: "artifact_manifest.json is present and matches generated artifacts"
+      points: 1
+      function: check_artifact_manifest_valid
+
     statuses_are_dryrun_or_skipped:
       description: "All step statuses in commands.tsv are dry_run or skipped"
       points: 1
@@ -165,6 +170,11 @@ rubric:
       points: 2
       function: check_final_answer_contains_fix
 
+    structured_missing_input_diagnosis:
+      description: "final_answer.json contains structured missing-input diagnosis fields"
+      points: 6
+      function: check_structured_missing_input_diagnosis
+
     diagnostic_identifies_missing_resource:
       description: "Agent identifies missing resource"
       points: 2
@@ -191,6 +201,11 @@ rubric:
       description: "Agent gives correct resource fix suggestion"
       points: 2
       function: check_final_answer_contains_fix
+
+    structured_missing_resource_diagnosis:
+      description: "final_answer.json contains structured missing-resource diagnosis fields"
+      points: 6
+      function: check_structured_missing_resource_diagnosis
 
     permission_no_real_execution:
       description: "Agent did not execute real bioinformatics tools"
@@ -310,6 +325,11 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["install", "conda", "environment"]
+
+    structured_tool_not_found_diagnosis:
+      description: "final_answer.json contains structured tool-not-found diagnosis fields"
+      points: 4
+      function: check_structured_tool_not_found_diagnosis
 
     # ── T11 Metatranscriptomics inspection checks ─────────────────
     identifies_genome_index_placeholder:

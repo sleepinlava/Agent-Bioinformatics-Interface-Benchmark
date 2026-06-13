@@ -3,6 +3,8 @@ name: Diagnose missing resource
 plugin: metagenomic_plasmid
 task_type: diagnosis
 fixture: plasmid_missing_resource
+public_fixture: plasmid_missing_resource
+hidden_fixture: plasmid_hidden_missing_resource
 max_score: 10
 timeout_minutes: 15
 max_agent_steps: 40
@@ -22,13 +24,12 @@ allowed_actions:
 
 expected_artifacts:
   - final_answer.md
+  - final_answer.json
 
 scoring:
   diagnostic_identifies_missing_resource: 2
-  diagnostic_identifies_resource_name: 2
-  diagnostic_identifies_config_key: 2
+  structured_missing_resource_diagnosis: 6
   diagnostic_no_download: 2
-  diagnostic_gives_resource_fix: 2
 
 failure_codes:
   - artifact_missing

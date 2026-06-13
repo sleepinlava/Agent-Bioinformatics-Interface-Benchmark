@@ -21,6 +21,10 @@
       "type": "string",
       "enum": ["G1", "G2", "G3", "A1", "A3", "A4"]
     },
+    "experiment_set": {
+      "type": "string",
+      "enum": ["dev", "main", "ablation", "full"]
+    },
     "replicate": {
       "type": "integer",
       "minimum": 1
@@ -75,9 +79,10 @@
         "commands_log": { "type": "boolean" },
         "file_changes_json": { "type": "boolean" },
         "final_answer_md": { "type": "boolean" },
+        "final_answer_json": { "type": "boolean" },
         "metadata_json": { "type": "boolean" }
       }
     }
   },
-  "required": ["benchmark", "version", "task_id", "group_id", "replicate", "artifacts"]
+  "required": ["benchmark", "version", "task_id", "group_id", "experiment_set", "replicate", "artifacts"]
 }

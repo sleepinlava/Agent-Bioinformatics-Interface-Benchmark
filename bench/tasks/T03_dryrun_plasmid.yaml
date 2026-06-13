@@ -21,6 +21,7 @@ allowed_actions:
 
 expected_artifacts:
   - execution_plan.json
+  - artifact_manifest.json
   - provenance/commands.tsv
   - provenance/resolved_inputs.tsv
   - provenance/tool_versions.tsv
@@ -40,7 +41,7 @@ scoring:
   run_summary_exists: 1
   progress_jsonl_exists: 1
   tables_exist_with_headers: 1
-  report_exists: 1
+  artifact_manifest_valid: 1
   statuses_are_dryrun_or_skipped: 1
   no_real_execution: 1
 

@@ -1,0 +1,8 @@
+{
+  "task_type": "diagnosis",
+  "cause": "tool_not_found",
+  "tool_id": "plasflow",
+  "executable": "PlasFlow.py",
+  "env": "plasflow_env",
+  "fix_required": true
+}

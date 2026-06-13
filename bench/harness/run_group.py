@@ -46,6 +46,8 @@ def run_group(
     model_id: str = "LLM4",
     agent_harness: str = "opencode",
     agent_mode: str = "simulated",
+    experiment_set: str = "dev",
+    fixture_set: str = "public",
     outdir: Path = None,
 ):
     """Run all tasks for a group."""
@@ -61,6 +63,8 @@ def run_group(
     print(f"ABI-Bench v0.1 — Run Group '{group_id}'")
     print(f"  Tasks: {tasks}")
     print(f"  Replicates: {replicates}")
+    print(f"  Experiment set: {experiment_set}")
+    print(f"  Fixture set: {fixture_set}")
     print(f"  Agent mode: {agent_mode}")
     print(f"  Total runs: {total_runs}")
     print(f"  Outdir: {outdir}")
@@ -84,6 +88,8 @@ def run_group(
                 "--replicate", str(rep),
                 "--model", model_id,
                 "--agent", agent_harness,
+                "--experiment-set", experiment_set,
+                "--fixture-set", fixture_set,
                 "--agent-mode", agent_mode,
                 "--outdir", str(run_outdir),
             ])
@@ -126,11 +132,25 @@ def main():
     parser.add_argument("--model", type=str, default="LLM4", help="Model ID")
     parser.add_argument("--agent", type=str, default="opencode", help="Agent harness name")
     parser.add_argument(
+        "--experiment-set",
+        type=str,
+        choices=["dev", "main", "ablation", "full"],
+        default="dev",
+        help="Experiment set label written into all run metadata and scores",
+    )
+    parser.add_argument(
         "--agent-mode",
         type=str,
         choices=["simulated", "opencode"],
         default="simulated",
         help="Agent execution mode: simulated (default) or opencode (real LLM)",
+    )
+    parser.add_argument(
+        "--fixture-set",
+        type=str,
+        choices=["public", "hidden"],
+        default="public",
+        help="Fixture set to use for tasks that define hidden fixtures",
     )
     parser.add_argument("--outdir", type=Path, help="Output directory for results")
     args = parser.parse_args()
@@ -143,6 +163,8 @@ def main():
         model_id=args.model,
         agent_harness=args.agent,
         agent_mode=args.agent_mode,
+        experiment_set=args.experiment_set,
+        fixture_set=args.fixture_set,
         outdir=args.outdir,
     )
     return 1 if failures else 0

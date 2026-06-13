@@ -66,6 +66,9 @@ def score_task(
     task: dict,
     run_dir: Path,
     trace_dir: Path,
+    experiment_set: str = None,
+    fixture_set: str = None,
+    expected_answer: dict = None,
 ) -> dict:
     """
     Score a single task run. Returns the score.json dict.
@@ -94,7 +97,7 @@ def score_task(
         extra_args = resolve_check_args(task, check_name, check_value)
 
         # Run the check
-        result = run_check(check_fn_name, run_dir, trace_dir, **extra_args)
+        result = run_check(check_fn_name, run_dir, trace_dir, expected_answer=expected_answer, **extra_args)
 
         earned = points_possible if result else 0
         total_points += earned
@@ -116,7 +119,7 @@ def score_task(
     # Build artifact check map
     expected_artifacts = task.get("expected_artifacts", [])
     for art in expected_artifacts:
-        p = trace_dir / art if art == "final_answer.md" else run_dir / art
+        p = trace_dir / art if art in ("final_answer.md", "final_answer.json") else run_dir / art
         artifacts_checked[art] = p.exists()
 
     # Determine passed threshold (>= 70% of max)
@@ -138,6 +141,8 @@ def score_task(
         "version": "0.1",
         "task_id": task_id,
         "task_type": task_type,
+        "experiment_set": experiment_set or metadata.get("experiment_set", "unknown"),
+        "fixture_set": fixture_set or metadata.get("fixture_set", "public"),
         "group_id": _discover_group_id(run_dir),
         "replicate": _discover_replicate(run_dir),
         "model_id": metadata.get("model_id", "LLM4"),
@@ -353,10 +358,33 @@ def main():
     parser.add_argument("--run-dir", required=True, type=Path, help="Result/run directory")
     parser.add_argument("--trace-dir", required=True, type=Path, help="Trace directory")
     parser.add_argument("--output", type=Path, help="Output score.json path (defaults to run-dir/score.json)")
+    parser.add_argument(
+        "--experiment-set",
+        choices=["dev", "main", "ablation", "full"],
+        help="Experiment set override written to score.json",
+    )
+    parser.add_argument(
+        "--fixture-set",
+        choices=["public", "hidden"],
+        help="Fixture set override written to score.json",
+    )
+    parser.add_argument(
+        "--expected-answer",
+        type=Path,
+        help="Optional fixture-local expected answer JSON for structured checks",
+    )
     args = parser.parse_args()
 
     task = load_task(args.task)
-    score = score_task(task, args.run_dir, args.trace_dir)
+    expected_answer = _load_expected_answer(args.expected_answer)
+    score = score_task(
+        task,
+        args.run_dir,
+        args.trace_dir,
+        experiment_set=args.experiment_set,
+        fixture_set=args.fixture_set,
+        expected_answer=expected_answer,
+    )
 
     output_path = args.output or (args.run_dir / "score.json")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -367,6 +395,20 @@ def main():
     print(f"Written to {output_path}")
 
     return 0 if score["passed"] else 1
+
+
+def _load_expected_answer(path: Path) -> dict:
+    if path is None:
+        return None
+    if not path.is_file():
+        raise SystemExit(f"Expected answer JSON not found: {path}")
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Invalid expected answer JSON: {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise SystemExit(f"Expected answer JSON must contain an object: {path}")
+    return data
 
 
 if __name__ == "__main__":

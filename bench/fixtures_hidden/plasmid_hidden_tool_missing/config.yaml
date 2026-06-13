@@ -1,0 +1,34 @@
+# Hidden MetaPlasmid fixture: tool not found
+
+analysis:
+  type: metagenomic_plasmid
+  description: "Hidden plasmid dry-run fixture with one unavailable tool"
+
+samples:
+  sample_sheet: sample_sheet.tsv
+
+tools:
+  prodigal:
+    executable: prodigal
+    version: "2.6.3"
+    env: metagenomic_plasmid
+  hmmer:
+    executable: hmmscan
+    version: "3.3.2"
+    env: metagenomic_plasmid
+  mob_suite:
+    executable: mob_recon
+    version: "3.1.8"
+    env: mob_suite_env
+    description: "Plasmid reconstruction utility - NOT INSTALLED"
+
+resources:
+  pfam_hmm:
+    path: /hidden/databases/pfam/Pfam-A.hmm
+    type: hmm
+
+output:
+  tables:
+    - plasmid_predictions.tsv
+  provenance_dir: provenance
+  report_dir: report

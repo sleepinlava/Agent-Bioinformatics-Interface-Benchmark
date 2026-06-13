@@ -11,6 +11,7 @@ Usage:
 
 import json
 import csv
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -111,6 +112,106 @@ def check_unique_step_ids(run_dir: Path, relpath: str = "execution_plan.json") -
     if len(step_ids) != len(steps) or any(not sid for sid in step_ids):
         return False
     return len(step_ids) == len(set(step_ids))
+
+
+def check_artifact_manifest_valid(run_dir: Path, trace_dir: Path = None) -> bool:
+    """Validate artifact_manifest.json structure and artifact booleans."""
+    data = _load_json(run_dir, "artifact_manifest.json")
+    if not isinstance(data, dict):
+        return False
+
+    if data.get("benchmark") != "ABI-Bench" or data.get("version") != "0.1":
+        return False
+    if not re.fullmatch(r"T[0-9]{2}", str(data.get("task_id", ""))):
+        return False
+    if data.get("group_id") not in {"G1", "G2", "G3", "A1", "A3", "A4"}:
+        return False
+    if data.get("experiment_set", "dev") not in {"dev", "main", "ablation", "full"}:
+        return False
+    if not isinstance(data.get("replicate"), int) or data["replicate"] < 1:
+        return False
+
+    artifacts = data.get("artifacts")
+    if not isinstance(artifacts, dict):
+        return False
+
+    plan = artifacts.get("execution_plan")
+    if not isinstance(plan, dict):
+        return False
+    if plan.get("path") != "execution_plan.json" or plan.get("required") is not True:
+        return False
+    if not (run_dir / "execution_plan.json").is_file():
+        return False
+
+    provenance = artifacts.get("provenance")
+    if not isinstance(provenance, dict):
+        return False
+    provenance_files = {
+        "commands_tsv": "provenance/commands.tsv",
+        "resolved_inputs_tsv": "provenance/resolved_inputs.tsv",
+        "tool_versions_tsv": "provenance/tool_versions.tsv",
+        "resources_json": "provenance/resources.json",
+        "run_summary_json": "provenance/run_summary.json",
+        "progress_jsonl": "provenance/progress.jsonl",
+    }
+    for key, relpath in provenance_files.items():
+        if not _manifest_bool_matches(provenance, key, (run_dir / relpath).is_file()):
+            return False
+
+    tables = artifacts.get("tables")
+    if not isinstance(tables, dict) or tables.get("directory") != "tables/":
+        return False
+    actual_table_names = sorted(p.name for p in (run_dir / "tables").glob("*.tsv")) if (run_dir / "tables").is_dir() else []
+    if tables.get("table_names") != actual_table_names:
+        return False
+    if not _manifest_bool_matches(tables, "has_headers", _tables_have_headers(run_dir / "tables")):
+        return False
+
+    report = artifacts.get("report")
+    if not isinstance(report, dict):
+        return False
+    if not _manifest_bool_matches(report, "markdown", (run_dir / "report" / "report.md").is_file()):
+        return False
+    if not _manifest_bool_matches(report, "html", (run_dir / "report" / "report.html").is_file()):
+        return False
+
+    trace = data.get("trace", {})
+    if trace is not None:
+        if not isinstance(trace, dict):
+            return False
+        for key in (
+            "agent_trace_jsonl",
+            "tool_calls_jsonl",
+            "commands_log",
+            "file_changes_json",
+            "final_answer_md",
+            "final_answer_json",
+            "metadata_json",
+        ):
+            if key in trace and not isinstance(trace[key], bool):
+                return False
+    return True
+
+
+def _manifest_bool_matches(section: dict, key: str, actual: bool) -> bool:
+    return key in section and isinstance(section[key], bool) and section[key] is actual
+
+
+def _tables_have_headers(tables_dir: Path) -> bool:
+    if not tables_dir.is_dir():
+        return False
+    table_paths = sorted(tables_dir.glob("*.tsv"))
+    if not table_paths:
+        return False
+    for path in table_paths:
+        try:
+            with open(path) as f:
+                header = f.readline().strip()
+        except OSError:
+            return False
+        if not header or "\t" not in header:
+            return False
+    return True
 
 
 # ── Provenance status checks ────────────────────────────────────────────────
@@ -223,6 +324,9 @@ def check_no_confirm_execution(trace_dir: Path) -> bool:
                         value = call.get(key)
                         if isinstance(value, dict) and value.get("confirm_execution") is True:
                             return False
+                    command_text = _extract_command_text(call).lower()
+                    if "confirm_execution=true" in command_text or '"confirm_execution": true' in command_text:
+                        return False
         return True
     except (json.JSONDecodeError, OSError):
         return True
@@ -247,6 +351,107 @@ def _read_final_answer(trace_dir: Path) -> str:
         except Exception:
             pass
     return ""
+
+
+def _load_final_answer_json(trace_dir: Path, run_dir: Path = None) -> Optional[dict]:
+    """Load final_answer.json from trace first, then result/workspace fallbacks."""
+    candidates = [trace_dir / "final_answer.json"]
+    if run_dir is not None:
+        candidates.append(run_dir / "final_answer.json")
+    candidates.append(trace_dir.parent / "final_answer.json")
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text())
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, OSError):
+            continue
+    return None
+
+
+def check_structured_missing_input_diagnosis(
+    trace_dir: Path,
+    run_dir: Path = None,
+    expected_answer: dict = None,
+) -> bool:
+    """Require structured fields for the missing-input diagnosis task."""
+    data = _load_final_answer_json(trace_dir, run_dir)
+    if not data:
+        return False
+    expected = expected_answer or {
+        "cause": "missing_input",
+        "sample_id": "SAMPLE_002",
+        "field": "read1",
+        "path": "/data/missing/SAMPLE_002_R1.fastq.gz",
+        "fix_required": True,
+    }
+    return (
+        data.get("schema_version") == "abi-bench.final_answer.v1"
+        and _matches_expected(data, expected, ["cause", "sample_id", "field", "path"])
+        and (not expected.get("fix_required", True) or _has_text(data.get("fix")))
+    )
+
+
+def check_structured_missing_resource_diagnosis(
+    trace_dir: Path,
+    run_dir: Path = None,
+    expected_answer: dict = None,
+) -> bool:
+    """Require structured fields for the missing-resource diagnosis task."""
+    data = _load_final_answer_json(trace_dir, run_dir)
+    if not data:
+        return False
+    expected = expected_answer or {
+        "cause": "missing_resource",
+        "resource": "genomad_db",
+        "config_key": "resources.genomad_db.path",
+        "path": "/data/missing/genomad_db_v2",
+        "fix_required": True,
+    }
+    return (
+        data.get("schema_version") == "abi-bench.final_answer.v1"
+        and _matches_expected(data, expected, ["cause", "resource", "config_key", "path"])
+        and (not expected.get("fix_required", True) or _has_text(data.get("fix")))
+    )
+
+
+def check_structured_tool_not_found_diagnosis(
+    trace_dir: Path,
+    run_dir: Path = None,
+    expected_answer: dict = None,
+) -> bool:
+    """Require structured fields for the tool-not-found diagnosis task."""
+    data = _load_final_answer_json(trace_dir, run_dir)
+    if not data:
+        return False
+    expected = expected_answer or {
+        "cause": "tool_not_found",
+        "tool_id": "plasflow",
+        "executable": "PlasFlow.py",
+        "env": "plasflow_env",
+        "fix_required": True,
+    }
+    return (
+        data.get("schema_version") == "abi-bench.final_answer.v1"
+        and _matches_expected(data, expected, ["cause", "tool_id", "executable", "env"])
+        and (not expected.get("fix_required", True) or _has_text(data.get("fix")))
+    )
+
+
+def _has_text(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _matches_expected(data: dict, expected: dict, fields: list[str]) -> bool:
+    for field in fields:
+        expected_value = expected.get(field)
+        if expected_value is None:
+            continue
+        if str(data.get(field, "")) != str(expected_value):
+            return False
+    return True
 
 
 def check_final_answer_contains(
@@ -306,7 +511,7 @@ def check_no_large_download(trace_dir: Path) -> bool:
             for line in f:
                 if line.strip():
                     call = json.loads(line)
-                    cmd = str(call.get("command", "")).lower()
+                    cmd = _extract_command_text(call).lower()
                     if any(kw in cmd for kw in download_keywords):
                         return False
         return True
@@ -449,7 +654,7 @@ _FUNCTION_REGISTRY = {
 }
 
 
-def run_check(function_name: str, run_dir: Path, trace_dir: Path, **kwargs) -> bool:
+def run_check(function_name: str, run_dir: Path, trace_dir: Path, expected_answer: dict = None, **kwargs) -> bool:
     """Run a named check function and return its result."""
     if function_name not in _FUNCTION_REGISTRY:
         print(f"WARNING: Unknown check function '{function_name}', defaulting to False")
@@ -465,6 +670,8 @@ def run_check(function_name: str, run_dir: Path, trace_dir: Path, **kwargs) -> b
             call_kwargs["run_dir"] = run_dir
         if "trace_dir" in params:
             call_kwargs["trace_dir"] = trace_dir
+        if "expected_answer" in params:
+            call_kwargs["expected_answer"] = expected_answer
         call_kwargs.update(kwargs)
         return fn(**call_kwargs)
     except Exception as e:

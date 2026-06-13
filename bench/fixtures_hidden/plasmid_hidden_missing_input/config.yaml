@@ -1,0 +1,36 @@
+# Hidden MetaPlasmid fixture: missing input
+
+analysis:
+  type: metagenomic_plasmid
+  description: "Hidden plasmid dry-run fixture with one missing input path"
+
+samples:
+  sample_sheet: sample_sheet.tsv
+
+tools:
+  prodigal:
+    executable: prodigal
+    version: "2.6.3"
+    env: metagenomic_plasmid
+  hmmer:
+    executable: hmmscan
+    version: "3.3.2"
+    env: metagenomic_plasmid
+  genomad:
+    executable: genomad
+    version: "1.5.2"
+    env: genomad
+
+resources:
+  genomad_db:
+    path: /hidden/databases/genomad/genomad_db
+    type: directory
+  pfam_hmm:
+    path: /hidden/databases/pfam/Pfam-A.hmm
+    type: hmm
+
+output:
+  tables:
+    - plasmid_annotations.tsv
+  provenance_dir: provenance
+  report_dir: report

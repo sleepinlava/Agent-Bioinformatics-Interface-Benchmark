@@ -21,7 +21,7 @@
 
 import { parseArgs } from "node:util"
 import { join, resolve, dirname } from "node:path"
-import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync } from "node:fs"
+import { copyFileSync, existsSync, mkdirSync, writeFileSync, readFileSync, statSync } from "node:fs"
 import launch from "cross-spawn"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 
@@ -455,7 +455,10 @@ async function main() {
       }
     }
 
-    const fullPrompt = `${TASK_PROMPT}\n\nWorkspace: ${WORKSPACE_DIR}${fileList}${keyFilesContent}\n\nWrite all output artifacts to the workspace directory. Save your final answer to ${TRACE_DIR}/.agent_log/final_answer.md.`
+    const diagnosisSidecarInstruction = ["T05", "T06", "T07"].includes(TASK_ID)
+      ? ` For diagnosis tasks, also save ${TRACE_DIR}/.agent_log/final_answer.json with schema_version, task_type, cause, sample_id, field, path, resource, config_key, tool_id, executable, env, fix, and confidence fields. If you use ABI diagnose and it writes final_answer.json to the workspace, leave that file in place.`
+      : ""
+    const fullPrompt = `${TASK_PROMPT}\n\nWorkspace: ${WORKSPACE_DIR}${fileList}${keyFilesContent}\n\nWrite all output artifacts to the workspace directory. Dry-run tasks must include artifact_manifest.json. Save your final answer to ${TRACE_DIR}/.agent_log/final_answer.md.${diagnosisSidecarInstruction}`
 
     // Send prompt (v2 API: flat parameters with sessionID)
     console.log("  Sending prompt...")
@@ -599,6 +602,13 @@ async function main() {
     const finalAnswerPath = join(TRACE_DIR, ".agent_log", "final_answer.md")
     writeFileSync(finalAnswerPath, finalAnswer || `# Task ${TASK_ID} — No final answer\n\nAgent completed without producing a text response.`)
     console.log(`  final_answer.md: ${finalAnswer.length} chars`)
+
+    const workspaceFinalAnswerJson = join(WORKSPACE_DIR, "final_answer.json")
+    if (existsSync(workspaceFinalAnswerJson)) {
+      const traceFinalAnswerJson = join(TRACE_DIR, ".agent_log", "final_answer.json")
+      copyFileSync(workspaceFinalAnswerJson, traceFinalAnswerJson)
+      console.log("  final_answer.json: copied from workspace")
+    }
 
     // Write metadata
     const metadataPath = join(TRACE_DIR, ".agent_log", "metadata.json")

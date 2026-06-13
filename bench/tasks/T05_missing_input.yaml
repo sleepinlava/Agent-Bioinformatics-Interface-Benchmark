@@ -3,6 +3,8 @@ name: Diagnose missing input
 plugin: metagenomic_plasmid
 task_type: diagnosis
 fixture: plasmid_missing_input
+public_fixture: plasmid_missing_input
+hidden_fixture: plasmid_hidden_missing_input
 max_score: 10
 timeout_minutes: 15
 max_agent_steps: 40
@@ -22,12 +24,11 @@ allowed_actions:
 
 expected_artifacts:
   - final_answer.md
+  - final_answer.json
 
 scoring:
   diagnostic_identifies_missing_input: 2
-  diagnostic_identifies_sample_id: 2
-  diagnostic_identifies_field: 2
-  diagnostic_identifies_path: 2
+  structured_missing_input_diagnosis: 6
   diagnostic_gives_fix: 2
 
 failure_codes:

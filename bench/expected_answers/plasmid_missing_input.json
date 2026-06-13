@@ -1,0 +1,8 @@
+{
+  "task_type": "diagnosis",
+  "cause": "missing_input",
+  "sample_id": "SAMPLE_002",
+  "field": "read1",
+  "path": "/data/missing/SAMPLE_002_R1.fastq.gz",
+  "fix_required": true
+}

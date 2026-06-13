@@ -21,7 +21,8 @@ from pathlib import Path
 
 
 def collect_trace(source_dir: Path, output_dir: Path, task_id: str = None,
-                  group_id: str = None, replicate: int = 1):
+                  group_id: str = None, replicate: int = 1,
+                  experiment_set: str = "dev"):
     """Collect trace files from agent log directory into structured trace output."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -32,6 +33,7 @@ def collect_trace(source_dir: Path, output_dir: Path, task_id: str = None,
         "commands.log",
         "file_changes.json",
         "final_answer.md",
+        "final_answer.json",
     ]
 
     collected = []
@@ -50,6 +52,7 @@ def collect_trace(source_dir: Path, output_dir: Path, task_id: str = None,
         "version": "0.1",
         "task_id": task_id or _infer_from_path(output_dir, "T"),
         "group_id": group_id or _infer_from_path(output_dir, "G"),
+        "experiment_set": experiment_set,
         "replicate": replicate,
         "model_id": "LLM4",
         "agent_harness": "opencode",
@@ -103,6 +106,12 @@ def main():
     parser.add_argument("--task-id", type=str, help="Task ID override")
     parser.add_argument("--group-id", type=str, help="Group ID override")
     parser.add_argument("--replicate", type=int, default=1, help="Replicate number")
+    parser.add_argument(
+        "--experiment-set",
+        choices=["dev", "main", "ablation", "full"],
+        default="dev",
+        help="Experiment set label for trace metadata",
+    )
     args = parser.parse_args()
 
     collected = collect_trace(
@@ -110,6 +119,7 @@ def main():
         task_id=args.task_id,
         group_id=args.group_id,
         replicate=args.replicate,
+        experiment_set=args.experiment_set,
     )
     return 0 if collected else 1
 

@@ -1,0 +1,37 @@
+# Hidden MetaPlasmid fixture: missing resource
+
+analysis:
+  type: metagenomic_plasmid
+  description: "Hidden plasmid dry-run fixture with one missing resource"
+
+samples:
+  sample_sheet: sample_sheet.tsv
+
+tools:
+  prodigal:
+    executable: prodigal
+    version: "2.6.3"
+    env: metagenomic_plasmid
+  hmmer:
+    executable: hmmscan
+    version: "3.3.2"
+    env: metagenomic_plasmid
+  genomad:
+    executable: genomad
+    version: "1.5.2"
+    env: genomad
+
+resources:
+  mobileog_db:
+    path: /hidden/missing/mobileog_db_2026
+    type: directory
+    description: "Mobile genetic element database"
+  pfam_hmm:
+    path: /hidden/databases/pfam/Pfam-A.hmm
+    type: hmm
+
+output:
+  tables:
+    - plasmid_annotations.tsv
+  provenance_dir: provenance
+  report_dir: report

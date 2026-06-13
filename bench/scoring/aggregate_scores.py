@@ -20,6 +20,19 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+EXPECTED_GROUPS = {
+    "main": ["G1", "G2", "G3"],
+    "ablation": ["G3", "A1", "A3", "A4"],
+    "full": ["G1", "G2", "G3"],
+    "dev": ["G1", "G2", "G3", "A1", "A3", "A4"],
+}
+
+EXPECTED_TASKS = {
+    "main": ["T01", "T02", "T03", "T05", "T06", "T08", "T09", "T10"],
+    "ablation": ["T03", "T04", "T05", "T06", "T07", "T08"],
+    "full": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12"],
+}
+
 
 def collect_scores(results_dir: Path) -> list[dict]:
     """Collect all score.json files from the results directory tree."""
@@ -31,6 +44,13 @@ def collect_scores(results_dir: Path) -> list[dict]:
         except (json.JSONDecodeError, OSError) as e:
             print(f"WARNING: Failed to read {score_file}: {e}", file=sys.stderr)
     return scores
+
+
+def filter_scores(scores: list[dict], experiment_set: str | None = None) -> list[dict]:
+    """Filter score records by experiment_set if requested."""
+    if experiment_set is None:
+        return scores
+    return [s for s in scores if s.get("experiment_set", "unknown") == experiment_set]
 
 
 def group_by(scores: list[dict], key: str) -> dict:
@@ -126,6 +146,7 @@ def compute_per_task_scores(scores: list[dict]) -> list[dict]:
         task_scores = by_task[task_id]
         for ts in task_scores:
             rows.append({
+                "experiment_set": ts.get("experiment_set", "unknown"),
                 "group_id": ts.get("group_id", "unknown"),
                 "task_id": ts.get("task_id", task_id),
                 "replicate": ts.get("replicate", 1),
@@ -137,12 +158,13 @@ def compute_per_task_scores(scores: list[dict]) -> list[dict]:
     return rows
 
 
-def build_summary(scores: list[dict]) -> dict:
+def build_summary(scores: list[dict], experiment_set: str | None = None) -> dict:
     """Build the summary.json structure."""
     by_group = group_by(scores, "group_id")
+    groups = expected_groups_for(experiment_set)
 
     groups_stats = {}
-    for gid in ["G1", "G2", "G3", "A1", "A3", "A4"]:
+    for gid in groups:
         gscores = by_group.get(gid, [])
         groups_stats[gid] = compute_group_stats(gscores)
 
@@ -199,9 +221,62 @@ def build_summary(scores: list[dict]) -> dict:
         "commit": _current_commit(),
         "model_id": _common_value(scores, "model_id", "mixed"),
         "agent_harness": _common_value(scores, "agent_harness", "mixed"),
+        "experiment_set": experiment_set or "all",
         "replicates": _estimate_replicates(scores),
         "groups": groups_stats,
+        "completeness": build_completeness_report(scores, experiment_set),
         "claim_support": claim_support,
+    }
+
+
+def expected_groups_for(experiment_set: str | None) -> list[str]:
+    if experiment_set in EXPECTED_GROUPS:
+        return EXPECTED_GROUPS[experiment_set]
+    return ["G1", "G2", "G3", "A1", "A3", "A4"]
+
+
+def expected_tasks_for(experiment_set: str | None, observed: list[str]) -> list[str]:
+    if experiment_set in EXPECTED_TASKS:
+        return EXPECTED_TASKS[experiment_set]
+    return sorted(observed)
+
+
+def build_completeness_report(scores: list[dict], experiment_set: str | None = None) -> dict:
+    """Report missing groups, tasks, and replicates for the selected experiment set."""
+    observed_groups = sorted({s.get("group_id", "unknown") for s in scores})
+    observed_tasks = sorted({s.get("task_id", "unknown") for s in scores})
+    expected_groups = expected_groups_for(experiment_set)
+    expected_tasks = expected_tasks_for(experiment_set, observed_tasks)
+
+    replicates_by_key = defaultdict(set)
+    for s in scores:
+        replicates_by_key[(s.get("group_id"), s.get("task_id"))].add(s.get("replicate", 1))
+    expected_replicates = sorted({s.get("replicate", 1) for s in scores}) or [1]
+
+    missing = []
+    for group_id in expected_groups:
+        for task_id in expected_tasks:
+            present = replicates_by_key.get((group_id, task_id), set())
+            missing_reps = [rep for rep in expected_replicates if rep not in present]
+            if missing_reps:
+                missing.append({
+                    "group_id": group_id,
+                    "task_id": task_id,
+                    "missing_replicates": missing_reps,
+                })
+
+    unknown_groups = [gid for gid in observed_groups if gid not in expected_groups]
+    return {
+        "expected_groups": expected_groups,
+        "observed_groups": observed_groups,
+        "missing_groups": [gid for gid in expected_groups if gid not in observed_groups],
+        "unknown_groups": unknown_groups,
+        "expected_tasks": expected_tasks,
+        "observed_tasks": observed_tasks,
+        "missing_tasks": [tid for tid in expected_tasks if tid not in observed_tasks],
+        "expected_replicates": expected_replicates,
+        "missing_runs": missing,
+        "complete": not missing and not unknown_groups,
     }
 
 
@@ -262,7 +337,7 @@ def generate_leaderboard_tsv(summary: dict, output_path: Path):
     ]
     with open(output_path, "w") as f:
         f.write("\t".join(headers) + "\n")
-        for gid in ["G1", "G2", "G3", "A1", "A3", "A4"]:
+        for gid in summary["groups"].keys():
             gs = summary["groups"].get(gid, {})
             if gs.get("score_count", 0) == 0:
                 continue
@@ -284,11 +359,12 @@ def generate_per_task_tsv(per_task: list[dict], output_path: Path):
     """Write per_task_scores.tsv."""
     if not per_task:
         return
-    headers = ["group_id", "task_id", "replicate", "score", "max_score", "passed", "failure_codes"]
+    headers = ["experiment_set", "group_id", "task_id", "replicate", "score", "max_score", "passed", "failure_codes"]
     with open(output_path, "w") as f:
         f.write("\t".join(headers) + "\n")
         for row in per_task:
             f.write("\t".join([
+                row["experiment_set"],
                 row["group_id"],
                 row["task_id"],
                 str(row["replicate"]),
@@ -307,16 +383,24 @@ def main():
     parser.add_argument("--output", required=True, type=Path, help="Output leaderboard.tsv path")
     parser.add_argument("--summary", type=Path, help="Output summary.json path")
     parser.add_argument("--per-task", type=Path, help="Output per_task_scores.tsv path")
+    parser.add_argument(
+        "--experiment-set",
+        choices=["dev", "main", "ablation", "full"],
+        help="Only aggregate score files from this experiment set",
+    )
     args = parser.parse_args()
 
-    scores = collect_scores(args.results)
-    print(f"Collected {len(scores)} score files from {args.results}")
+    all_scores = collect_scores(args.results)
+    scores = filter_scores(all_scores, args.experiment_set)
+    print(f"Collected {len(all_scores)} score files from {args.results}")
+    if args.experiment_set:
+        print(f"Filtered to {len(scores)} score files for experiment_set={args.experiment_set}")
 
     if not scores:
         print("No scores found. Generate scores first with score_run.py.")
         return 1
 
-    summary = build_summary(scores)
+    summary = build_summary(scores, experiment_set=args.experiment_set)
     per_task = compute_per_task_scores(scores)
 
     # Write leaderboard

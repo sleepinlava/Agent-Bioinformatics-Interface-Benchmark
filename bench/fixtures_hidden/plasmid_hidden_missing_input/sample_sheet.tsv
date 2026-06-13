@@ -1,0 +1,4 @@
+sample_id	read1	read2	assembly	condition
+CASE_016	/hidden/fixtures/case016_R1.fastq.gz	/hidden/fixtures/case016_R2.fastq.gz	/hidden/fixtures/case016_assembly.fasta	control
+CASE_017	/hidden/fixtures/case017_R1.fastq.gz	/hidden/fixtures/case017_R2.fastq.gz	/hidden/missing/CASE_017_assembly.fasta	treatment
+CASE_018	/hidden/fixtures/case018_R1.fastq.gz	/hidden/fixtures/case018_R2.fastq.gz	/hidden/fixtures/case018_assembly.fasta	treatment

@@ -145,6 +145,13 @@ def command_dry_run(args) -> int:
 
     write_tables(workspace, analysis_type)
     write_report(workspace, analysis_type, plan)
+    write_artifact_manifest(
+        workspace,
+        task_id=args.task_id,
+        group_id=args.group,
+        replicate=args.replicate,
+        experiment_set=args.experiment_set,
+    )
     print(json.dumps({
         "status": "dry_run_complete",
         "analysis_type": analysis_type,
@@ -251,6 +258,78 @@ def write_report(workspace: Path, analysis_type: str, plan: dict):
     )
 
 
+def write_artifact_manifest(
+    workspace: Path,
+    task_id: str = "T00",
+    group_id: str = "G3",
+    replicate: int = 1,
+    experiment_set: str = "dev",
+) -> dict:
+    """Write a deterministic manifest describing generated run artifacts."""
+    tables_dir = workspace / "tables"
+    table_names = sorted(p.name for p in tables_dir.glob("*.tsv")) if tables_dir.is_dir() else []
+    manifest = {
+        "benchmark": "ABI-Bench",
+        "version": "0.1",
+        "task_id": task_id or "T00",
+        "group_id": group_id,
+        "experiment_set": experiment_set,
+        "replicate": replicate,
+        "artifacts": {
+            "execution_plan": {
+                "path": "execution_plan.json",
+                "required": True,
+                "schema_version": "abi-bench.plan.v1",
+            },
+            "provenance": {
+                "commands_tsv": (workspace / "provenance" / "commands.tsv").is_file(),
+                "resolved_inputs_tsv": (workspace / "provenance" / "resolved_inputs.tsv").is_file(),
+                "tool_versions_tsv": (workspace / "provenance" / "tool_versions.tsv").is_file(),
+                "resources_json": (workspace / "provenance" / "resources.json").is_file(),
+                "run_summary_json": (workspace / "provenance" / "run_summary.json").is_file(),
+                "progress_jsonl": (workspace / "provenance" / "progress.jsonl").is_file(),
+            },
+            "tables": {
+                "directory": "tables/",
+                "has_headers": _tables_have_headers(tables_dir),
+                "table_names": table_names,
+            },
+            "report": {
+                "markdown": (workspace / "report" / "report.md").is_file(),
+                "html": (workspace / "report" / "report.html").is_file(),
+            },
+        },
+        "trace": {
+            "agent_trace_jsonl": (workspace / ".agent_log" / "agent_trace.jsonl").is_file(),
+            "tool_calls_jsonl": (workspace / ".agent_log" / "tool_calls.jsonl").is_file(),
+            "commands_log": (workspace / ".agent_log" / "commands.log").is_file(),
+            "file_changes_json": (workspace / ".agent_log" / "file_changes.json").is_file(),
+            "final_answer_md": (workspace / ".agent_log" / "final_answer.md").is_file(),
+            "final_answer_json": (workspace / ".agent_log" / "final_answer.json").is_file()
+            or (workspace / "final_answer.json").is_file(),
+            "metadata_json": False,
+        },
+    }
+    (workspace / "artifact_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    return manifest
+
+
+def _tables_have_headers(tables_dir: Path) -> bool:
+    if not tables_dir.is_dir():
+        return False
+    table_paths = sorted(tables_dir.glob("*.tsv"))
+    if not table_paths:
+        return False
+    for path in table_paths:
+        try:
+            first_line = path.read_text().splitlines()[0]
+        except (IndexError, OSError):
+            return False
+        if not first_line.strip() or "\t" not in first_line:
+            return False
+    return True
+
+
 def command_inspect(args) -> int:
     workspace = args.workspace.resolve()
     summary_path = workspace / "provenance" / "run_summary.json"
@@ -276,17 +355,35 @@ def command_inspect(args) -> int:
 def command_diagnose(args) -> int:
     workspace = args.workspace.resolve()
     group = args.group
-    diagnosis = diagnose_workspace(workspace)
     if group == "A1":
-        print("# ABI Diagnosis\n\nInput/resource/tool failure suspected, but provenance is unavailable.")
+        structured = {
+            "schema_version": "abi-bench.final_answer.v1",
+            "task_type": "diagnosis",
+            "cause": "unknown",
+            "fix": "Regenerate provenance and inspect the workspace again.",
+        }
+        diagnosis = "# ABI Diagnosis\n\nInput/resource/tool failure suspected, but provenance is unavailable."
     elif group == "A3":
-        print("# ABI Diagnosis\n\nA failure was detected, but structured diagnostic hints are unavailable.")
+        structured = {
+            "schema_version": "abi-bench.final_answer.v1",
+            "task_type": "diagnosis",
+            "cause": "unstructured_failure",
+            "fix": "Inspect config.yaml and sample_sheet.tsv manually.",
+        }
+        diagnosis = "# ABI Diagnosis\n\nA failure was detected, but structured diagnostic hints are unavailable."
     else:
-        print(diagnosis)
+        structured = diagnose_workspace_structured(workspace)
+        diagnosis = format_diagnosis_markdown(structured)
+    (workspace / "final_answer.json").write_text(json.dumps(structured, indent=2) + "\n")
+    print(diagnosis)
     return 0
 
 
 def diagnose_workspace(workspace: Path) -> str:
+    return format_diagnosis_markdown(diagnose_workspace_structured(workspace))
+
+
+def diagnose_workspace_structured(workspace: Path) -> dict:
     config = load_config(workspace)
     sample_sheet = workspace / str(config.get("samples", {}).get("sample_sheet", "sample_sheet.tsv"))
 
@@ -296,42 +393,90 @@ def diagnose_workspace(workspace: Path) -> str:
             for row in reader:
                 for field, value in row.items():
                     if isinstance(value, str) and "/missing/" in value:
-                        return (
-                            "# ABI Diagnosis\n\n"
-                            "Cause: missing input\n"
-                            f"sample_id: {row.get('sample_id', 'unknown')}\n"
-                            f"field: {field}\n"
-                            f"path: {value}\n"
-                            "fix: update the sample sheet to a valid existing input path.\n"
-                        )
+                        return {
+                            "schema_version": "abi-bench.final_answer.v1",
+                            "task_type": "diagnosis",
+                            "cause": "missing_input",
+                            "sample_id": row.get("sample_id", "unknown"),
+                            "field": field,
+                            "path": value,
+                            "resource": "",
+                            "config_key": "",
+                            "tool_id": "",
+                            "executable": "",
+                            "env": "",
+                            "fix": "Update the sample sheet to a valid existing input path.",
+                            "confidence": "high",
+                        }
 
     for name, meta in config.get("resources", {}).items():
         path = meta.get("path", "") if isinstance(meta, dict) else ""
         if "/missing/" in str(path):
-            return (
-                "# ABI Diagnosis\n\n"
-                "Cause: missing resource\n"
-                f"resource: {name}\n"
-                f"config_key: resources.{name}.path\n"
-                f"path: {path}\n"
-                "fix: point the config to an installed local resource; do not download automatically.\n"
-            )
+            return {
+                "schema_version": "abi-bench.final_answer.v1",
+                "task_type": "diagnosis",
+                "cause": "missing_resource",
+                "sample_id": "",
+                "field": "",
+                "path": str(path),
+                "resource": name,
+                "config_key": f"resources.{name}.path",
+                "tool_id": "",
+                "executable": "",
+                "env": "",
+                "fix": "Point the config to an installed local resource; do not download automatically.",
+                "confidence": "high",
+            }
 
     for tool_id, meta in config.get("tools", {}).items():
         text = json.dumps(meta).lower() if isinstance(meta, dict) else ""
         if "not installed" in text or tool_id == "plasflow":
             executable = meta.get("executable", tool_id) if isinstance(meta, dict) else tool_id
             env = meta.get("env", "") if isinstance(meta, dict) else ""
-            return (
-                "# ABI Diagnosis\n\n"
-                "Cause: tool not found\n"
-                f"tool_id: {tool_id}\n"
-                f"executable: {executable}\n"
-                f"env: {env}\n"
-                "fix: install the executable in the expected environment before real execution.\n"
-            )
+            return {
+                "schema_version": "abi-bench.final_answer.v1",
+                "task_type": "diagnosis",
+                "cause": "tool_not_found",
+                "sample_id": "",
+                "field": "",
+                "path": "",
+                "resource": "",
+                "config_key": "",
+                "tool_id": tool_id,
+                "executable": executable,
+                "env": env,
+                "fix": "Install the executable in the expected Conda environment before real execution.",
+                "confidence": "high",
+            }
 
-    return "# ABI Diagnosis\n\nNo injected missing input, missing resource, or missing tool was detected.\n"
+    return {
+        "schema_version": "abi-bench.final_answer.v1",
+        "task_type": "diagnosis",
+        "cause": "none",
+        "sample_id": "",
+        "field": "",
+        "path": "",
+        "resource": "",
+        "config_key": "",
+        "tool_id": "",
+        "executable": "",
+        "env": "",
+        "fix": "No injected missing input, missing resource, or missing tool was detected.",
+        "confidence": "medium",
+    }
+
+
+def format_diagnosis_markdown(diagnosis: dict) -> str:
+    cause = str(diagnosis.get("cause", "unknown")).replace("_", " ")
+    lines = ["# ABI Diagnosis", "", f"Cause: {cause}"]
+    for key in ("sample_id", "field", "path", "resource", "config_key", "tool_id", "executable", "env"):
+        value = diagnosis.get(key)
+        if value:
+            lines.append(f"{key}: {value}")
+    fix = diagnosis.get("fix")
+    if fix:
+        lines.append(f"fix: {fix}")
+    return "\n".join(lines) + "\n"
 
 
 def command_report(args) -> int:
@@ -360,6 +505,14 @@ def add_common(parser: argparse.ArgumentParser):
     parser.add_argument("--workspace", type=Path, default=Path.cwd(), help="Workspace directory")
     parser.add_argument("--group", default="G3", help="Benchmark group id")
     parser.add_argument("--analysis-type", choices=ANALYSIS_TYPES, help="Analysis type override")
+    parser.add_argument("--task-id", default="T00", help="Benchmark task id for generated metadata")
+    parser.add_argument("--replicate", type=int, default=1, help="Benchmark replicate for generated metadata")
+    parser.add_argument(
+        "--experiment-set",
+        choices=["dev", "main", "ablation", "full"],
+        default="dev",
+        help="Experiment set label for generated metadata",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

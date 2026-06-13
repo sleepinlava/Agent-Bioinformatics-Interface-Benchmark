@@ -23,6 +23,7 @@ allowed_actions:
 
 expected_artifacts:
   - execution_plan.json
+  - artifact_manifest.json
   - provenance/commands.tsv
   - provenance/resolved_inputs.tsv
   - provenance/resources.json
@@ -44,7 +45,7 @@ scoring:
     points: 1
   gene_expression_table_exists:
     points: 1
-  report_exists:
+  artifact_manifest_valid:
     points: 1
   no_real_execution:
     points: 1
