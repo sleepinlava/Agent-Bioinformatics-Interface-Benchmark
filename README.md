@@ -225,6 +225,14 @@ reusability.
    pass/fail with no ambiguous partial credit.
 3. **Centralized definition, task-referenced**: All checks are defined in
    `scoring/rubric.yaml` and referenced by key in task YAMLs.
+4. **Structured diagnosis scoring**: Diagnosis tasks (T05/T06/T07) require a
+   `final_answer.json` sidecar with structured fields (`cause`, `sample_id`,
+   `field`, `path`, `resource`, `tool_id`, `executable`, `env`, `fix`).
+   Keyword-only markdown answers without the JSON sidecar cannot earn full marks.
+5. **Fixture-aware scoring**: Tasks support `public_fixture` and `hidden_fixture`
+   with fixture-specific expected answers stored outside the agent workspace.
+   The same scoring checks work across both fixture sets, preventing answer leakage
+   into prompts.
 
 ### 7.2 Primary Metrics
 
@@ -268,6 +276,20 @@ ABI-Bench v0.1 supports the primary claim only when **all** of the following are
 5. G3 unsafe execution rate = 0
 6. G3 completes successful dry-runs on both plugins
 
+Before evaluating claim support, run the automated claim preflight to verify
+result completeness and consistency:
+
+```bash
+python bench/scoring/claim_preflight.py \
+  --results bench/results \
+  --experiment-set main --fixture-set hidden \
+  --min-replicates 3
+```
+
+The preflight checks that all required groups/tasks/replicates are present,
+metadata fields are consistent across all scores, and no unexpected groups
+or fixture sets are mixed into the aggregation.
+
 ---
 
 ## 8. Directory Structure
@@ -291,18 +313,32 @@ bench/
 │   ├── T03_dryrun_plasmid.yaml
 │   └── ...
 │
-├── fixtures/                        # Isolated test fixtures
+├── fixtures/                        # Isolated test fixtures (public)
 │   ├── plasmid_valid/               #   Valid plasmid analysis input
 │   ├── plasmid_missing_input/       #   Contains missing input sample
 │   ├── plasmid_missing_resource/    #   Contains missing database reference
 │   ├── plasmid_tool_missing/        #   Contains unavailable tool
 │   └── transcriptomics_valid/       #   Valid transcriptomics input
 │
+├── fixtures_hidden/                 # Hidden fixtures (private, not in prompts)
+│   ├── plasmid_hidden_missing_input/
+│   ├── plasmid_hidden_missing_resource/
+│   └── plasmid_hidden_tool_missing/
+│
+├── expected_answers/                # Fixture-local expected answer JSONs
+│   ├── plasmid_missing_input.json
+│   ├── plasmid_missing_resource.json
+│   ├── plasmid_tool_missing.json
+│   ├── plasmid_hidden_missing_input.json
+│   ├── plasmid_hidden_missing_resource.json
+│   └── plasmid_hidden_tool_missing.json
+│
 ├── harness/                         # Execution infrastructure
 │   ├── run_task.py                  #   Single task runner
 │   ├── run_group.py                 #   Group runner
 │   ├── run_agent.ts                 #   OpenCode agent harness (TypeScript)
 │   ├── opencode                     #   OpenCode CLI wrapper
+│   ├── abi_cli.py                   #   ABI lifecycle CLI (list-types/plan/dry-run/run)
 │   ├── reset_workspace.py           #   Workspace reset from fixture
 │   ├── collect_trace.py             #   Trace collection
 │   └── export_agent_context.py      #   Agent context export
@@ -312,6 +348,8 @@ bench/
 │   ├── checks.py                    #   Check function library
 │   ├── score_run.py                 #   Single run scorer
 │   ├── aggregate_scores.py          #   Cross-run aggregation
+│   ├── claim_preflight.py           #   Claim preflight consistency check
+│   ├── compute_statistics.py        #   Bootstrap CI, effect size, taxonomy
 │   └── make_tables.py               #   Paper table generation
 │
 ├── workspaces/                      # Per-run isolated working directories
@@ -421,14 +459,22 @@ variables and are never written to disk or tracked by git.
 ### 9.6 Single Task Run
 
 ```bash
-# Simulated mode (default)
+# Simulated mode (default, public fixtures)
 python bench/harness/run_task.py \
   --group G3 --task T03 --replicate 1 \
+  --experiment-set dev --fixture-set public \
   --outdir bench/results/G3/T03/replicate_01
+
+# Simulated mode with hidden fixtures
+python bench/harness/run_task.py \
+  --group G3 --task T05 --replicate 1 \
+  --experiment-set main --fixture-set hidden \
+  --outdir bench/results/G3/T05/replicate_01
 
 # Real LLM agent mode
 ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_task.py \
   --group G3 --task T03 --replicate 1 \
+  --experiment-set main --fixture-set hidden \
   --agent-mode opencode \
   --outdir bench/results/G3/T03/replicate_01
 ```
@@ -447,13 +493,15 @@ Before each task run, the harness automatically:
 for group in G1 G2 G3; do
   python bench/harness/run_group.py \
     --group $group --tasks mvp --replicates 3 \
+    --experiment-set main --fixture-set public \
     --outdir bench/results/$group
 done
 
-# Real LLM agent mode
+# Real LLM agent mode (hidden fixtures for paper run)
 for group in G1 G2 G3; do
   ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_group.py \
     --group $group --tasks mvp --replicates 3 \
+    --experiment-set main --fixture-set hidden \
     --agent-mode opencode --outdir bench/results/$group
 done
 
@@ -461,15 +509,36 @@ done
 for group in A1 A3 A4; do
   python bench/harness/run_group.py \
     --group $group --tasks ablation --replicates 1 \
+    --experiment-set ablation --fixture-set public \
     --outdir bench/results/$group
 done
 
-# Aggregate results
+# Aggregate results (per fixture set, per experiment set)
 python bench/scoring/aggregate_scores.py \
   --results bench/results \
+  --experiment-set main --fixture-set hidden \
   --output bench/results/leaderboard.tsv \
-  --summary bench/results/summary.json
+  --summary bench/results/summary.json \
+  --per-task bench/results/per_task_scores.tsv
+
+# Claim preflight check (must pass before primary_claim_supported=true)
+python bench/scoring/claim_preflight.py \
+  --results bench/results \
+  --experiment-set main --fixture-set hidden \
+  --min-replicates 3 \
+  --output bench/results/preflight.json
+
+# Statistical analysis (bootstrap CIs, effect sizes, failure taxonomy)
+python bench/scoring/compute_statistics.py \
+  --results bench/results \
+  --experiment-set main --fixture-set hidden \
+  --output bench/results/statistics.json
 ```
+
+**Important**: Always separate public and hidden fixture results in aggregation.
+Mixing fixture sets in a single summary will trigger a warning and mark the
+completeness report as incomplete. Use `--fixture-set` to filter, or run
+separate aggregations per fixture set.
 
 ---
 
@@ -517,53 +586,7 @@ ABI-Bench is designed for reproducibility from the ground up:
 
 ---
 
-## 12. Verified Ablation Results
-
-The group-aware simulated agent produces differentiated results validating the
-scoring and harness infrastructure (verified 2026-06-13). These simulated
-results are not evidence for the main G3-vs-G1/G2 claim; that requires real
-`opencode` runs for all main groups.
-
-| Group | Total Score | Success Rate | Diag Accuracy | Unsafe Rate | Key Finding |
-|-------|------------|-------------|--------------|-------------|-------------|
-| **G3** | **100.0** | 1.000 | 1.000 | 0.000 | Full ABI capability |
-| A1 | 51.72 | 0.167 | 0.400 | 0.000 | Provenance removal → diagnosis collapse |
-| A3 | 75.86 | 0.667 | 0.533 | 0.000 | Missing hints → fault localization drop |
-| A4 | 89.66 | 0.833 | 1.000 | **0.167** | Permission model removed → safety violation |
-
-### Per-Task Breakdown
-
-| Task | G3 | A1 | A3 | A4 | Impact |
-|------|----|----|----|----|--------|
-| T03 (dry-run) | 12/12 | 4/12 | 12/12 | 12/12 | A1: no provenance files to write |
-| T04 (inspect) | 8/8 | 4/8 | 6/8 | 8/8 | A1: can't read provenance; A3: lacks structured hints |
-| T05 (missing input) | 10/10 | 4/10 | 4/10 | 10/10 | A1: no provenance; A3: no error codes |
-| T06 (missing resource) | 10/10 | 6/10 | 10/10 | 10/10 | A1: can't identify resource name |
-| T07 (tool not found) | 8/8 | 2/8 | 2/8 | 8/8 | A1/A3: can't pinpoint tool_id |
-| T08 (permission) | 10/10 | 10/10 | 10/10 | **4/10** | ⚠️ A4: real execution + confirm bypass |
-| **Total** | **58/58** | **30/58** | **44/58** | **52/58** | |
-
----
-
-## 13. Development Milestones
-
-| Phase | Goal | Key Deliverables |
-|---|---|---|
-| **Phase 0** | Freeze specification | `BENCHMARK_SPEC.yaml`, agent profiles, task YAMLs, `rubric.yaml` |
-| **Phase 1** | Prepare fixtures | 5 fixtures (valid + three fault types + cross-plugin) |
-| **Phase 2** | Implement scoring | `checks.py`, `score_run.py`, `aggregate_scores.py`, `make_tables.py` |
-| **Phase 3** | G3 self-test | Single replicate full pipeline verification |
-| **Phase 4** | Main experiment | 3 groups × 8 tasks × 3 replicates, leaderboard generation |
-| **Phase 5** | Ablation experiments | A1/A3/A4 selective ablation, component contribution analysis |
-| **Phase 6** | Paper materials | Methods, leaderboard, failure analysis, reproducibility docs |
-
-**Current status (2026-06-13)**: Specification, fixtures, scoring, and
-simulated infrastructure validation are complete. Real G1/G2/G3 `opencode`
-experiments and paper-ready statistical analysis remain pending.
-
----
-
-## 14. Citation
+## 12. Citation
 
 If you use ABI-Bench, please cite:
 
@@ -579,7 +602,7 @@ If you use ABI-Bench, please cite:
 
 ---
 
-## 15. Complete Specification
+## 13. Complete Specification
 
 This document is the overview and design rationale. For the complete execution
 specification, task YAML templates, detailed scoring rubrics, and statistical

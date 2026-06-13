@@ -23,6 +23,7 @@ node_modules/
 # Plan is the spec, not code
 Plan.md
 NEXT_DEVELOPMENT_PLAN.md
+DEVELOPMENT.md
 
 # OpenCode agent harness (install globally or clone into agent/)
 agent/
