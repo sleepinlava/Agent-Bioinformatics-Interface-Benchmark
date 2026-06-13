@@ -52,16 +52,27 @@ analysis.
 10. Paper table generation no longer emits empty G1/G2 rows as if they were
     valid results. Existing tables were regenerated from current score files.
 
+11. A minimal local ABI lifecycle CLI now exists at `bench/harness/abi_cli.py`.
+    It supports `list-types`, `plan`, `dry-run`, `inspect`, `diagnose`,
+    `report`, and permission-gated `run` without executing real bioinformatics
+    tools.
+
+12. G3 and ABI ablation groups now receive ABI CLI command hints in
+    `agent_context.json`; G1/G2 contexts explicitly mark the ABI interface as
+    unavailable.
+
 ## Current Verified Commands
 
 ```bash
-python -B -m py_compile bench/harness/*.py bench/scoring/*.py
+PYTHONDONTWRITEBYTECODE=1 python -c "from pathlib import Path; files=list(Path('bench/harness').glob('*.py'))+list(Path('bench/scoring').glob('*.py')); [compile(p.read_text(), str(p), 'exec') for p in files]; print('syntax ok', len(files))"
 python bench/harness/run_group.py --group G3 --tasks mvp --replicates 1 --agent-mode simulated --outdir bench/results/G3
 python bench/harness/run_group.py --group A1 --tasks ablation --replicates 1 --agent-mode simulated --outdir bench/results/A1
 python bench/harness/run_group.py --group A3 --tasks ablation --replicates 1 --agent-mode simulated --outdir bench/results/A3
 python bench/harness/run_group.py --group A4 --tasks ablation --replicates 1 --agent-mode simulated --outdir bench/results/A4
 python bench/scoring/aggregate_scores.py --results bench/results --output bench/results/leaderboard.tsv --summary bench/results/summary.json --per-task bench/results/per_task_scores.tsv
 python bench/scoring/make_tables.py --results bench/results --outdir docs/experiments/abi_bench_v0_1
+python bench/harness/abi_cli.py dry-run --workspace /tmp/abi_cli_plasmid --group G3 --analysis-type metagenomic_plasmid
+python bench/harness/abi_cli.py dry-run --workspace /tmp/abi_cli_transcriptomics --group G3 --analysis-type metatranscriptomics
 ```
 
 Current `bench/results/summary.json` reports `primary_claim_supported: false`
@@ -69,10 +80,10 @@ because G1/G2 real comparison results are not present.
 
 ## Remaining Problems
 
-1. Real `opencode` mode still does not expose true ABI-native tools such as
-   `abi_plan` or `abi_dry_run`; it mainly varies prompt/context and OpenCode
-   base tools. This weakens the causal interpretation of G3 vs G2 until a real
-   callable ABI layer is implemented.
+1. Real `opencode` mode now has a callable local ABI CLI, but it is still not a
+   native MCP/OpenCode tool server with enforced allowlists. G1/G2 could still
+   bypass isolation if they discover and invoke the CLI path. A stricter tool
+   isolation layer is needed before paper-grade real-agent runs.
 
 2. The current committed/working `bench/results` set contains simulated G3 and
    ablation runs, but no G1/G2 main experiment results. Main-claim reporting is

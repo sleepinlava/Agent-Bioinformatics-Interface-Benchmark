@@ -105,6 +105,7 @@ def export_context(group_id: str, task_id: str, workspace: Path) -> dict:
             "required_behavior": profile.get("required_behavior", []),
             "rule": profile.get("rule", {}).get("description", ""),
         },
+        "abi_interface": build_abi_interface(group_id, profile),
         "workspace_files": workspace_files,
         "expected_artifacts": task.get("expected_artifacts", []),
         "max_agent_steps": task.get("max_agent_steps", 50),
@@ -112,6 +113,45 @@ def export_context(group_id: str, task_id: str, workspace: Path) -> dict:
     }
 
     return context
+
+
+def build_abi_interface(group_id: str, profile: dict) -> dict:
+    """Expose callable ABI lifecycle commands only to ABI-enabled groups."""
+    allowed_tools = profile.get("allowed_tools", [])
+    abi_enabled = (
+        group_id == "G3"
+        or profile.get("base_profile") == "G3"
+        or any(str(tool).startswith("abi_") for tool in allowed_tools)
+    )
+    if not abi_enabled:
+        return {
+            "available": False,
+            "reason": "This group does not receive ABI lifecycle commands.",
+        }
+
+    cli = PROJECT_ROOT / "bench" / "harness" / "abi_cli.py"
+    workspace_token = "{workspace}"
+    analysis_token = "{analysis_type}"
+    base = f"python {cli}"
+    return {
+        "available": True,
+        "cli": str(cli),
+        "commands": {
+            "list_types": f"python {cli} list-types",
+            "plan": f"{base} plan --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token}",
+            "dry_run": f"{base} dry-run --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token}",
+            "inspect": f"{base} inspect --workspace {workspace_token} --group {group_id}",
+            "diagnose": f"{base} diagnose --workspace {workspace_token} --group {group_id}",
+            "report": f"{base} report --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token}",
+            "run": f"{base} run --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token}",
+        },
+        "rules": [
+            "Use dry-run for benchmark execution tasks.",
+            "Do not execute real bioinformatics tools directly.",
+            "The run command returns confirmation_required unless external confirmation is granted.",
+        ],
+        "removed_context": profile.get("removed_context", []),
+    }
 
 
 def main():
