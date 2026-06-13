@@ -46,11 +46,17 @@ def collect_scores(results_dir: Path) -> list[dict]:
     return scores
 
 
-def filter_scores(scores: list[dict], experiment_set: str | None = None) -> list[dict]:
-    """Filter score records by experiment_set if requested."""
-    if experiment_set is None:
-        return scores
-    return [s for s in scores if s.get("experiment_set", "unknown") == experiment_set]
+def filter_scores(
+    scores: list[dict],
+    experiment_set: str | None = None,
+    fixture_set: str | None = None,
+) -> list[dict]:
+    """Filter score records by experiment_set and/or fixture_set if requested."""
+    if experiment_set is not None:
+        scores = [s for s in scores if s.get("experiment_set", "unknown") == experiment_set]
+    if fixture_set is not None:
+        scores = [s for s in scores if s.get("fixture_set", "public") == fixture_set]
+    return scores
 
 
 def group_by(scores: list[dict], key: str) -> dict:
@@ -147,6 +153,7 @@ def compute_per_task_scores(scores: list[dict]) -> list[dict]:
         for ts in task_scores:
             rows.append({
                 "experiment_set": ts.get("experiment_set", "unknown"),
+                "fixture_set": ts.get("fixture_set", "public"),
                 "group_id": ts.get("group_id", "unknown"),
                 "task_id": ts.get("task_id", task_id),
                 "replicate": ts.get("replicate", 1),
@@ -158,7 +165,7 @@ def compute_per_task_scores(scores: list[dict]) -> list[dict]:
     return rows
 
 
-def build_summary(scores: list[dict], experiment_set: str | None = None) -> dict:
+def build_summary(scores: list[dict], experiment_set: str | None = None, fixture_set: str | None = None) -> dict:
     """Build the summary.json structure."""
     by_group = group_by(scores, "group_id")
     groups = expected_groups_for(experiment_set)
@@ -222,9 +229,10 @@ def build_summary(scores: list[dict], experiment_set: str | None = None) -> dict
         "model_id": _common_value(scores, "model_id", "mixed"),
         "agent_harness": _common_value(scores, "agent_harness", "mixed"),
         "experiment_set": experiment_set or "all",
+        "fixture_set": fixture_set or _common_value(scores, "fixture_set", "mixed"),
         "replicates": _estimate_replicates(scores),
         "groups": groups_stats,
-        "completeness": build_completeness_report(scores, experiment_set),
+        "completeness": build_completeness_report(scores, experiment_set, fixture_set),
         "claim_support": claim_support,
     }
 
@@ -241,10 +249,15 @@ def expected_tasks_for(experiment_set: str | None, observed: list[str]) -> list[
     return sorted(observed)
 
 
-def build_completeness_report(scores: list[dict], experiment_set: str | None = None) -> dict:
+def build_completeness_report(
+    scores: list[dict],
+    experiment_set: str | None = None,
+    fixture_set: str | None = None,
+) -> dict:
     """Report missing groups, tasks, and replicates for the selected experiment set."""
     observed_groups = sorted({s.get("group_id", "unknown") for s in scores})
     observed_tasks = sorted({s.get("task_id", "unknown") for s in scores})
+    observed_fixture_sets = sorted({s.get("fixture_set", "public") for s in scores})
     expected_groups = expected_groups_for(experiment_set)
     expected_tasks = expected_tasks_for(experiment_set, observed_tasks)
 
@@ -266,6 +279,7 @@ def build_completeness_report(scores: list[dict], experiment_set: str | None = N
                 })
 
     unknown_groups = [gid for gid in observed_groups if gid not in expected_groups]
+    fixture_set_mixed = len(observed_fixture_sets) > 1
     return {
         "expected_groups": expected_groups,
         "observed_groups": observed_groups,
@@ -276,7 +290,9 @@ def build_completeness_report(scores: list[dict], experiment_set: str | None = N
         "missing_tasks": [tid for tid in expected_tasks if tid not in observed_tasks],
         "expected_replicates": expected_replicates,
         "missing_runs": missing,
-        "complete": not missing and not unknown_groups,
+        "observed_fixture_sets": observed_fixture_sets,
+        "fixture_set_mixed": fixture_set_mixed,
+        "complete": not missing and not unknown_groups and not fixture_set_mixed,
     }
 
 
@@ -359,12 +375,13 @@ def generate_per_task_tsv(per_task: list[dict], output_path: Path):
     """Write per_task_scores.tsv."""
     if not per_task:
         return
-    headers = ["experiment_set", "group_id", "task_id", "replicate", "score", "max_score", "passed", "failure_codes"]
+    headers = ["experiment_set", "fixture_set", "group_id", "task_id", "replicate", "score", "max_score", "passed", "failure_codes"]
     with open(output_path, "w") as f:
         f.write("\t".join(headers) + "\n")
         for row in per_task:
             f.write("\t".join([
                 row["experiment_set"],
+                row["fixture_set"],
                 row["group_id"],
                 row["task_id"],
                 str(row["replicate"]),
@@ -388,19 +405,33 @@ def main():
         choices=["dev", "main", "ablation", "full"],
         help="Only aggregate score files from this experiment set",
     )
+    parser.add_argument(
+        "--fixture-set",
+        choices=["public", "hidden"],
+        help="Only aggregate score files from this fixture set",
+    )
     args = parser.parse_args()
 
+    # Warn if fixture_set is mixed and no filter specified
     all_scores = collect_scores(args.results)
-    scores = filter_scores(all_scores, args.experiment_set)
+    scores = filter_scores(all_scores, args.experiment_set, args.fixture_set)
     print(f"Collected {len(all_scores)} score files from {args.results}")
     if args.experiment_set:
         print(f"Filtered to {len(scores)} score files for experiment_set={args.experiment_set}")
+    if args.fixture_set:
+        print(f"Filtered to {len(scores)} score files for fixture_set={args.fixture_set}")
+
+    # Check for mixed fixture sets in the filtered scores
+    observed_fixture_sets = {s.get("fixture_set", "public") for s in scores}
+    if len(observed_fixture_sets) > 1:
+        print(f"WARNING: Multiple fixture sets in aggregation: {observed_fixture_sets}")
+        print("  Consider using --fixture-set to filter, or run separate aggregations per fixture set.")
 
     if not scores:
         print("No scores found. Generate scores first with score_run.py.")
         return 1
 
-    summary = build_summary(scores, experiment_set=args.experiment_set)
+    summary = build_summary(scores, experiment_set=args.experiment_set, fixture_set=args.fixture_set)
     per_task = compute_per_task_scores(scores)
 
     # Write leaderboard
@@ -420,6 +451,8 @@ def main():
 
     # Print main results
     print("\n=== ABI-Bench v0.1 Leaderboard ===")
+    fs_info = f" [fixture_set={args.fixture_set}]" if args.fixture_set else ""
+    print(f"Experiment set: {args.experiment_set or 'all'}{fs_info}")
     for gid in ["G1", "G2", "G3"]:
         gs = summary["groups"].get(gid, {})
         if gs.get("score_count", 0) == 0:
