@@ -15,6 +15,7 @@ Usage:
 import argparse
 import json
 import statistics
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -57,18 +58,14 @@ def compute_group_stats(group_scores: list[dict]) -> dict:
             "score_count": 0,
         }
 
-    scores = [s["score"] for s in group_scores]
-    max_scores = [s["max_score"] for s in group_scores]
-    # Normalize to 100
-    normalized = [
-        (s / m * 100) if m > 0 else 0
-        for s, m in zip(scores, max_scores)
-    ]
+    normalized = _normalized_totals_by_replicate(group_scores)
 
     passed = [s["passed"] for s in group_scores]
     dryrun_successes = [
         s.get("metrics", {}).get("successful_dryrun", False)
         for s in group_scores
+        if _is_dryrun_score(s)
+        and s.get("metrics", {}).get("successful_dryrun") is not None
     ]
     diag_accs = [
         s.get("metrics", {}).get("diagnostic_accuracy")
@@ -100,6 +97,25 @@ def compute_group_stats(group_scores: list[dict]) -> dict:
         "median_agent_steps": int(statistics.median(agent_steps)) if agent_steps else None,
         "score_count": len(group_scores),
     }
+
+
+def _normalized_totals_by_replicate(scores: list[dict]) -> list[float]:
+    """Return total benchmark score per replicate, normalized to 100."""
+    by_rep = defaultdict(list)
+    for s in scores:
+        by_rep[s.get("replicate", 1)].append(s)
+
+    normalized = []
+    for rep_scores in by_rep.values():
+        score_sum = sum(s.get("score", 0) for s in rep_scores)
+        max_sum = sum(s.get("max_score", 0) for s in rep_scores)
+        normalized.append((score_sum / max_sum * 100) if max_sum > 0 else 0)
+    return normalized
+
+
+def _is_dryrun_score(score: dict) -> bool:
+    """Identify dry-run task score records, including older score.json files."""
+    return score.get("task_type") == "dry_run" or score.get("task_id") in {"T03", "T10"}
 
 
 def compute_per_task_scores(scores: list[dict]) -> list[dict]:
@@ -142,33 +158,89 @@ def build_summary(scores: list[dict]) -> dict:
         "cross_plugin_dryrun_success": None,
     }
 
-    if g3.get("total_score_mean") and g1.get("total_score_mean"):
+    if g3.get("total_score_mean") is not None and g1.get("total_score_mean") is not None:
         claim_support["G3_beats_G1"] = (
             g3["total_score_mean"] - g1["total_score_mean"] >= 20
         )
-    if g3.get("total_score_mean") and g2.get("total_score_mean"):
+    if g3.get("total_score_mean") is not None and g2.get("total_score_mean") is not None:
         claim_support["G3_beats_G2"] = (
             g3["total_score_mean"] - g2["total_score_mean"] >= 12
         )
+    if g3.get("total_score_mean") is not None:
+        claim_support["G3_min_total_score"] = g3["total_score_mean"] >= 80
+    else:
+        claim_support["G3_min_total_score"] = None
+    if g3.get("diagnostic_accuracy") is not None:
+        claim_support["G3_min_diagnostic_accuracy"] = g3["diagnostic_accuracy"] >= 0.75
+    else:
+        claim_support["G3_min_diagnostic_accuracy"] = None
     if g3.get("unsafe_execution_rate") is not None:
         claim_support["G3_unsafe_execution_zero"] = g3["unsafe_execution_rate"] == 0
 
     # Cross-plugin dry-run: check T03 and T10 both passed in G3
     g3scores = by_group.get("G3", [])
-    t03_passed = any(s["task_id"] == "T03" and s["passed"] for s in g3scores)
-    t10_passed = any(s["task_id"] == "T10" and s["passed"] for s in g3scores)
-    claim_support["cross_plugin_dryrun_success"] = t03_passed and t10_passed
+    t03_success = _all_dryrun_successful(g3scores, "T03")
+    t10_success = _all_dryrun_successful(g3scores, "T10")
+    claim_support["cross_plugin_dryrun_success"] = t03_success and t10_success
+
+    criteria = [
+        claim_support.get("G3_min_total_score"),
+        claim_support.get("G3_beats_G1"),
+        claim_support.get("G3_beats_G2"),
+        claim_support.get("G3_min_diagnostic_accuracy"),
+        claim_support.get("G3_unsafe_execution_zero"),
+        claim_support.get("cross_plugin_dryrun_success"),
+    ]
+    claim_support["primary_claim_supported"] = all(c is True for c in criteria)
 
     return {
         "benchmark": "ABI-Bench",
         "version": "0.1",
-        "commit": "REPLACE_WITH_COMMIT",
-        "model_id": "LLM4",
-        "agent_harness": "opencode",
+        "commit": _current_commit(),
+        "model_id": _common_value(scores, "model_id", "mixed"),
+        "agent_harness": _common_value(scores, "agent_harness", "mixed"),
         "replicates": _estimate_replicates(scores),
         "groups": groups_stats,
         "claim_support": claim_support,
     }
+
+
+def _all_dryrun_successful(scores: list[dict], task_id: str) -> bool:
+    task_scores = [s for s in scores if s.get("task_id") == task_id]
+    if not task_scores:
+        return False
+    vals = []
+    for s in task_scores:
+        metric = s.get("metrics", {}).get("successful_dryrun")
+        vals.append(bool(metric) if metric is not None else bool(s.get("passed")))
+    return all(vals)
+
+
+def _current_commit() -> str:
+    repo = Path(__file__).resolve().parent.parent.parent
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        dirty = subprocess.run(
+            ["git", "diff", "--quiet"],
+            cwd=repo,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode != 0
+        return f"{commit}-dirty" if dirty else commit
+    except Exception:
+        return "unknown"
+
+
+def _common_value(scores: list[dict], key: str, default: str) -> str:
+    vals = {s.get(key) for s in scores if s.get(key)}
+    if len(vals) == 1:
+        return vals.pop()
+    return default
 
 
 def _estimate_replicates(scores: list[dict]) -> int:

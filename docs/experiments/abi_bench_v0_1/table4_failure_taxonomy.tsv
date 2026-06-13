@@ -1,1 +1,5 @@
-# No data
+Failure_Code	G1_count	G2_count	G3_count	A1_count	A3_count	A4_count
+artifact_missing	0	0	0	3	2	0
+confirm_execution_violation	0	0	0	0	0	1
+diagnosis_incomplete	0	0	0	2	1	0
+real_execution_violation	0	0	0	0	0	1

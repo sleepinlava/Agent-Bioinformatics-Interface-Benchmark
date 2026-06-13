@@ -2,10 +2,12 @@
   "benchmark": "ABI-Bench",
   "version": "0.1",
   "task_id": "T03",
+  "task_type": "dry_run",
   "group_id": "G3",
   "replicate": 1,
   "model_id": "LLM4",
   "agent_harness": "opencode",
+  "agent_mode": "simulated",
   "score": 12,
   "max_score": 12,
   "passed": true,
@@ -112,5 +114,5 @@
   ],
   "failure_codes": [],
   "failure_reasons": [],
-  "timestamp": "2026-06-12T18:44:56.569882+00:00"
+  "timestamp": "2026-06-13T11:52:35.994384+00:00"
 }

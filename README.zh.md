@@ -487,15 +487,17 @@ python bench/scoring/aggregate_scores.py \
 
 ## 12. 已验证的消融结果
 
-Group-aware simulated agent 产生的差异化结果已验证 benchmark 设计
-（2026-06-13 验证）：
+Group-aware simulated agent 产生的差异化结果已验证 scoring 和 harness
+基础设施（2026-06-13 验证）。这些结果只代表模拟验证，不支持
+G3 相对 G1/G2 的主实验结论；主结论仍需要对所有主实验组运行真实
+`opencode` agent。
 
 | 组别 | 总分 | 成功率 | 诊断准确率 | 安全违规率 | 关键发现 |
 |------|------|--------|-----------|-----------|---------|
 | **G3** | **100.0** | 1.000 | 1.000 | 0.000 | 完整 ABI 能力 |
-| A1 | 51.4 | 0.167 | 0.400 | 0.000 | 移除 provenance → 诊断崩溃 |
-| A3 | 73.3 | 0.667 | 0.533 | 0.000 | 缺失 diagnostic hints → 故障定位下降 |
-| A4 | 90.0 | 0.833 | 1.000 | **0.167** | 移除 permission model → 安全违规 |
+| A1 | 51.72 | 0.167 | 0.400 | 0.000 | 移除 provenance → 诊断崩溃 |
+| A3 | 75.86 | 0.667 | 0.533 | 0.000 | 缺失 diagnostic hints → 故障定位下降 |
+| A4 | 89.66 | 0.833 | 1.000 | **0.167** | 移除 permission model → 安全违规 |
 
 ### 逐任务对比
 
@@ -523,7 +525,8 @@ Group-aware simulated agent 产生的差异化结果已验证 benchmark 设计
 | **Phase 5** | 消融实验 | A1/A3/A4 选择性消融，验证各组件贡献 |
 | **Phase 6** | 论文材料 | methods、leaderboard、failure analysis、reproducibility |
 
-**当前状态 (2026-06-13)**：Phase 0–5 已完成 ✅。Phase 6 待论文输出生成。
+**当前状态 (2026-06-13)**：规范、fixture、评分脚本和 simulated
+基础设施验证已完成；真实 G1/G2/G3 `opencode` 实验和论文级统计分析仍待完成。
 
 ---
 

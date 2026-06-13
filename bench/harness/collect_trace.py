@@ -14,6 +14,7 @@ Usage:
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,7 +53,7 @@ def collect_trace(source_dir: Path, output_dir: Path, task_id: str = None,
         "replicate": replicate,
         "model_id": "LLM4",
         "agent_harness": "opencode",
-        "commit": "REPLACE_WITH_COMMIT",
+        "commit": _current_commit(),
         "start_time": datetime.now(timezone.utc).isoformat(),
         "end_time": datetime.now(timezone.utc).isoformat(),
         "workspace_dir": str(output_dir).replace("traces", "workspaces"),
@@ -73,6 +74,26 @@ def _infer_from_path(path: Path, prefix: str) -> str:
         if p.startswith(prefix):
             return p
     return "unknown"
+
+
+def _current_commit() -> str:
+    repo = Path(__file__).resolve().parent.parent.parent
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        dirty = subprocess.run(
+            ["git", "diff", "--quiet"],
+            cwd=repo,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode != 0
+        return f"{commit}-dirty" if dirty else commit
+    except Exception:
+        return "unknown"
 
 
 def main():

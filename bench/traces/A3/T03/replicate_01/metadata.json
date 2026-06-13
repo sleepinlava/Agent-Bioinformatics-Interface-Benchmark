@@ -7,8 +7,8 @@
   "model_id": "LLM4",
   "agent_harness": "opencode",
   "commit": "REPLACE_WITH_COMMIT",
-  "start_time": "2026-06-12T18:38:30.668113+00:00",
-  "end_time": "2026-06-12T18:38:30.668135+00:00",
+  "start_time": "2026-06-13T11:52:56.556259+00:00",
+  "end_time": "2026-06-13T11:52:56.556279+00:00",
   "workspace_dir": "/home/bker/bench/Bench_1/bench/workspaces/A3/T03/replicate_01",
   "result_dir": "bench/results/A3/T03/replicate_01",
   "collected_files": [
@@ -16,5 +16,7 @@
     "tool_calls.jsonl",
     "commands.log",
     "final_answer.md"
-  ]
+  ],
+  "agent_mode": "simulated",
+  "agent_exit_code": 0
 }

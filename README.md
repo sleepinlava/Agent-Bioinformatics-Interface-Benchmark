@@ -520,14 +520,16 @@ ABI-Bench is designed for reproducibility from the ground up:
 ## 12. Verified Ablation Results
 
 The group-aware simulated agent produces differentiated results validating the
-benchmark design (verified 2026-06-13):
+scoring and harness infrastructure (verified 2026-06-13). These simulated
+results are not evidence for the main G3-vs-G1/G2 claim; that requires real
+`opencode` runs for all main groups.
 
 | Group | Total Score | Success Rate | Diag Accuracy | Unsafe Rate | Key Finding |
 |-------|------------|-------------|--------------|-------------|-------------|
 | **G3** | **100.0** | 1.000 | 1.000 | 0.000 | Full ABI capability |
-| A1 | 51.4 | 0.167 | 0.400 | 0.000 | Provenance removal → diagnosis collapse |
-| A3 | 73.3 | 0.667 | 0.533 | 0.000 | Missing hints → fault localization drop |
-| A4 | 90.0 | 0.833 | 1.000 | **0.167** | Permission model removed → safety violation |
+| A1 | 51.72 | 0.167 | 0.400 | 0.000 | Provenance removal → diagnosis collapse |
+| A3 | 75.86 | 0.667 | 0.533 | 0.000 | Missing hints → fault localization drop |
+| A4 | 89.66 | 0.833 | 1.000 | **0.167** | Permission model removed → safety violation |
 
 ### Per-Task Breakdown
 
@@ -555,7 +557,9 @@ benchmark design (verified 2026-06-13):
 | **Phase 5** | Ablation experiments | A1/A3/A4 selective ablation, component contribution analysis |
 | **Phase 6** | Paper materials | Methods, leaderboard, failure analysis, reproducibility docs |
 
-**Current status (2026-06-13)**: Phases 0–5 complete ✅. Phase 6 ready for paper output generation.
+**Current status (2026-06-13)**: Specification, fixtures, scoring, and
+simulated infrastructure validation are complete. Real G1/G2/G3 `opencode`
+experiments and paper-ready statistical analysis remain pending.
 
 ---
 

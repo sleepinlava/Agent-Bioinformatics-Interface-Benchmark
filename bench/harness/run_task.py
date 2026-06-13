@@ -115,10 +115,11 @@ def run_task(
 
     # Step 4: Collect traces
     print("\n[4/5] Collecting traces...")
+    agent_log_source = trace_dir / ".agent_log" if use_real_agent else workspace_dir / ".agent_log"
     trace_result = subprocess.run([
         sys.executable,
         str(PROJECT_ROOT / "bench" / "harness" / "collect_trace.py"),
-        "--source", str(workspace_dir / ".agent_log"),
+        "--source", str(agent_log_source),
         "--output", str(trace_dir),
         "--task-id", task_id,
         "--group-id", group_id,
@@ -137,6 +138,8 @@ def run_task(
         meta["result_dir"] = str(outdir)
         meta["model_id"] = model_id
         meta["agent_harness"] = agent_harness
+        meta["agent_mode"] = "opencode" if use_real_agent else "simulated"
+        meta["agent_exit_code"] = agent_result
         with open(metadata_path, "w") as f:
             json.dump(meta, f, indent=2)
 
@@ -205,8 +208,9 @@ def _launch_agent_opencode(
     3. Waits for agent completion
     4. Collects traces
 
-    Falls back to simulated agent if bun is unavailable or
-    use_real_agent is False.
+    Uses the simulated agent only when use_real_agent is False. In real
+    opencode mode, launch failures are recorded as failed traces instead of
+    falling back to simulated output.
     """
     if not use_real_agent:
         print("  Using simulated agent (use_real_agent=False)")
@@ -219,14 +223,18 @@ def _launch_agent_opencode(
         bun_path = str(home_bun)
 
     if not bun_path:
-        print("  WARNING: bun not found. Falling back to simulated agent.")
-        return _launch_agent(group_id, task_id, workspace_dir, trace_dir, context_path)
+        msg = "bun not found; cannot run opencode agent mode."
+        print(f"  ERROR: {msg}")
+        _write_agent_failure(trace_dir, task_id, msg)
+        return 127
 
     # Load task YAML to get the prompt
     task_files = list(PROJECT_ROOT.glob(f"bench/tasks/{task_id}_*.yaml"))
     if not task_files:
-        print(f"  WARNING: No task YAML found for {task_id}. Falling back to simulated agent.")
-        return _launch_agent(group_id, task_id, workspace_dir, trace_dir, context_path)
+        msg = f"No task YAML found for {task_id}; cannot run opencode agent mode."
+        print(f"  ERROR: {msg}")
+        _write_agent_failure(trace_dir, task_id, msg)
+        return 1
 
     import yaml
     with open(task_files[0]) as f:
@@ -316,9 +324,28 @@ def _launch_agent_opencode(
         return 124  # Standard timeout exit code
     except Exception as e:
         print(f"  ERROR launching agent: {e}")
-        # Fall back to simulated on error
-        print("  Falling back to simulated agent...")
-        return _launch_agent(group_id, task_id, workspace_dir, trace_dir, context_path)
+        _write_agent_failure(trace_dir, task_id, str(e))
+        return 1
+
+
+def _write_agent_failure(trace_dir: Path, task_id: str, message: str):
+    """Write a minimal trace bundle so scoring records a failed real-agent run."""
+    log_dir = trace_dir / ".agent_log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    with open(log_dir / "agent_trace.jsonl", "w") as f:
+        f.write(json.dumps({
+            "step": 1,
+            "action": "agent_launch_failed",
+            "task_id": task_id,
+            "error": message,
+            "human_intervention": False,
+        }) + "\n")
+    with open(log_dir / "tool_calls.jsonl", "w") as f:
+        f.write("")
+    with open(log_dir / "commands.log", "w") as f:
+        f.write("# Agent launch failed before command execution\n")
+    with open(log_dir / "final_answer.md", "w") as f:
+        f.write(f"# Agent Launch Failed\n\n{message}\n")
 
 
 def _launch_agent(group_id: str, task_id: str, workspace_dir: Path, trace_dir: Path, context_path: Path) -> int:

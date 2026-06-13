@@ -414,7 +414,7 @@ async function main() {
 
     // Read key files for context (config.yaml, sample_sheet.tsv)
     let keyFilesContent = ""
-    const keyFiles = ["config.yaml", "sample_sheet.tsv", "README.md"]
+    const keyFiles = ["agent_context.json", "config.yaml", "sample_sheet.tsv", "README.md"]
     for (const kf of keyFiles) {
       const kfPath = join(WORKSPACE_DIR, kf)
       if (existsSync(kfPath)) {

@@ -2,10 +2,12 @@
   "benchmark": "ABI-Bench",
   "version": "0.1",
   "task_id": "T03",
+  "task_type": "dry_run",
   "group_id": "A1",
   "replicate": 1,
   "model_id": "LLM4",
   "agent_harness": "opencode",
+  "agent_mode": "simulated",
   "score": 4,
   "max_score": 12,
   "passed": false,
@@ -122,5 +124,5 @@
     "Check 'progress_jsonl_exists' (check_file_exists) returned False",
     "Check 'statuses_are_dryrun_or_skipped' (check_allowed_statuses) returned False"
   ],
-  "timestamp": "2026-06-12T18:38:26.028998+00:00"
+  "timestamp": "2026-06-13T11:52:57.497456+00:00"
 }

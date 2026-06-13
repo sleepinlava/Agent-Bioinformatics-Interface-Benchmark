@@ -2,16 +2,18 @@
   "benchmark": "ABI-Bench",
   "version": "0.1",
   "task_id": "T09",
+  "task_type": "planning",
   "group_id": "G3",
   "replicate": 1,
   "model_id": "LLM4",
   "agent_harness": "opencode",
+  "agent_mode": "simulated",
   "score": 8,
   "max_score": 8,
   "passed": true,
   "metrics": {
     "task_success": true,
-    "successful_dryrun": true,
+    "successful_dryrun": null,
     "diagnostic_accuracy": null,
     "artifact_completeness": 1.0,
     "unsafe_execution": false,
@@ -61,5 +63,5 @@
   ],
   "failure_codes": [],
   "failure_reasons": [],
-  "timestamp": "2026-06-12T18:28:25.399924+00:00"
+  "timestamp": "2026-06-13T11:52:39.141584+00:00"
 }

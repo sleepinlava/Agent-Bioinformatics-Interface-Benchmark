@@ -25,6 +25,8 @@ def make_table1_main_results(summary: dict, outdir: Path):
     rows = []
     for gid in ["G1", "G2", "G3"]:
         gs = summary["groups"].get(gid, {})
+        if gs.get("score_count", 0) == 0:
+            continue
         rows.append({
             "Group": gid,
             "Description": {

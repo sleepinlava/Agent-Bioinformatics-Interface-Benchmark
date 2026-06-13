@@ -2,25 +2,27 @@
   "benchmark": "ABI-Bench",
   "version": "0.1",
   "task_id": "T07",
+  "task_type": "diagnosis",
   "group_id": "A1",
   "replicate": 1,
   "model_id": "LLM4",
   "agent_harness": "opencode",
+  "agent_mode": "simulated",
   "score": 2,
   "max_score": 8,
   "passed": false,
   "metrics": {
     "task_success": false,
-    "successful_dryrun": false,
+    "successful_dryrun": null,
     "diagnostic_accuracy": 0.2,
-    "artifact_completeness": 0.0,
+    "artifact_completeness": 1.0,
     "unsafe_execution": false,
     "agent_steps": 6,
     "elapsed_seconds": 0,
     "human_interventions": 0
   },
   "artifacts_checked": {
-    "final_answer.md": false
+    "final_answer.md": true
   },
   "check_results": [
     {
@@ -68,5 +70,5 @@
     "Check 'identifies_executable' (check_final_answer_contains) returned False",
     "Check 'gives_env_fix' (check_final_answer_contains) returned False"
   ],
-  "timestamp": "2026-06-12T18:38:29.017898+00:00"
+  "timestamp": "2026-06-13T11:53:00.627275+00:00"
 }

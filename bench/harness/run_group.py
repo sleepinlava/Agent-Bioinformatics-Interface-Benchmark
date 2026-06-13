@@ -45,6 +45,7 @@ def run_group(
     replicates: int = 3,
     model_id: str = "LLM4",
     agent_harness: str = "opencode",
+    agent_mode: str = "simulated",
     outdir: Path = None,
 ):
     """Run all tasks for a group."""
@@ -60,6 +61,7 @@ def run_group(
     print(f"ABI-Bench v0.1 — Run Group '{group_id}'")
     print(f"  Tasks: {tasks}")
     print(f"  Replicates: {replicates}")
+    print(f"  Agent mode: {agent_mode}")
     print(f"  Total runs: {total_runs}")
     print(f"  Outdir: {outdir}")
     print(f"{'='*70}")
@@ -82,6 +84,7 @@ def run_group(
                 "--replicate", str(rep),
                 "--model", model_id,
                 "--agent", agent_harness,
+                "--agent-mode", agent_mode,
                 "--outdir", str(run_outdir),
             ])
 
@@ -122,6 +125,13 @@ def main():
     parser.add_argument("--replicates", type=int, default=3, help="Number of replicates per task")
     parser.add_argument("--model", type=str, default="LLM4", help="Model ID")
     parser.add_argument("--agent", type=str, default="opencode", help="Agent harness name")
+    parser.add_argument(
+        "--agent-mode",
+        type=str,
+        choices=["simulated", "opencode"],
+        default="simulated",
+        help="Agent execution mode: simulated (default) or opencode (real LLM)",
+    )
     parser.add_argument("--outdir", type=Path, help="Output directory for results")
     args = parser.parse_args()
 
@@ -132,6 +142,7 @@ def main():
         replicates=args.replicates,
         model_id=args.model,
         agent_harness=args.agent,
+        agent_mode=args.agent_mode,
         outdir=args.outdir,
     )
     return 1 if failures else 0

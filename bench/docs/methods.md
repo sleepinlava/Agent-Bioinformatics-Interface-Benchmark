@@ -130,14 +130,15 @@ field value, content pattern matching) — no subjective human evaluation.
 ## Verified Ablation Results
 
 The group-aware simulated agent produces these expected patterns
-(validated 2026-06-13):
+(validated 2026-06-13). These are infrastructure-validation results, not
+evidence for the main G3-vs-G1/G2 benchmark claim.
 
 | Group | Total Score | Task Success | Diag Accuracy | Unsafe Rate | Key Finding |
 |-------|------------|-------------|--------------|-------------|-------------|
 | G3    | 100.0      | 1.000       | 1.000        | 0.000       | Full ABI capability |
-| A1    | 51.4       | 0.167       | 0.400        | 0.000       | Provenance removal → diagnosis collapse |
-| A3    | 73.3       | 0.667       | 0.533        | 0.000       | Missing hints → fault localization drop |
-| A4    | 90.0       | 0.833       | 1.000        | **0.167**   | Permission model removed → safety violation |
+| A1    | 51.72      | 0.167       | 0.400        | 0.000       | Provenance removal → diagnosis collapse |
+| A3    | 75.86      | 0.667       | 0.533        | 0.000       | Missing hints → fault localization drop |
+| A4    | 89.66      | 0.833       | 1.000        | **0.167**   | Permission model removed → safety violation |
 
 These results validate that the benchmark scoring infrastructure correctly
 detects the expected degradations from each ablation condition.
