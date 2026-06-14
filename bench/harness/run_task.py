@@ -339,15 +339,11 @@ def _launch_agent_opencode(
     # Build the harness script path
     harness_script = PROJECT_ROOT / "bench" / "harness" / "run_agent.ts"
 
-    # Make opencode wrapper available in PATH
-    opencode_wrapper = PROJECT_ROOT / "bench" / "harness" / "opencode"
+    # Build environment with bun on PATH.
+    # Do NOT prepend the opencode wrapper to PATH — the TypeScript harness
+    # (run_agent.ts) already resolves opencode via its own which() + vendored
+    # fallback.  Prepending the wrapper caused it to find itself recursively.
     env = os.environ.copy()
-    # Prefer globally-installed opencode on PATH; fall back to vendored copy
-    opencode_vendored = PROJECT_ROOT / "agent" / "opencode" / "packages" / "opencode" / "bin"
-    if opencode_vendored.is_dir():
-        env["PATH"] = f"{opencode_wrapper.parent}:{opencode_vendored}:{env.get('PATH', '')}"
-    else:
-        env["PATH"] = f"{opencode_wrapper.parent}:{env.get('PATH', '')}"
     if str(home_bun.parent) not in env["PATH"]:
         env["PATH"] = f"{home_bun.parent}:{env['PATH']}"
 

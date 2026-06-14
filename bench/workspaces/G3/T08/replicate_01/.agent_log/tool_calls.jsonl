@@ -1,5 +1,0 @@
-{"tool": "read_file", "args": {"path": "config.yaml"}}
-{"tool": "read_file", "args": {"path": "sample_sheet.tsv"}}
-{"tool": "abi_list_types", "args": {}}
-{"tool": "abi_plan", "args": {"analysis_type": "metagenomic_plasmid"}}
-{"tool": "abi_dry_run", "args": {"plan": "execution_plan.json"}}

@@ -293,7 +293,7 @@ async function createServer(options: {
   // Merge provider config into the existing OPENCODE_CONFIG_CONTENT
   const providerConfig = buildProviderConfig()
   const configContent = {
-    logLevel: "error",
+    logLevel: "ERROR",
     ...providerConfig,
   }
   if (args["model"]) {
@@ -477,54 +477,98 @@ async function main() {
       tools: agentConfig.tools,
     })
 
-    // Wait for agent to complete (poll status)
+    // Wait for agent to complete — poll messages directly.
+    // Status API format varies across OpenCode versions; message-based detection
+    // is more reliable: we declare "done" when the message count stabilizes
+    // (no new messages in 2 consecutive polls) and at least one assistant
+    // message exists.
     console.log("  Waiting for agent to complete...")
     const deadline = Date.now() + TIMEOUT_MS
     let isDone = false
     let pollCount = 0
+    let prevTotalMessages = -1
+    let stablePolls = 0
 
     while (!isDone && Date.now() < deadline) {
       await sleep(5000) // Poll every 5 seconds
       pollCount++
 
       try {
-        const statusResp = await client.session.status({
-          directory: WORKSPACE_DIR,
-        })
-        const statusData = (statusResp as any).data || statusResp
-        const statuses = statusData as Record<string, { type: string }>
-        const sessionStatus = statuses[sessionId]
+        // Fast path: if status API works, use it
+        let statusKnown = false
+        try {
+          const statusResp = await client.session.status({
+            directory: WORKSPACE_DIR,
+          })
+          const statusData = (statusResp as any).data || statusResp
+          // OpenCode v2 may return { data: { sessions: [...] } } or a flat map
+          const sessionStatus: { type?: string } | undefined =
+            statusData?.[sessionId] ??
+            statusData?.sessions?.find?.((s: any) => s.id === sessionId) ??
+            (Array.isArray(statusData)
+              ? statusData.find((s: any) => s.id === sessionId)
+              : undefined)
 
-        if (sessionStatus) {
-          if (sessionStatus.type === "idle") {
-            // Check if there are any messages (meaning work was done)
-            const messagesResp = await client.session.messages({
-              sessionID: sessionId,
-              directory: WORKSPACE_DIR,
-              limit: 1000,
-            })
-            const messagesData = (messagesResp as any).data || messagesResp
-            const messages = Array.isArray(messagesData) ? messagesData : []
-            // Check for any assistant responses
-            const assistantMessages = messages.filter(
-              (m: any) => m.info?.role === "assistant" || m.info?.type === "assistant"
-            )
-            if (assistantMessages.length > 0) {
-              isDone = true
-              console.log(`  Session idle with ${assistantMessages.length} assistant messages — done`)
-            } else if (pollCount > 6) {
-              isDone = true
-              console.log(`  Session idle with no assistant messages after ${pollCount} polls — aborting wait`)
+          if (sessionStatus?.type) {
+            statusKnown = true
+            if (sessionStatus.type === "idle") {
+              // Confirm via messages before declaring done
+              const messagesResp = await client.session.messages({
+                sessionID: sessionId,
+                directory: WORKSPACE_DIR,
+                limit: 1000,
+              })
+              const messagesData = (messagesResp as any).data || messagesResp
+              const messages = Array.isArray(messagesData) ? messagesData : []
+              const assistantMessages = messages.filter(
+                (m: any) => m.info?.role === "assistant" || m.info?.type === "assistant"
+              )
+              if (assistantMessages.length > 0) {
+                isDone = true
+                console.log(`  Session idle with ${assistantMessages.length} assistant messages — done`)
+              } else if (pollCount > 6) {
+                isDone = true
+                console.log(`  Session idle with no assistant messages after ${pollCount} polls — aborting wait`)
+              }
+            } else if (sessionStatus.type === "retry") {
+              const retryStatus = sessionStatus as { type: string; attempt: number; message: string; next: number }
+              console.log(`  Retry #${retryStatus.attempt}: ${retryStatus.message} (next in ${retryStatus.next}ms)`)
             }
-          } else if (sessionStatus.type === "retry") {
-            const retryStatus = sessionStatus as { type: string; attempt: number; message: string; next: number }
-            console.log(`  Retry #${retryStatus.attempt}: ${retryStatus.message} (next in ${retryStatus.next}ms)`)
+          }
+        } catch {
+          // Status check failed — fall through to message-based detection
+        }
+
+        // Message-based detection: works even when status API is unavailable
+        if (!isDone && !statusKnown) {
+          const messagesResp = await client.session.messages({
+            sessionID: sessionId,
+            directory: WORKSPACE_DIR,
+            limit: 1000,
+          })
+          const messagesData = (messagesResp as any).data || messagesResp
+          const messages = Array.isArray(messagesData) ? messagesData : []
+          const curTotal = messages.length
+          const assistantMessages = messages.filter(
+            (m: any) => m.info?.role === "assistant" || m.info?.type === "assistant"
+          )
+
+          if (curTotal === prevTotalMessages && curTotal > 0) {
+            stablePolls++
+            if (stablePolls >= 2 && assistantMessages.length > 0) {
+              isDone = true
+              console.log(`  Message count stable at ${curTotal} (${assistantMessages.length} assistant) — done`)
+            }
+          } else {
+            stablePolls = 0
+            prevTotalMessages = curTotal
           }
         }
 
-        if (pollCount % 6 === 0) {
+        if (pollCount % 6 === 0 && !isDone) {
           const elapsed = ((TIMEOUT_MS - (deadline - Date.now())) / 60000).toFixed(1)
-          console.log(`  ... still waiting (${elapsed} min elapsed, status=${sessionStatus?.type || "unknown"})`)
+          const statusLabel = statusKnown ? "tracked" : "messages"
+          console.log(`  ... still waiting (${elapsed} min elapsed, via ${statusLabel}, msgs=${prevTotalMessages})`)
         }
       } catch (err: any) {
         console.log(`  Poll error (non-fatal): ${err.message || err}`)
@@ -562,7 +606,7 @@ async function main() {
 
       // Extract tool calls from parts
       for (const part of msg.parts || []) {
-        if (part.type === "tool_call" || part.type === "tool-result") {
+        if (part.type === "tool_call" || part.type === "tool-result" || part.type === "tool") {
           toolCalls.push({
             timestamp: entry.timestamp,
             message_id: entry.message_id,
@@ -588,8 +632,12 @@ async function main() {
     const commandsPath = join(TRACE_DIR, ".agent_log", "commands.log")
     let commandsLog = ""
     for (const tc of toolCalls) {
-      if (tc.command || tc.tool === "bash") {
-        const cmd = tc.command || tc.input?.command || tc.input?.cmd || ""
+      // OpenCode v2: part.type === "tool" with part.tool and part.input
+      // OpenCode v1: part.type === "tool_call" with part.command / part.input
+      const toolName = tc.tool || tc.name || ""
+      const isBash = toolName === "bash" || toolName === "Bash" || toolName === "run_shell_command"
+      if (tc.command || isBash) {
+        const cmd = tc.command || tc.input?.command || tc.input?.cmd || tc.input?.script || ""
         if (cmd) {
           commandsLog += `${tc.timestamp}: ${cmd}\n`
         }
