@@ -71,11 +71,18 @@ def collect_trace(source_dir: Path, output_dir: Path, task_id: str = None,
 
 
 def _infer_from_path(path: Path, prefix: str) -> str:
-    """Infer task_id or group_id from directory path."""
-    parts = path.parts
-    for p in parts:
-        if p.startswith(prefix):
-            return p
+    """Infer task_id or group_id from directory path.
+
+    Matches known group IDs (G1-G3, A1/A3/A4) or task IDs (T01-T12).
+    """
+    known_groups = {"G1", "G2", "G3", "A1", "A3", "A4"}
+    for p in path.parts:
+        if prefix == "G" or prefix == "A":
+            if p in known_groups:
+                return p
+        elif prefix == "T":
+            if len(p) == 3 and p.startswith("T") and p[1:].isdigit():
+                return p
     return "unknown"
 
 

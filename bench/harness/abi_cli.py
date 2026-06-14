@@ -16,6 +16,11 @@ from pathlib import Path
 
 import yaml
 
+# Allow direct execution from repo root
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from bench.harness.diagnosis import diagnose_workspace_structured, format_diagnosis_markdown
+
 
 ANALYSIS_TYPES = ["metagenomic_plasmid", "metatranscriptomics"]
 
@@ -24,8 +29,14 @@ def load_config(workspace: Path) -> dict:
     config_path = workspace / "config.yaml"
     if not config_path.is_file():
         raise SystemExit(f"config.yaml not found in workspace: {workspace}")
-    with open(config_path) as f:
-        return yaml.safe_load(f) or {}
+    try:
+        with open(config_path) as f:
+            data = yaml.safe_load(f)
+    except (OSError, yaml.YAMLError) as e:
+        raise SystemExit(f"Failed to parse config.yaml: {e}") from e
+    if not isinstance(data, dict):
+        raise SystemExit(f"config.yaml must contain a mapping, got {type(data).__name__}")
+    return data
 
 
 def infer_analysis_type(workspace: Path, requested: str | None = None) -> str:
@@ -151,6 +162,7 @@ def command_dry_run(args) -> int:
         group_id=args.group,
         replicate=args.replicate,
         experiment_set=args.experiment_set,
+        fixture_set=getattr(args, 'fixture_set', 'public'),
     )
     print(json.dumps({
         "status": "dry_run_complete",
@@ -264,6 +276,7 @@ def write_artifact_manifest(
     group_id: str = "G3",
     replicate: int = 1,
     experiment_set: str = "dev",
+    fixture_set: str = "public",
 ) -> dict:
     """Write a deterministic manifest describing generated run artifacts."""
     tables_dir = workspace / "tables"
@@ -274,6 +287,7 @@ def write_artifact_manifest(
         "task_id": task_id or "T00",
         "group_id": group_id,
         "experiment_set": experiment_set,
+        "fixture_set": fixture_set,
         "replicate": replicate,
         "artifacts": {
             "execution_plan": {
@@ -303,7 +317,6 @@ def write_artifact_manifest(
             "agent_trace_jsonl": (workspace / ".agent_log" / "agent_trace.jsonl").is_file(),
             "tool_calls_jsonl": (workspace / ".agent_log" / "tool_calls.jsonl").is_file(),
             "commands_log": (workspace / ".agent_log" / "commands.log").is_file(),
-            "file_changes_json": (workspace / ".agent_log" / "file_changes.json").is_file(),
             "final_answer_md": (workspace / ".agent_log" / "final_answer.md").is_file(),
             "final_answer_json": (workspace / ".agent_log" / "final_answer.json").is_file()
             or (workspace / "final_answer.json").is_file(),
@@ -380,103 +393,8 @@ def command_diagnose(args) -> int:
 
 
 def diagnose_workspace(workspace: Path) -> str:
+    """Thin wrapper retained for backward compatibility."""
     return format_diagnosis_markdown(diagnose_workspace_structured(workspace))
-
-
-def diagnose_workspace_structured(workspace: Path) -> dict:
-    config = load_config(workspace)
-    sample_sheet = workspace / str(config.get("samples", {}).get("sample_sheet", "sample_sheet.tsv"))
-
-    if sample_sheet.is_file():
-        with open(sample_sheet) as f:
-            reader = csv.DictReader(f, delimiter="\t")
-            for row in reader:
-                for field, value in row.items():
-                    if isinstance(value, str) and "/missing/" in value:
-                        return {
-                            "schema_version": "abi-bench.final_answer.v1",
-                            "task_type": "diagnosis",
-                            "cause": "missing_input",
-                            "sample_id": row.get("sample_id", "unknown"),
-                            "field": field,
-                            "path": value,
-                            "resource": "",
-                            "config_key": "",
-                            "tool_id": "",
-                            "executable": "",
-                            "env": "",
-                            "fix": "Update the sample sheet to a valid existing input path.",
-                            "confidence": "high",
-                        }
-
-    for name, meta in config.get("resources", {}).items():
-        path = meta.get("path", "") if isinstance(meta, dict) else ""
-        if "/missing/" in str(path):
-            return {
-                "schema_version": "abi-bench.final_answer.v1",
-                "task_type": "diagnosis",
-                "cause": "missing_resource",
-                "sample_id": "",
-                "field": "",
-                "path": str(path),
-                "resource": name,
-                "config_key": f"resources.{name}.path",
-                "tool_id": "",
-                "executable": "",
-                "env": "",
-                "fix": "Point the config to an installed local resource; do not download automatically.",
-                "confidence": "high",
-            }
-
-    for tool_id, meta in config.get("tools", {}).items():
-        text = json.dumps(meta).lower() if isinstance(meta, dict) else ""
-        if "not installed" in text or tool_id == "plasflow":
-            executable = meta.get("executable", tool_id) if isinstance(meta, dict) else tool_id
-            env = meta.get("env", "") if isinstance(meta, dict) else ""
-            return {
-                "schema_version": "abi-bench.final_answer.v1",
-                "task_type": "diagnosis",
-                "cause": "tool_not_found",
-                "sample_id": "",
-                "field": "",
-                "path": "",
-                "resource": "",
-                "config_key": "",
-                "tool_id": tool_id,
-                "executable": executable,
-                "env": env,
-                "fix": "Install the executable in the expected Conda environment before real execution.",
-                "confidence": "high",
-            }
-
-    return {
-        "schema_version": "abi-bench.final_answer.v1",
-        "task_type": "diagnosis",
-        "cause": "none",
-        "sample_id": "",
-        "field": "",
-        "path": "",
-        "resource": "",
-        "config_key": "",
-        "tool_id": "",
-        "executable": "",
-        "env": "",
-        "fix": "No injected missing input, missing resource, or missing tool was detected.",
-        "confidence": "medium",
-    }
-
-
-def format_diagnosis_markdown(diagnosis: dict) -> str:
-    cause = str(diagnosis.get("cause", "unknown")).replace("_", " ")
-    lines = ["# ABI Diagnosis", "", f"Cause: {cause}"]
-    for key in ("sample_id", "field", "path", "resource", "config_key", "tool_id", "executable", "env"):
-        value = diagnosis.get(key)
-        if value:
-            lines.append(f"{key}: {value}")
-    fix = diagnosis.get("fix")
-    if fix:
-        lines.append(f"fix: {fix}")
-    return "\n".join(lines) + "\n"
 
 
 def command_report(args) -> int:
@@ -512,6 +430,12 @@ def add_common(parser: argparse.ArgumentParser):
         choices=["dev", "main", "ablation", "full"],
         default="dev",
         help="Experiment set label for generated metadata",
+    )
+    parser.add_argument(
+        "--fixture-set",
+        choices=["public", "hidden"],
+        default="public",
+        help="Fixture set label for generated metadata",
     )
 
 

@@ -230,9 +230,10 @@ reusability.
    `field`, `path`, `resource`, `tool_id`, `executable`, `env`, `fix`).
    Keyword-only markdown answers without the JSON sidecar cannot earn full marks.
 5. **Fixture-aware scoring**: Tasks support `public_fixture` and `hidden_fixture`
-   with fixture-specific expected answers stored outside the agent workspace.
-   The same scoring checks work across both fixture sets, preventing answer leakage
-   into prompts.
+   keys in task YAMLs, with fixture-specific expected answers stored outside the
+   agent workspace. The same scoring checks work across both fixture sets,
+   preventing answer leakage into prompts. (On the CLI, these correspond to
+   `--fixture-set public` and `--fixture-set hidden`.)
 
 ### 7.2 Primary Metrics
 
@@ -283,12 +284,17 @@ result completeness and consistency:
 python bench/scoring/claim_preflight.py \
   --results bench/results \
   --experiment-set main --fixture-set hidden \
-  --min-replicates 3
+  --min-replicates 3 \
+  --output bench/results/preflight.json
 ```
 
 The preflight checks that all required groups/tasks/replicates are present,
 metadata fields are consistent across all scores, and no unexpected groups
-or fixture sets are mixed into the aggregation.
+or fixture sets are mixed into the aggregation. **Note**: The preflight
+validates data integrity only — it does not evaluate the six quantitative
+thresholds above. After the preflight passes, verify the thresholds manually
+against the aggregated scores, or run `compute_statistics.py` for bootstrap
+confidence intervals and effect sizes.
 
 ---
 
@@ -471,13 +477,30 @@ python bench/harness/run_task.py \
   --experiment-set main --fixture-set hidden \
   --outdir bench/results/G3/T05/replicate_01
 
-# Real LLM agent mode
+# Real LLM agent mode (public fixtures)
 ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_task.py \
   --group G3 --task T03 --replicate 1 \
-  --experiment-set main --fixture-set hidden \
+  --experiment-set main --fixture-set public \
   --agent-mode opencode \
   --outdir bench/results/G3/T03/replicate_01
 ```
+
+> **Fixture set notes**: `--fixture-set hidden` is only meaningful for diagnosis
+> tasks (T05/T06/T07) where expected answers must be hidden from the agent to
+> prevent leakage. For all other tasks, `hidden` falls back to the public fixture
+> automatically. `--fixture-set public` (the default) works for all tasks and is
+> sufficient for development, CI, and simulated mode.
+>
+> **Flag reference**:
+> | Flag | Valid values | Default (harness) | Default (analysis scripts) |
+> |---|---|---|---|
+> | `--experiment-set` | `dev`, `main`, `ablation`, `full` | `dev` | `main` |
+> | `--fixture-set` | `public`, `hidden` | `public` | (none — aggregates all) |
+>
+> ⚠️ **Default mismatch**: `run_task.py` and `run_group.py` default
+> `--experiment-set` to `dev`, but `claim_preflight.py` and
+> `compute_statistics.py` default to `main`. Always pass `--experiment-set`
+> explicitly to avoid silent mismatches between the harness and analysis tools.
 
 Before each task run, the harness automatically:
 1. **Workspace reset**: Copies a clean fixture to `workspaces/{group}/{task}/replicate_{n}/`
@@ -535,10 +558,11 @@ python bench/scoring/compute_statistics.py \
   --output bench/results/statistics.json
 ```
 
-**Important**: Always separate public and hidden fixture results in aggregation.
-Mixing fixture sets in a single summary will trigger a warning and mark the
-completeness report as incomplete. Use `--fixture-set` to filter, or run
-separate aggregations per fixture set.
+**Important**: Run aggregation twice — once with `--fixture-set public` and once
+with `--fixture-set hidden`. If you omit `--fixture-set` and both fixture sets
+are present, they will be aggregated together and the completeness report will
+show `fixture_set: mixed` with `complete: false`, which blocks
+`primary_claim_supported`.
 
 ---
 

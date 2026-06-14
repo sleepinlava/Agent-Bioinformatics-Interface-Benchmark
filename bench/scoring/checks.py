@@ -128,6 +128,8 @@ def check_artifact_manifest_valid(run_dir: Path, trace_dir: Path = None) -> bool
         return False
     if data.get("experiment_set", "dev") not in {"dev", "main", "ablation", "full"}:
         return False
+    if data.get("fixture_set", "public") not in {"public", "hidden"}:
+        return False
     if not isinstance(data.get("replicate"), int) or data["replicate"] < 1:
         return False
 
@@ -183,7 +185,6 @@ def check_artifact_manifest_valid(run_dir: Path, trace_dir: Path = None) -> bool
             "agent_trace_jsonl",
             "tool_calls_jsonl",
             "commands_log",
-            "file_changes_json",
             "final_answer_md",
             "final_answer_json",
             "metadata_json",

@@ -219,9 +219,9 @@ def _resolve_function_name(check_name: str) -> str:
 
 def _discover_group_id(run_dir: Path) -> str:
     """Infer group_id from directory path."""
-    parts = run_dir.parts
-    for i, p in enumerate(parts):
-        if p in ("G1", "G2", "G3") or p.startswith("A"):
+    known_groups = {"G1", "G2", "G3", "A1", "A3", "A4"}
+    for p in run_dir.parts:
+        if p in known_groups:
             return p
     return "unknown"
 
@@ -260,16 +260,37 @@ def _elapsed_seconds(trace_dir: Path) -> int:
         end = data.get("end_time", "")
         if start and end:
             from datetime import datetime
-            fmt = "%Y-%m-%dT%H:%M:%S"
             try:
-                s = datetime.strptime(start[:19], fmt)
-                e = datetime.strptime(end[:19], fmt)
-                return int((e - s).total_seconds())
+                s = _parse_iso8601(start)
+                e = _parse_iso8601(end)
+                if s is not None and e is not None:
+                    return int((e - s).total_seconds())
             except Exception:
                 pass
     except Exception:
         pass
     return 0
+
+
+def _parse_iso8601(ts: str) -> "datetime | None":
+    """Parse an ISO 8601 timestamp string, tolerating common variants."""
+    from datetime import datetime, timezone
+    if not isinstance(ts, str) or not ts.strip():
+        return None
+    ts = ts.strip()
+    # Normalize trailing Z to +00:00 for fromisoformat (Python < 3.11 compat)
+    if ts.endswith("Z"):
+        ts = ts[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(ts)
+    except (ValueError, TypeError):
+        pass
+    # Fallback: try parsing as date-only (add midnight UTC)
+    try:
+        return datetime.strptime(ts[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        pass
+    return None
 
 
 def _read_metadata(trace_dir: Path) -> dict:

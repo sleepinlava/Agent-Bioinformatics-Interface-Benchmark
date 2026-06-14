@@ -31,6 +31,12 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
+# Allow direct execution from repo root
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from bench.harness.diagnosis import diagnose_workspace_structured as _diagnose_workspace_structured
+from bench.harness.diagnosis import format_diagnosis_markdown as _format_diagnosis_markdown
+
 
 def run_task(
     group_id: str,
@@ -63,6 +69,8 @@ def run_task(
 
     print(f"{'='*60}")
     print(f"ABI-Bench v0.1 — Run Task")
+    if dry_run_scoring_only:
+        print("  MODE: scoring-only (skipping workspace reset, agent run, trace collection)")
     print(f"  Group: {group_id}")
     print(f"  Task:  {task_id}")
     print(f"  Replicate: {replicate}")
@@ -72,63 +80,77 @@ def run_task(
     print(f"  Outdir: {outdir}")
     print(f"{'='*60}")
 
-    # Step 1: Reset workspace
-    print("\n[1/5] Resetting workspace...")
-    result = subprocess.run([
-        sys.executable,
-        str(PROJECT_ROOT / "bench" / "harness" / "reset_workspace.py"),
-        "--fixture", str(fixture_dir),
-        "--workspace", str(workspace_dir),
-        "--overwrite",
-    ], capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"ERROR: Workspace reset failed:\n{result.stderr}")
-        return result.returncode
-    print(result.stdout.strip())
+    agent_result = 0
 
-    # Step 2: Export agent context
-    print("\n[2/5] Exporting agent context...")
-    context_path = workspace_dir / "agent_context.json"
-    result = subprocess.run([
-        sys.executable,
-        str(PROJECT_ROOT / "bench" / "harness" / "export_agent_context.py"),
-        "--group", group_id,
-        "--task", task_id,
-        "--experiment-set", experiment_set,
-        "--fixture-set", fixture_set,
-        "--workspace", str(workspace_dir),
-        "--output", str(context_path),
-    ], capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"ERROR: Context export failed:\n{result.stderr}")
-        return result.returncode
-    print(result.stdout.strip())
+    if dry_run_scoring_only:
+        # Scoring-only mode: skip workspace reset, agent run, and trace collection.
+        # Expect artifacts already present in outdir and traces already in trace_dir.
+        print("\n[1-4/5] Skipped (dry-run scoring-only mode)")
+        if not outdir.is_dir():
+            print(f"ERROR: Output directory does not exist: {outdir}")
+            print("  Cannot score without artifact files. Run the task first without --dry-run-scoring-only.")
+            return 1
+        if not trace_dir.is_dir():
+            print(f"WARNING: Trace directory does not exist: {trace_dir}")
+    else:
+        # Step 1: Reset workspace
+        print("\n[1/5] Resetting workspace...")
+        result = subprocess.run([
+            sys.executable,
+            str(PROJECT_ROOT / "bench" / "harness" / "reset_workspace.py"),
+            "--fixture", str(fixture_dir),
+            "--workspace", str(workspace_dir),
+            "--overwrite",
+        ], capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"ERROR: Workspace reset failed:\n{result.stderr}")
+            return result.returncode
+        print(result.stdout.strip())
 
-    # Step 3: Launch agent (simulated by default; use --agent-mode opencode for real)
-    print("\n[3/5] Launching agent...")
-    agent_result = _launch_agent_opencode(
-        group_id, task_id, workspace_dir, trace_dir, context_path,
-        replicate=replicate,
-        experiment_set=experiment_set,
-        use_real_agent=use_real_agent,
-    )
+        # Step 2: Export agent context
+        print("\n[2/5] Exporting agent context...")
+        context_path = workspace_dir / "agent_context.json"
+        result = subprocess.run([
+            sys.executable,
+            str(PROJECT_ROOT / "bench" / "harness" / "export_agent_context.py"),
+            "--group", group_id,
+            "--task", task_id,
+            "--experiment-set", experiment_set,
+            "--fixture-set", fixture_set,
+            "--workspace", str(workspace_dir),
+            "--output", str(context_path),
+        ], capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"ERROR: Context export failed:\n{result.stderr}")
+            return result.returncode
+        print(result.stdout.strip())
 
-    # Step 4: Collect traces
-    print("\n[4/5] Collecting traces...")
-    agent_log_source = trace_dir / ".agent_log" if use_real_agent else workspace_dir / ".agent_log"
-    trace_result = subprocess.run([
-        sys.executable,
-        str(PROJECT_ROOT / "bench" / "harness" / "collect_trace.py"),
-        "--source", str(agent_log_source),
-        "--output", str(trace_dir),
-        "--task-id", task_id,
-        "--group-id", group_id,
-        "--replicate", str(replicate),
-        "--experiment-set", experiment_set,
-    ], capture_output=True, text=True)
-    if trace_result.returncode != 0:
-        print(f"WARNING: Trace collection had issues:\n{trace_result.stderr}")
-    print(trace_result.stdout.strip())
+        # Step 3: Launch agent (simulated by default; use --agent-mode opencode for real)
+        print("\n[3/5] Launching agent...")
+        agent_result = _launch_agent_opencode(
+            group_id, task_id, workspace_dir, trace_dir, context_path,
+            replicate=replicate,
+            experiment_set=experiment_set,
+            fixture_set=fixture_set,
+            use_real_agent=use_real_agent,
+        )
+
+        # Step 4: Collect traces
+        print("\n[4/5] Collecting traces...")
+        agent_log_source = trace_dir / ".agent_log" if use_real_agent else workspace_dir / ".agent_log"
+        trace_result = subprocess.run([
+            sys.executable,
+            str(PROJECT_ROOT / "bench" / "harness" / "collect_trace.py"),
+            "--source", str(agent_log_source),
+            "--output", str(trace_dir),
+            "--task-id", task_id,
+            "--group-id", group_id,
+            "--replicate", str(replicate),
+            "--experiment-set", experiment_set,
+        ], capture_output=True, text=True)
+        if trace_result.returncode != 0:
+            print(f"WARNING: Trace collection had issues:\n{trace_result.stderr}")
+        print(trace_result.stdout.strip())
 
     # Update trace metadata with actual times
     metadata_path = trace_dir / "metadata.json"
@@ -147,19 +169,20 @@ def run_task(
         with open(metadata_path, "w") as f:
             json.dump(meta, f, indent=2)
 
-    # Copy artifacts from workspace to results
-    print("\n[4.5/5] Copying artifacts...")
-    outdir.mkdir(parents=True, exist_ok=True)
-    for artifact_dir in ["execution_plan.json", "artifact_manifest.json", "provenance", "tables", "report",
-                          "config.yaml", "sample_sheet.tsv"]:
-        src = workspace_dir / artifact_dir
-        dst = outdir / artifact_dir
-        if src.is_file():
-            shutil.copy2(src, dst)
-        elif src.is_dir():
-            if dst.exists():
-                shutil.rmtree(dst)
-            shutil.copytree(src, dst)
+    if not dry_run_scoring_only:
+        # Copy artifacts from workspace to results
+        print("\n[4.5/5] Copying artifacts...")
+        outdir.mkdir(parents=True, exist_ok=True)
+        for artifact_dir in ["execution_plan.json", "artifact_manifest.json", "provenance", "tables", "report",
+                              "config.yaml", "sample_sheet.tsv"]:
+            src = workspace_dir / artifact_dir
+            dst = outdir / artifact_dir
+            if src.is_file():
+                shutil.copy2(src, dst)
+            elif src.is_dir():
+                if dst.exists():
+                    shutil.rmtree(dst)
+                shutil.copytree(src, dst)
 
     # Step 5: Score the run
     print("\n[5/5] Scoring run...")
@@ -201,7 +224,13 @@ def _task_yaml_path(task_id: str) -> Path | None:
 def _load_task_definition(task_yaml: Path) -> dict:
     import yaml
     with open(task_yaml) as f:
-        return yaml.safe_load(f) or {}
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise SystemExit(
+            f"Task YAML {task_yaml} must contain a mapping, got {type(data).__name__}. "
+            f"Check that the file starts with task-level keys (task_id, prompt, scoring, etc.)."
+        )
+    return data
 
 
 def _select_fixture(task_id: str, task_def: dict, fixture_set: str) -> tuple[str, Path | None]:
@@ -221,10 +250,13 @@ def _select_fixture(task_id: str, task_def: dict, fixture_set: str) -> tuple[str
     }
     if fixture_set == "hidden":
         fixture_name = task_def.get("hidden_fixture")
-        fixture_root = PROJECT_ROOT / "bench" / "fixtures_hidden"
         if not fixture_name:
-            print(f"ERROR: Task {task_id} does not define hidden_fixture")
-            return "", None
+            # Fall back to public fixture for tasks that don't need a hidden variant
+            fixture_name = task_def.get("public_fixture") or task_def.get("fixture") or default_fixtures.get(task_id, "plasmid_valid")
+            fixture_root = PROJECT_ROOT / "bench" / "fixtures"
+            print(f"INFO: Task {task_id} has no hidden_fixture; falling back to public fixture '{fixture_name}'")
+        else:
+            fixture_root = PROJECT_ROOT / "bench" / "fixtures_hidden"
     else:
         fixture_name = task_def.get("public_fixture") or task_def.get("fixture") or default_fixtures.get(task_id, "plasmid_valid")
         fixture_root = PROJECT_ROOT / "bench" / "fixtures"
@@ -249,6 +281,7 @@ def _launch_agent_opencode(
     context_path: Path,
     replicate: int = 1,
     experiment_set: str = "dev",
+    fixture_set: str = "public",
     use_real_agent: bool = True,
 ) -> int:
     """
@@ -274,6 +307,7 @@ def _launch_agent_opencode(
             context_path,
             replicate=replicate,
             experiment_set=experiment_set,
+            fixture_set=fixture_set,
         )
 
     # Check for bun availability
@@ -416,6 +450,7 @@ def _launch_agent(
     context_path: Path,
     replicate: int = 1,
     experiment_set: str = "dev",
+    fixture_set: str = "public",
 ) -> int:
     """
     Launch the agent for this task.
@@ -515,6 +550,7 @@ def _launch_agent(
         task_id=task_id,
         replicate=replicate,
         experiment_set=experiment_set,
+        fixture_set=fixture_set,
     )
 
     # Create trace_dir
@@ -624,6 +660,7 @@ def _write_artifact_manifest(
     task_id: str,
     replicate: int,
     experiment_set: str,
+    fixture_set: str = "public",
 ):
     """Write an artifact manifest for simulated runs."""
     tables_dir = workspace_dir / "tables"
@@ -634,6 +671,7 @@ def _write_artifact_manifest(
         "task_id": task_id,
         "group_id": group_id,
         "experiment_set": experiment_set,
+        "fixture_set": fixture_set,
         "replicate": replicate,
         "artifacts": {
             "execution_plan": {
@@ -663,7 +701,6 @@ def _write_artifact_manifest(
             "agent_trace_jsonl": (workspace_dir / ".agent_log" / "agent_trace.jsonl").is_file(),
             "tool_calls_jsonl": (workspace_dir / ".agent_log" / "tool_calls.jsonl").is_file(),
             "commands_log": (workspace_dir / ".agent_log" / "commands.log").is_file(),
-            "file_changes_json": (workspace_dir / ".agent_log" / "file_changes.json").is_file(),
             "final_answer_md": (workspace_dir / ".agent_log" / "final_answer.md").is_file(),
             "final_answer_json": (workspace_dir / ".agent_log" / "final_answer.json").is_file(),
             "metadata_json": False,
@@ -722,70 +759,6 @@ def _generate_final_answer_json(group_id: str, task_id: str, workspace_dir: Path
         }
     diagnosis = _diagnose_workspace_structured(workspace_dir)
     return {**base, **diagnosis}
-
-
-def _diagnose_workspace_structured(workspace_dir: Path) -> dict:
-    import yaml
-    config_path = workspace_dir / "config.yaml"
-    config = yaml.safe_load(config_path.read_text()) if config_path.is_file() else {}
-    sample_sheet = workspace_dir / str(config.get("samples", {}).get("sample_sheet", "sample_sheet.tsv"))
-
-    if sample_sheet.is_file():
-        with open(sample_sheet) as f:
-            reader = csv.DictReader(f, delimiter="\t")
-            for row in reader:
-                for field, value in row.items():
-                    if isinstance(value, str) and "/missing/" in value:
-                        return {
-                            "cause": "missing_input",
-                            "sample_id": row.get("sample_id", "unknown"),
-                            "field": field,
-                            "path": value,
-                            "fix": f"Update sample_sheet.tsv to point {row.get('sample_id', 'the sample')} {field} to an existing input file.",
-                        }
-
-    for name, meta in config.get("resources", {}).items():
-        path = meta.get("path", "") if isinstance(meta, dict) else ""
-        if "/missing/" in str(path):
-            return {
-                "cause": "missing_resource",
-                "resource": name,
-                "config_key": f"resources.{name}.path",
-                "path": str(path),
-                "fix": f"Point resources.{name}.path to an installed local resource without downloading automatically.",
-            }
-
-    for tool_id, meta in config.get("tools", {}).items():
-        text = json.dumps(meta).lower() if isinstance(meta, dict) else ""
-        if "not installed" in text or tool_id == "plasflow":
-            executable = meta.get("executable", tool_id) if isinstance(meta, dict) else tool_id
-            env = meta.get("env", "") if isinstance(meta, dict) else ""
-            return {
-                "cause": "tool_not_found",
-                "tool_id": tool_id,
-                "executable": executable,
-                "env": env,
-                "fix": f"Install {executable} in the {env or 'expected'} Conda environment before real execution.",
-            }
-
-    return {
-        "cause": "none",
-        "fix": "No injected missing input, missing resource, or missing tool was detected.",
-        "confidence": "medium",
-    }
-
-
-def _format_diagnosis_markdown(diagnosis: dict) -> str:
-    cause = str(diagnosis.get("cause", "unknown")).replace("_", " ")
-    lines = ["# Diagnostic Report", "", f"Cause: {cause}"]
-    for key in ("sample_id", "field", "path", "resource", "config_key", "tool_id", "executable", "env"):
-        value = diagnosis.get(key)
-        if value:
-            lines.append(f"{key}: {value}")
-    fix = diagnosis.get("fix")
-    if fix:
-        lines.append(f"fix: {fix}")
-    return "\n".join(lines) + "\n"
 
 
 def _generate_final_answer(group_id: str, task_id: str) -> str:

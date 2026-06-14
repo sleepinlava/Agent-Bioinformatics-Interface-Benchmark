@@ -20,7 +20,7 @@ node_modules/
 .vscode/
 .idea/
 
-# Plan is the spec, not code
+# Development planning docs (internal)
 Plan.md
 NEXT_DEVELOPMENT_PLAN.md
 DEVELOPMENT.md

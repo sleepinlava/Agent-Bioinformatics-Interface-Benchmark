@@ -51,11 +51,16 @@ def filter_scores(
     experiment_set: str | None = None,
     fixture_set: str | None = None,
 ) -> list[dict]:
-    """Filter score records by experiment_set and/or fixture_set if requested."""
+    """Filter score records by experiment_set and/or fixture_set if requested.
+
+    When fixture_set is specified, only scores with an explicit matching
+    ``fixture_set`` field are included — scores that lack the field entirely
+    are excluded (consistent with claim_preflight.py and compute_statistics.py).
+    """
     if experiment_set is not None:
         scores = [s for s in scores if s.get("experiment_set", "unknown") == experiment_set]
     if fixture_set is not None:
-        scores = [s for s in scores if s.get("fixture_set", "public") == fixture_set]
+        scores = [s for s in scores if s.get("fixture_set") == fixture_set]
     return scores
 
 

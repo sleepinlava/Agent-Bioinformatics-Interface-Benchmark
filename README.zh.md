@@ -206,10 +206,11 @@ T09/T10/T11 使用与 T02/T03/T04 完全不同的分析类型（宏转录组 vs 
    sidecar，包含结构化字段（`cause`、`sample_id`、`field`、`path`、
    `resource`、`tool_id`、`executable`、`env`、`fix`）。仅有 markdown 关键字
    命中但没有 JSON sidecar 的诊断答案无法获得满分。
-5. **Fixture 感知评分**：任务支持 `public_fixture` 和 `hidden_fixture`，配合
-   存储在 agent workspace 之外的 fixture-specific expected answer。同一套 
-   scoring check 可同时用于 public 和 hidden 两套 fixture，防止答案泄漏进
-   prompt。
+5. **Fixture 感知评分**：任务 YAML 中支持 `public_fixture` 和 `hidden_fixture`
+   两个 key，配合存储在 agent workspace 之外的 fixture-specific expected 
+   answer。同一套 scoring check 可同时用于 public 和 hidden 两套 fixture，防
+   止答案泄漏进 prompt。（在 CLI 上对应 `--fixture-set public` 和 
+   `--fixture-set hidden`。）
 
 ### 7.2 主指标
 
@@ -259,11 +260,15 @@ ABI-Bench v0.1 **只有同时满足以下全部条件**才支持主 claim：
 python bench/scoring/claim_preflight.py \
   --results bench/results \
   --experiment-set main --fixture-set hidden \
-  --min-replicates 3
+  --min-replicates 3 \
+  --output bench/results/preflight.json
 ```
 
 Preflight 会检查所有必需的 groups/tasks/replicates 是否齐全、各 score 的 
 metadata 字段是否一致、是否有意外的 group 或 fixture set 混入聚合结果。
+**注意**：Preflight 仅验证数据完整性——它不会评估上述六个量化阈值。Preflight
+通过后，请手动对照聚合分数验证阈值，或运行 `compute_statistics.py` 获取
+bootstrap 置信区间和效应量。
 
 ---
 
@@ -442,13 +447,29 @@ python bench/harness/run_task.py \
   --experiment-set main --fixture-set hidden \
   --outdir bench/results/G3/T05/replicate_01
 
-# 真实 LLM agent 模式
+# 真实 LLM agent 模式（public fixture）
 ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_task.py \
   --group G3 --task T03 --replicate 1 \
-  --experiment-set main --fixture-set hidden \
+  --experiment-set main --fixture-set public \
   --agent-mode opencode \
   --outdir bench/results/G3/T03/replicate_01
 ```
+
+> **Fixture set 说明**：`--fixture-set hidden` 仅对诊断任务（T05/T06/T07）有意
+> 义——这些任务的预期答案必须对 agent 隐藏以防泄漏。对于其他所有任务，`hidden`
+> 会自动 fallback 到 public fixture。`--fixture-set public`（默认值）适用于所有
+> 任务，足以满足开发、CI 和 simulated 模式的需求。
+>
+> **Flag 参考**：
+> | Flag | 有效值 | 默认值 (harness) | 默认值 (分析脚本) |
+> |---|---|---|---|
+> | `--experiment-set` | `dev`, `main`, `ablation`, `full` | `dev` | `main` |
+> | `--fixture-set` | `public`, `hidden` | `public` | (无 — 聚合全部) |
+>
+> ⚠️ **默认值不一致**：`run_task.py` 和 `run_group.py` 中 `--experiment-set`
+> 默认值为 `dev`，但 `claim_preflight.py` 和 `compute_statistics.py` 默认值为
+> `main`。务必显式传递 `--experiment-set` 以避免 harness 和分析工具之间的静默
+> 不匹配。
 
 每次任务运行前，harness 自动执行：
 1. **workspace reset**：从 fixture 复制干净副本到 `workspaces/{group}/{task}/replicate_{n}/`
@@ -506,9 +527,10 @@ python bench/scoring/compute_statistics.py \
   --output bench/results/statistics.json
 ```
 
-**重要提示**：始终将 public 和 hidden fixture 的结果分开聚合。混合 fixture set 
-会在 summary 中触发警告并将 completeness 标记为不完整。使用 `--fixture-set` 
-过滤，或按 fixture set 分别运行聚合。
+**重要提示**：聚合时需运行两次——一次用 `--fixture-set public`，一次用
+`--fixture-set hidden`。如果省略 `--fixture-set` 且两种 fixture set 都存在，
+它们会被混合聚合，completeness 报告会显示 `fixture_set: mixed` 且 
+`complete: false`，这将阻止 `primary_claim_supported`。
 
 ---
 

@@ -12,6 +12,10 @@ Usage:
       --fixture-set public \\
       --min-replicates 3
 
+For the paper-run claim workflow, use --fixture-set hidden instead.
+Both values are valid; the choice depends on whether results were generated
+with public or hidden fixtures.
+
 Exit code 0 = preflight passed, 1 = preflight failed.
 """
 

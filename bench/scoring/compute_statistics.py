@@ -12,6 +12,8 @@ Usage:
       --fixture-set public \\
       --output bench/results/statistics.json
 
+For the paper-run claim workflow, use --fixture-set hidden instead.
+
 Output fields:
   - bootstrap_ci: 95% CI for each group's total normalized score
   - effect_sizes: per-task Cohen's d between comparison pairs
@@ -334,12 +336,13 @@ def _build_paper_tables(group_cis, effect_sizes, taxonomy) -> dict:
             comp = es["comparisons"].get("G3_vs_G1", {})
             g3 = es["groups"].get("G3", {})
             g1 = es["groups"].get("G1", {})
-            if comp.get("cohens_d") is not None:
+            hedges_g = comp.get("hedges_g")
+            if comp.get("cohens_d") is not None and hedges_g is not None:
                 rows2.append(
                     f"| {tid} | {es.get('task_type', '?')} | "
                     f"{g3.get('mean_normalized', '—')} | "
                     f"{g1.get('mean_normalized', '—')} | "
-                    f"{comp['hedges_g']:.2f} | {comp['interpretation']} |"
+                    f"{hedges_g:.2f} | {comp.get('interpretation', '?')} |"
                 )
         if len(rows2) > 2:
             tables["per_task_effect_g3_vs_g1"] = "\n".join(rows2)
