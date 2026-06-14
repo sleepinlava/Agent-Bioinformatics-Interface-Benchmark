@@ -97,9 +97,11 @@ rubric:
         required_terms: ["metatranscriptomics"]
 
     uses_allowed_entry_points:
-      description: "Agent used allowed discovery entry points (pass-through)"
+      description: "Agent used allowed discovery entry points and documented the discovery process"
       points: 1
-      function: check_always_pass
+      function: check_final_answer_contains
+      args:
+        required_terms: ["discover", "analysis"]
 
     analysis_type_correct:
       description: "execution_plan.json has correct analysis_type"

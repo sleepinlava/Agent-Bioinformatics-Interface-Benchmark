@@ -4,7 +4,7 @@ plugin: all
 task_type: discovery
 fixture: plasmid_valid
 max_score: 5
-timeout_minutes: 5
+timeout_minutes: 10
 max_agent_steps: 20
 
 prompt: |

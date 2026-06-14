@@ -19,6 +19,8 @@ import json
 import sys
 from pathlib import Path
 
+import yaml
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
@@ -42,7 +44,6 @@ def load_agent_profile(group_id: str) -> dict:
         print(f"ERROR: Profile not found: {profile_path}", file=sys.stderr)
         return None
 
-    import yaml
     with open(profile_path) as f:
         return yaml.safe_load(f)
 
@@ -69,7 +70,6 @@ def load_task_definition(task_id: str) -> dict:
         return None
 
     task_path = PROJECT_ROOT / "bench" / "tasks" / fname
-    import yaml
     with open(task_path) as f:
         return yaml.safe_load(f)
 
@@ -255,7 +255,7 @@ def main():
     parser.add_argument("--task", required=True, type=str, help="Task ID (T01-T12)")
     parser.add_argument(
         "--experiment-set",
-        choices=["dev", "main", "ablation", "full"],
+        choices=["dev", "main", "ablation", "full", "paper"],
         default="dev",
         help="Experiment set label for the exported context",
     )

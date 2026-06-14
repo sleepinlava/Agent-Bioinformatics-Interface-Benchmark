@@ -381,7 +381,7 @@ def main():
     parser.add_argument("--output", type=Path, help="Output score.json path (defaults to run-dir/score.json)")
     parser.add_argument(
         "--experiment-set",
-        choices=["dev", "main", "ablation", "full"],
+        choices=["dev", "main", "ablation", "full", "paper"],
         help="Experiment set override written to score.json",
     )
     parser.add_argument(

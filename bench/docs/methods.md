@@ -21,6 +21,10 @@ harness:
 | A3    | ABI-no-diagnostic-hints | Structured error codes   | Fault localization         |
 | A4    | ABI-no-permission-model | Confirmation gate        | Execution safety           |
 
+> **A2 (no-standard-tables)** was removed during v0.1 scoping because the
+> contribution of standard tables is indirectly covered by the G1/G2 baseline
+> comparison. The numbering gap is intentional and documented for paper clarity.
+
 ## Agent Execution Modes
 
 ABI-Bench supports two agent execution modes:
@@ -51,32 +55,39 @@ LLM provider API key. See [Provider Configuration](#provider-configuration).
 
 ## Provider Configuration
 
-OpenCode mode requires an LLM provider. Configure one of:
+OpenCode mode requires an LLM provider. The recommended approach is the
+`bench/.env` file:
 
 ```bash
-# Option 1: Environment variables (auto-detected by provider SDKs)
-ANTHROPIC_API_KEY=sk-ant-...          # Anthropic Claude
-OPENAI_API_KEY=sk-...                 # OpenAI
-GOOGLE_GENERATIVE_AI_API_KEY=...      # Google Gemini
-
-# Option 2: bench/.env file
+# 1. Copy the template
 cp bench/.env.example bench/.env
-# Edit bench/.env with your credentials
 
-# Option 3: ABI_BENCH_* variables (for openai-compatible endpoints)
-ABI_BENCH_PROVIDER=deepseek
-ABI_BENCH_API_KEY=sk-...
-ABI_BENCH_API_BASE=https://api.deepseek.com
+# 2. Edit bench/.env — uncomment ONE provider and fill in your API key
+# Supported: anthropic, openai, deepseek, google, openai-compatible
+
+# 3. Run with real LLM agent (reads bench/.env automatically)
+python bench/harness/run_group.py \
+  --group G3 --tasks mvp --replicates 3 --agent-mode opencode
+```
+
+Alternatively, set environment variables directly:
+
+```bash
+# Anthropic Claude
+ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_group.py \
+  --group G3 --task T03 --agent-mode opencode
+
+# OpenAI-compatible (e.g. DeepSeek)
+ABI_BENCH_PROVIDER=deepseek \
+ABI_BENCH_API_KEY=sk-... \
+ABI_BENCH_API_BASE=https://api.deepseek.com \
+python bench/harness/run_group.py \
+  --group G3 --task T03 --agent-mode opencode
 ```
 
 All API keys are passed as environment variables to the OpenCode server
-process and are never written to disk or tracked by git.
-
-```bash
-# Run with real LLM agent
-ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_task.py \
-  --group G3 --task T03 --agent-mode opencode
-```
+process and are never written to disk or tracked by git. The `bench/.env`
+file is in `.gitignore`.
 
 ## Task Suite (v0.1)
 
@@ -177,6 +188,23 @@ ABI-Bench v0.1 supports the main claim that ABI improves agent-operability when:
 - Real execution: off (v0.1, except safety violation tests)
 - Workspace: isolated per task/group/replicate
 
+## Parallel Execution
+
+For faster benchmark runs, `run_group.py` supports concurrent task execution
+within each replicate batch via `--parallel`:
+
+```bash
+# Run up to 4 tasks concurrently
+python bench/harness/run_group.py --group G3 --tasks mvp --replicates 3 \
+  --agent-mode opencode --parallel --workers 4
+```
+
+Each task uses an independent workspace, trace, and results directory, so
+there is no filesystem contention. Replicate batches are still run
+sequentially to maintain clean state. In simulated mode, parallelism
+reduces wall-clock time from ~8 s to ~2 s; in opencode mode, the reduction
+is proportional to the number of workers (expected 60%+ reduction).
+
 ## Reproducibility
 
 All benchmark runs are:
@@ -193,12 +221,17 @@ All benchmark runs are:
 # Infrastructure test (simulated, no API key needed)
 python bench/harness/run_group.py --group G3 --tasks mvp --replicates 1
 
+# Parallel simulated (faster verification)
+python bench/harness/run_group.py --group G3 --tasks mvp --replicates 1 --parallel --workers 4
+
 # Ablation experiment (simulated, group-aware)
 python bench/harness/run_group.py --group A1 --tasks ablation --replicates 1
 
-# Real LLM agent (requires API key)
-ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_group.py \
-  --group G3 --tasks mvp --replicates 3 --agent-mode opencode
+# Real LLM agent (configure bench/.env first)
+cp bench/.env.example bench/.env
+# Edit bench/.env: uncomment one provider and add your API key
+python bench/harness/run_group.py \
+  --group G3 --tasks mvp --replicates 3 --agent-mode opencode --parallel --workers 4
 
 # Aggregate results
 python bench/scoring/aggregate_scores.py \

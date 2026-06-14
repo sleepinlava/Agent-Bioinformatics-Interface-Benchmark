@@ -407,7 +407,7 @@ def main():
     parser.add_argument("--results", required=True, type=Path, help="Results directory")
     parser.add_argument(
         "--experiment-set",
-        choices=["dev", "main", "ablation", "full"],
+        choices=["dev", "main", "ablation", "full", "paper"],
         help="Filter by experiment set",
     )
     parser.add_argument(

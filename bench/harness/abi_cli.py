@@ -386,7 +386,7 @@ def command_diagnose(args) -> int:
     workspace = args.workspace.resolve()
     group = args.group
 
-    from diagnosis import summarize_workspace_data
+    from bench.harness.diagnosis import summarize_workspace_data
 
     if group == "A1":
         # Ablation group A1: provenance artifacts are unavailable.
@@ -472,7 +472,7 @@ def add_common(parser: argparse.ArgumentParser):
     parser.add_argument("--replicate", type=int, default=1, help="Benchmark replicate for generated metadata")
     parser.add_argument(
         "--experiment-set",
-        choices=["dev", "main", "ablation", "full"],
+        choices=["dev", "main", "ablation", "full", "paper"],
         default="dev",
         help="Experiment set label for generated metadata",
     )

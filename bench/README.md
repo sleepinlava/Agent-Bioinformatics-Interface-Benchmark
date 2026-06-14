@@ -99,6 +99,8 @@ LLM agent 操作生信 workflow 面临五大特有困难：
 | **A3** no-diagnostic-hints | 结构化 `error_code` / `diagnostic_hints` | fault localization |
 | **A4** no-permission-model | `confirmation_required` gating | execution safety |
 
+> **注：A2 缺失说明** — A2（no-standard-tables）在 v0.1 scoping 阶段被移除，因为 standard tables 的贡献已通过 G1/G2 基线对比间接覆盖。编号断层是有意为之，在论文中会明确说明。
+
 ### 4.3 固定变量
 
 | 变量 | 固定值 |
@@ -260,20 +262,26 @@ harness 会自动检测 `agent/opencode` 目录并使用它。
 # 1. 安装依赖
 pip install pyyaml
 
-# 2. 模拟模式验证（不依赖 OpenCode / LLM，纯本地跑评分逻辑）
+# 2. 配置 LLM provider（复制 .env.example 并填入 API key）
+cp bench/.env.example bench/.env
+# 编辑 bench/.env，取消注释你要使用的 provider 并填入 API key
+# 支持: anthropic, openai, deepseek, google, openai-compatible
+
+# 3. 模拟模式验证（不依赖 OpenCode / LLM，纯本地跑评分逻辑）
 python bench/harness/run_group.py --group G3 --tasks T01,T02,T03 --replicates 1
 
-# 3. 聚合评分
+# 4. 并行模拟（加速验证）
+python bench/harness/run_group.py --group G3 --tasks mvp --replicates 1 --parallel --workers 4
+
+# 5. 聚合评分
 python bench/scoring/aggregate_scores.py \
   --results bench/results \
   --output bench/results/leaderboard.tsv \
   --summary bench/results/summary.json
 
-# 4. 真实 LLM 运行（需要安装 OpenCode 并配置 API key）
-export ABI_BENCH_PROVIDER=anthropic
-export ABI_BENCH_API_KEY=sk-ant-...
+# 6. 真实 LLM 运行（需要安装 OpenCode 并配置 bench/.env）
 python bench/harness/run_group.py \
-  --group G3 --tasks mvp --replicates 3 --agent-mode opencode
+  --group G3 --tasks mvp --replicates 3 --agent-mode opencode --parallel --workers 4
 ```
 
 ---
@@ -290,7 +298,7 @@ python bench/harness/run_group.py \
 [5/5] Score                 自动生成 score.json
 ```
 
-### 10.2 两种运行模式
+### 10.2 运行模式与并行加速
 
 | 模式 | 用途 | 命令 |
 |---|---|---|
@@ -298,6 +306,8 @@ python bench/harness/run_group.py \
 | **opencode** | 真实 LLM agent 运行，产生实验结果 | `--agent-mode opencode` |
 
 模拟模式下，harness 为每个 group/task 生成对应的 artifact 和 final_answer。消融组（A1/A3/A4）的模拟 agent 会产生**刻意不完整**的输出——A1 不生成 provenance、A3 诊断模糊、A4 绕过 permission gate。这使得评分逻辑可以在不消耗 API 调用的情况下完整验证。
+
+**并行执行**（`--parallel --workers N`）：同一 replicate batch 内的 task 通过线程池并发执行，每个 task 使用独立的 workspace/trace/results 目录，互不冲突。适用于 opencode 模式下大幅缩短墙钟时间（预计缩短 60%+）。
 
 ### 10.3 三组主实验
 
@@ -344,11 +354,13 @@ bench/
 │
 ├── harness/                         # 执行基础设施 (Python + TypeScript)
 │   ├── run_task.py                  #   单任务 5 步编排
-│   ├── run_group.py                 #   批量组运行
+│   ├── run_group.py                 #   批量组运行（支持 --parallel 并行）
 │   ├── reset_workspace.py           #   workspace 重置
-│   ├── collect_trace.py             #   trace 收集
-│   ├── export_agent_context.py      #   上下文导出
+│   ├── export_agent_context.py      #   agent 上下文导出
 │   ├── run_agent.ts                 #   OpenCode server 启动与 session 管理
+│   ├── collect_trace.py             #   trace 收集
+│   ├── diagnosis.py                 #   共享诊断工具（供 simulated agent 和 abi_cli 共用）
+│   ├── abi_cli.py                   #   ABI lifecycle CLI（G3 组 agent 可调用）
 │   └── opencode                     #   opencode CLI wrapper
 │
 ├── scoring/                         # 自动评分 (Python)

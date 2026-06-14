@@ -19,6 +19,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
 
 def collect_trace(source_dir: Path, output_dir: Path, task_id: str = None,
                   group_id: str = None, replicate: int = 1,
@@ -59,8 +61,8 @@ def collect_trace(source_dir: Path, output_dir: Path, task_id: str = None,
         "commit": _current_commit(),
         "start_time": datetime.now(timezone.utc).isoformat(),
         "end_time": datetime.now(timezone.utc).isoformat(),
-        "workspace_dir": str(output_dir).replace("traces", "workspaces"),
-        "result_dir": str(output_dir).replace("traces", "results"),
+        "workspace_dir": str(_sibling_dir(output_dir, "traces", "workspaces")),
+        "result_dir": str(_sibling_dir(output_dir, "traces", "results")),
         "collected_files": collected,
     }
     with open(output_dir / "metadata.json", "w") as f:
@@ -68,6 +70,33 @@ def collect_trace(source_dir: Path, output_dir: Path, task_id: str = None,
 
     print(f"Trace collected to {output_dir}: {len(collected)} files")
     return collected
+
+
+def _sibling_dir(trace_dir: Path, from_dir: str, to_dir: str) -> Path:
+    """Derive workspace/result dir from trace dir by swapping the top-level directory name.
+
+    E.g. bench/traces/G3/T03/replicate_01 → bench/workspaces/G3/T03/replicate_01
+
+    Uses the relative path from PROJECT_ROOT to find and replace only the
+    first relevant component, avoiding the fragile ``str.replace()`` that
+    corrupts paths when the search string appears multiple times.
+    """
+    try:
+        rel = trace_dir.resolve().relative_to(PROJECT_ROOT)
+    except ValueError:
+        # trace_dir is not under PROJECT_ROOT — fall back to the old heuristic
+        return Path(str(trace_dir).replace(from_dir, to_dir, 1))
+    parts = rel.parts
+    if parts and parts[0] == from_dir:
+        return PROJECT_ROOT / to_dir / Path(*parts[1:])
+    # Walk parts to find the right component to replace
+    for i, part in enumerate(parts):
+        if part == from_dir:
+            new_parts = list(parts)
+            new_parts[i] = to_dir
+            return PROJECT_ROOT / Path(*new_parts)
+    # If 'traces' not found, fall back to the first occurrence
+    return Path(str(trace_dir).replace(from_dir, to_dir, 1))
 
 
 def _infer_from_path(path: Path, prefix: str) -> str:
@@ -115,7 +144,7 @@ def main():
     parser.add_argument("--replicate", type=int, default=1, help="Replicate number")
     parser.add_argument(
         "--experiment-set",
-        choices=["dev", "main", "ablation", "full"],
+        choices=["dev", "main", "ablation", "full", "paper"],
         default="dev",
         help="Experiment set label for trace metadata",
     )

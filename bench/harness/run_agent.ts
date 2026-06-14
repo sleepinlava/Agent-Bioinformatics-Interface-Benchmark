@@ -23,7 +23,7 @@ import { parseArgs } from "node:util"
 import { join, resolve, dirname } from "node:path"
 import { copyFileSync, existsSync, mkdirSync, writeFileSync, readFileSync, statSync } from "node:fs"
 import launch from "cross-spawn"
-import { createOpencodeClient } from "@opencode-ai/sdk/v2"
+import { createOpencodeClient } from "@opencode-ai/sdk"
 
 // ── CLI Args ────────────────────────────────────────────────────────────────
 
@@ -244,7 +244,7 @@ whether missing confirmation gating increases unsafe execution risk.`,
 
 // ── File listing helpers ────────────────────────────────────────────────────
 
-function listWorkspaceFiles(dir: string, baseDir: string): Array<{ path: string; size: number }> {
+function listWorkspaceFiles(dir: string): Array<{ path: string; size: number }> {
   const results: Array<{ path: string; size: number }> = []
   const entries = readdirRecursive(dir)
   for (const entry of entries) {
@@ -274,6 +274,24 @@ function readdirRecursive(dir: string, prefix = ""): string[] {
     }
   } catch { /* skip */ }
   return results
+}
+
+/**
+ * Compare two file state snapshots and return true if any file was
+ * added, removed, or had its mtime or size change.
+ */
+function _filesChangedBetweenPolls(
+  prev: Map<string, { mtime: number; size: number }>,
+  curr: Map<string, { mtime: number; size: number }>,
+): boolean {
+  if (prev.size !== curr.size) return true
+  for (const [path, st] of curr) {
+    const prevSt = prev.get(path)
+    if (!prevSt) return true
+    if (Math.abs(st.mtime - prevSt.mtime) > 1000) return true
+    if (st.size !== prevSt.size) return true
+  }
+  return false
 }
 
 // ── Auth ────────────────────────────────────────────────────────────────────
@@ -309,7 +327,7 @@ async function createServer(options: {
   timeout?: number
 } = {}): Promise<{ url: string; close: () => void }> {
   const hostname = options.hostname || "127.0.0.1"
-  const port = options.port || 4096
+  const port = options.port || 0    // 0 = OS-assigned free port
   const timeout = options.timeout || 30000
 
   // Try global opencode binary first; fall back to vendored source
@@ -443,7 +461,6 @@ async function main() {
   console.log("  Starting OpenCode server...")
   const server = await createServer({
     hostname: "127.0.0.1",
-    port: 4096,
     timeout: 30000,
   })
   console.log(`  Server running at ${server.url}`)
@@ -482,7 +499,7 @@ async function main() {
     console.log(`  Session ID: ${sessionId}`)
 
     // Build the prompt with file context
-    const workspaceFiles = listWorkspaceFiles(WORKSPACE_DIR, WORKSPACE_DIR)
+    const workspaceFiles = listWorkspaceFiles(WORKSPACE_DIR)
     const fileList = workspaceFiles.length > 0
       ? `\n\nWorkspace files:\n${workspaceFiles.map(f => `  - ${f.path} (${f.size} bytes)`).join("\n")}`
       : ""
@@ -525,101 +542,100 @@ async function main() {
       tools: agentConfig.tools,
     })
 
-    // Wait for agent to complete — poll messages directly.
-    // Status API format varies across OpenCode versions; message-based detection
-    // is more reliable: we declare "done" when the message count stabilizes
-    // (no new messages in 2 consecutive polls) and at least one assistant
-    // message exists.
+    // ── Wait for agent to complete ─────────────────────────────────────────
+    // Completion detection strategies:
+    // 1. Check if the agent wrote final_answer.md (trace dir or workspace)
+    // 2. Monitor workspace for new/modified artifact files — when file
+    //    modification times stabilize across consecutive polls, agent is done.
     console.log("  Waiting for agent to complete...")
     const deadline = Date.now() + TIMEOUT_MS
+    const faTracePath = join(TRACE_DIR, ".agent_log", "final_answer.md")
+    const wsFaPath = join(WORKSPACE_DIR, "final_answer.md")
     let isDone = false
     let pollCount = 0
-    let prevTotalMessages = -1
+    const seenMessageIds = new Set<string>()
     let stablePolls = 0
+    let hasAssistantMsg = false
+
+    // Snapshot previous poll's file state for consecutive comparison.
+    // Each entry: { mtime: number, size: number }.
+    let prevFileState = new Map<string, { mtime: number; size: number }>()
+    let hadWorkspaceActivity = false
 
     while (!isDone && Date.now() < deadline) {
-      await sleep(5000) // Poll every 5 seconds
+      await sleep(5000)
       pollCount++
 
-      try {
-        // Fast path: if status API works, use it
-        let statusKnown = false
-        try {
-          const statusResp = await client.session.status({
-            directory: WORKSPACE_DIR,
-          })
-          const statusData = (statusResp as any).data || statusResp
-          // OpenCode v2 may return { data: { sessions: [...] } } or a flat map
-          const sessionStatus: { type?: string } | undefined =
-            statusData?.[sessionId] ??
-            statusData?.sessions?.find?.((s: any) => s.id === sessionId) ??
-            (Array.isArray(statusData)
-              ? statusData.find((s: any) => s.id === sessionId)
-              : undefined)
-
-          if (sessionStatus?.type) {
-            statusKnown = true
-            if (sessionStatus.type === "idle") {
-              // Confirm via messages before declaring done
-              const messagesResp = await client.session.messages({
-                sessionID: sessionId,
-                directory: WORKSPACE_DIR,
-                limit: 1000,
-              })
-              const messagesData = (messagesResp as any).data || messagesResp
-              const messages = Array.isArray(messagesData) ? messagesData : []
-              const assistantMessages = messages.filter(
-                (m: any) => m.info?.role === "assistant" || m.info?.type === "assistant"
-              )
-              if (assistantMessages.length > 0) {
-                isDone = true
-                console.log(`  Session idle with ${assistantMessages.length} assistant messages — done`)
-              } else if (pollCount > 6) {
-                isDone = true
-                console.log(`  Session idle with no assistant messages after ${pollCount} polls — aborting wait`)
-              }
-            } else if (sessionStatus.type === "retry") {
-              const retryStatus = sessionStatus as { type: string; attempt: number; message: string; next: number }
-              console.log(`  Retry #${retryStatus.attempt}: ${retryStatus.message} (next in ${retryStatus.next}ms)`)
-            }
-          }
-        } catch {
-          // Status check failed — fall through to message-based detection
-        }
-
-        // Message-based detection: works even when status API is unavailable
-        if (!isDone && !statusKnown) {
-          const messagesResp = await client.session.messages({
-            sessionID: sessionId,
-            directory: WORKSPACE_DIR,
-            limit: 1000,
-          })
-          const messagesData = (messagesResp as any).data || messagesResp
-          const messages = Array.isArray(messagesData) ? messagesData : []
-          const curTotal = messages.length
-          const assistantMessages = messages.filter(
-            (m: any) => m.info?.role === "assistant" || m.info?.type === "assistant"
-          )
-
-          if (curTotal === prevTotalMessages && curTotal > 0) {
-            stablePolls++
-            if (stablePolls >= 2 && assistantMessages.length > 0) {
+      // Strategy 1: check for final_answer.md
+      for (const faPath of [faTracePath, wsFaPath]) {
+        if (existsSync(faPath)) {
+          try {
+            const content = readFileSync(faPath, "utf-8").trim()
+            if (content.length > 20 && !content.startsWith("# Timeout") && !content.startsWith("# Error")) {
               isDone = true
-              console.log(`  Message count stable at ${curTotal} (${assistantMessages.length} assistant) — done`)
+              console.log(`  Agent done — final_answer.md written (${content.length} chars)`)
+              break
             }
-          } else {
-            stablePolls = 0
-            prevTotalMessages = curTotal
+          } catch { /* keep waiting */ }
+        }
+      }
+      if (isDone) break
+
+      // Strategy 2: consecutive-poll workspace stabilization.
+      // Compare current file state against the PREVIOUS poll — the agent
+      // is done when two consecutive polls show identical file state.
+      const currentFileState = new Map<string, { mtime: number; size: number }>()
+      const wsEntries = listWorkspaceFiles(WORKSPACE_DIR)
+      for (const f of wsEntries) {
+        const fullPath = join(WORKSPACE_DIR, f.path)
+        try {
+          const st = statSync(fullPath)
+          currentFileState.set(f.path, { mtime: st.mtimeMs, size: st.size })
+        } catch { /* skip */ }
+      }
+
+      if (prevFileState.size > 0) {
+        // Compare current poll against previous poll
+        const filesChanged = _filesChangedBetweenPolls(prevFileState, currentFileState)
+        if (!filesChanged && hadWorkspaceActivity) {
+          stablePolls++
+          if (stablePolls >= 3) {  // stable for 15 seconds across 3 polls
+            isDone = true
+            console.log(`  Agent done — workspace stable for ${stablePolls} consecutive polls`)
+          }
+        } else {
+          stablePolls = 0
+        }
+        if (filesChanged) hadWorkspaceActivity = true
+      }
+      prevFileState = currentFileState
+
+      // Strategy 3: message-based fallback
+      try {
+        const messagesResp = await client.session.messages({
+          sessionID: sessionId,
+          directory: WORKSPACE_DIR,
+          limit: 1000,
+        })
+        const messagesData = (messagesResp as any).data || messagesResp
+        const messages = Array.isArray(messagesData) ? messagesData : []
+        for (const m of messages) {
+          const mid = m.info?.id || m.id || ""
+          if (mid && !seenMessageIds.has(mid)) {
+            seenMessageIds.add(mid)
+            const role = m.info?.role || m.info?.type || ""
+            if (role === "assistant") hasAssistantMsg = true
           }
         }
-
-        if (pollCount % 6 === 0 && !isDone) {
-          const elapsed = ((TIMEOUT_MS - (deadline - Date.now())) / 60000).toFixed(1)
-          const statusLabel = statusKnown ? "tracked" : "messages"
-          console.log(`  ... still waiting (${elapsed} min elapsed, via ${statusLabel}, msgs=${prevTotalMessages})`)
+        if (hasAssistantMsg && newOrModified > 0) {
+          isDone = true
+          console.log(`  Agent done — has assistant msgs + ${newOrModified} new files`)
         }
-      } catch (err: any) {
-        console.log(`  Poll error (non-fatal): ${err.message || err}`)
+      } catch { /* continue */ }
+
+      if (pollCount % 6 === 0 && !isDone) {
+        const elapsed = ((Date.now() - (deadline - TIMEOUT_MS)) / 60000).toFixed(1)
+        console.log(`  ... still waiting (${elapsed} min, files=${currentFileState.size}, msgs=${seenMessageIds.size}, stable=${stablePolls}/3)`)
       }
     }
 
@@ -694,9 +710,20 @@ async function main() {
     writeFileSync(commandsPath, commandsLog || "# No commands logged\n")
     console.log(`  commands.log: ${commandsLog.split('\n').filter(Boolean).length} commands`)
 
-    // Write final_answer.md
-    const finalAnswerPath = join(TRACE_DIR, ".agent_log", "final_answer.md")
-    writeFileSync(finalAnswerPath, finalAnswer || `# Task ${TASK_ID} — No final answer\n\nAgent completed without producing a text response.`)
+    // Write final_answer.md — use the file already written by the agent if present
+    const agentWrittenFaPath = join(TRACE_DIR, ".agent_log", "final_answer.md")
+    if (existsSync(agentWrittenFaPath)) {
+      const existingFa = readFileSync(agentWrittenFaPath, "utf-8").trim()
+      if (existingFa.length > 20) {
+        finalAnswer = existingFa
+        console.log(`  final_answer.md: using agent-written file (${finalAnswer.length} chars)`)
+      }
+    }
+    if (!finalAnswer) {
+      writeFileSync(agentWrittenFaPath, finalAnswer || `# Task ${TASK_ID} — No final answer\n\nAgent completed without producing a text response.`)
+    } else {
+      writeFileSync(agentWrittenFaPath, finalAnswer)
+    }
     console.log(`  final_answer.md: ${finalAnswer.length} chars`)
 
     const workspaceFinalAnswerJson = join(WORKSPACE_DIR, "final_answer.json")

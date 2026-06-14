@@ -348,7 +348,7 @@ def main():
     parser.add_argument(
         "--experiment-set",
         default="main",
-        choices=["dev", "main", "ablation", "full"],
+        choices=["dev", "main", "ablation", "full", "paper"],
         help="Experiment set to validate (default: main)",
     )
     parser.add_argument(

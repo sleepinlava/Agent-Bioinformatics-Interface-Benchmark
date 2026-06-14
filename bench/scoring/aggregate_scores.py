@@ -407,7 +407,7 @@ def main():
     parser.add_argument("--per-task", type=Path, help="Output per_task_scores.tsv path")
     parser.add_argument(
         "--experiment-set",
-        choices=["dev", "main", "ablation", "full"],
+        choices=["dev", "main", "ablation", "full", "paper"],
         help="Only aggregate score files from this experiment set",
     )
     parser.add_argument(

@@ -29,6 +29,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # Allow direct execution from repo root
@@ -223,7 +225,6 @@ def _task_yaml_path(task_id: str) -> Path | None:
 
 
 def _load_task_definition(task_yaml: Path) -> dict:
-    import yaml
     with open(task_yaml) as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
@@ -331,7 +332,6 @@ def _launch_agent_opencode(
         _write_agent_failure(trace_dir, task_id, msg)
         return 1
 
-    import yaml
     with open(task_files[0]) as f:
         task_def = yaml.safe_load(f)
     task_prompt = task_def.get("prompt", "").strip()
@@ -1095,7 +1095,7 @@ def main():
     parser.add_argument(
         "--experiment-set",
         type=str,
-        choices=["dev", "main", "ablation", "full"],
+        choices=["dev", "main", "ablation", "full", "paper"],
         default="dev",
         help="Experiment set label written into metadata and score files",
     )

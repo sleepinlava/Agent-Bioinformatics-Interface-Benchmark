@@ -30,6 +30,10 @@ ablation_groups:
   - A3
   - A4
 
+# Note: A2 (no-standard-tables) was removed during v0.1 scoping because
+# standard tables are already covered by the G1/G2 baseline comparison.
+# The gap in numbering is intentional and documented here for paper clarity.
+
 mvp_tasks:
   - T01
   - T02
