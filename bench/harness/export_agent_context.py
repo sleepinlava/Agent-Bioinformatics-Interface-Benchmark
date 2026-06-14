@@ -116,11 +116,97 @@ def export_context(
         "abi_interface": build_abi_interface(group_id, profile, task_id, experiment_set),
         "workspace_files": workspace_files,
         "expected_artifacts": task.get("expected_artifacts", []),
+        "output_formats": build_output_formats(task),
         "max_agent_steps": task.get("max_agent_steps", 50),
         "timeout_minutes": task.get("timeout_minutes", 20),
     }
 
     return context
+
+
+def build_output_formats(task: dict) -> dict:
+    """Return schema documentation for expected output artifacts.
+
+    This is provided to ALL groups so every agent knows WHAT to produce.
+    The group differentiation is HOW they produce it (ABI CLI vs manual).
+    """
+    return {
+        "execution_plan": {
+            "path": "execution_plan.json",
+            "schema_version": "abi-bench.plan.v1",
+            "description": "A JSON file describing the analysis workflow",
+            "required_fields": ["schema_version", "analysis_type", "steps"],
+            "step_schema": {
+                "step_id": "unique string identifier for this step",
+                "tool_id": "tool identifier from the tool registry in config.yaml",
+                "executable": "name of the executable or script",
+                "command_template": "shell command with {placeholders}",
+                "status": "one of: planned, dry_run, skipped, failed",
+                "inputs": "list of input file paths",
+                "outputs": "list of output file paths",
+            },
+        },
+        "provenance": {
+            "directory": "provenance/",
+            "description": "Traceability artifacts recording what would be executed",
+            "files": {
+                "commands.tsv": "TSV with columns: step_id, tool_id, executable, command, status",
+                "resolved_inputs.tsv": "TSV with columns: step_id, input_path, resolved_path, exists",
+                "tool_versions.tsv": "TSV with columns: tool_id, executable, version, source",
+                "resources.json": "JSON object mapping resource names to their resolved paths",
+                "run_summary.json": "JSON with execution_mode, total_steps, status_counts",
+                "progress.jsonl": "JSONL with one object per step: {step_id, status, timestamp}",
+            },
+        },
+        "tables": {
+            "directory": "tables/",
+            "description": "Standard-format analysis output tables",
+            "format": "TSV files with a header row",
+            "metagenomic_plasmid": ["plasmid_annotations.tsv"],
+            "metatranscriptomics": ["gene_expression.tsv (columns: gene_id, gene_name, ...)"],
+        },
+        "report": {
+            "directory": "report/",
+            "description": "Human-readable analysis report",
+            "files": {
+                "report.md": "Markdown report summarising the analysis",
+                "report.html": "HTML version of the report",
+            },
+        },
+        "artifact_manifest": {
+            "path": "artifact_manifest.json",
+            "description": "Machine-readable inventory of all produced artifacts",
+            "required_fields": ["benchmark", "version", "task_id", "group_id",
+                              "experiment_set", "fixture_set", "replicate", "artifacts"],
+            "artifact_entry": {
+                "path": "relative path to the artifact file",
+                "type": "one of: execution_plan, provenance, table, report, diagnosis",
+                "exists": "boolean indicating whether the file was produced",
+                "size": "file size in bytes (0 if not produced)",
+            },
+        },
+        "diagnosis": {
+            "path": "final_answer.json",
+            "schema_version": "abi-bench.final_answer.v1",
+            "description": "Structured diagnosis output for fault-isolation tasks",
+            "fields": {
+                "schema_version": '"abi-bench.final_answer.v1"',
+                "task_type": '"diagnosis"',
+                "cause": 'one of: "missing_input", "missing_resource", "tool_not_found"',
+                "sample_id": "affected sample identifier (for missing_input)",
+                "field": "affected field name e.g. read1, read2 (for missing_input)",
+                "path": "incorrect or missing path that caused the failure",
+                "resource": "affected resource name (for missing_resource)",
+                "config_key": "config.yaml key path (for missing_resource)",
+                "tool_id": "affected tool identifier (for tool_not_found)",
+                "executable": "expected executable name (for tool_not_found)",
+                "env": "expected conda/virtual environment name (for tool_not_found)",
+                "fix": "suggested corrective action",
+                "fix_required": "boolean, true if a fix is needed",
+                "confidence": 'one of: "high", "medium", "low"',
+            },
+        },
+    }
 
 
 def build_abi_interface(group_id: str, profile: dict, task_id: str, experiment_set: str) -> dict:

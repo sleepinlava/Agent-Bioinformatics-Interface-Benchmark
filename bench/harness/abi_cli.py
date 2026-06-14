@@ -366,29 +366,40 @@ def command_inspect(args) -> int:
 
 
 def command_diagnose(args) -> int:
+    """Return structured workspace DATA for LLM interpretation.
+
+    This command now collects and presents workspace information WITHOUT
+    drawing diagnostic conclusions. The LLM must analyze the data and
+    produce its own diagnosis in final_answer.json. This ensures that
+    all groups (G1/G2/G3) must reason about faults rather than relying
+    on deterministic pattern matching.
+    """
     workspace = args.workspace.resolve()
     group = args.group
+
+    from diagnosis import summarize_workspace_data
+
     if group == "A1":
-        structured = {
-            "schema_version": "abi-bench.final_answer.v1",
-            "task_type": "diagnosis",
-            "cause": "unknown",
-            "fix": "Regenerate provenance and inspect the workspace again.",
+        # Ablation: no provenance, limited data
+        summary = {
+            "schema_version": "abi-bench.workspace_summary.v1",
+            "workspace": str(workspace),
+            "error": "Provenance unavailable for this ablation group.",
+            "instruction": "Inspect visible workspace files manually.",
         }
-        diagnosis = "# ABI Diagnosis\n\nInput/resource/tool failure suspected, but provenance is unavailable."
     elif group == "A3":
-        structured = {
-            "schema_version": "abi-bench.final_answer.v1",
-            "task_type": "diagnosis",
-            "cause": "unstructured_failure",
-            "fix": "Inspect config.yaml and sample_sheet.tsv manually.",
-        }
-        diagnosis = "# ABI Diagnosis\n\nA failure was detected, but structured diagnostic hints are unavailable."
+        # Ablation: no diagnostic hints, just raw file listing
+        summary = summarize_workspace_data(workspace)
+        # Remove the instruction to simulate missing hints
+        summary["instruction"] = (
+            "Raw workspace data. Structured diagnostic hints are unavailable "
+            "for this ablation group. Manually inspect config and sample sheet."
+        )
     else:
-        structured = diagnose_workspace_structured(workspace)
-        diagnosis = format_diagnosis_markdown(structured)
-    (workspace / "final_answer.json").write_text(json.dumps(structured, indent=2) + "\n")
-    print(diagnosis)
+        # G3/G2/G1: provide structured workspace data for LLM to interpret
+        summary = summarize_workspace_data(workspace)
+
+    print(json.dumps(summary, indent=2))
     return 0
 
 

@@ -8,9 +8,9 @@ timeout_minutes: 20
 max_agent_steps: 50
 
 prompt: |
-  Run a dry-run for metatranscriptomics analysis using the available ABI tools
-  on the transcriptomics fixture. It must write execution plan, provenance,
-  commands (including fastp, STAR/HISAT2, featureCounts), standard tables
+  Run a dry-run for metatranscriptomics analysis on the transcriptomics
+  fixture. Produce an execution plan, provenance files, commands
+  (including fastp, STAR/HISAT2, featureCounts), standard tables
   (including gene_expression.tsv), and report artifacts.
   Do not execute real bioinformatics tools.
 

@@ -139,12 +139,60 @@ function getAgentConfig(groupId: string): {
     G1: {
       tools: ["read", "write", "edit", "bash"],
       forbiddenTools: [],
-      systemPrompt: "You have access to shell, file read, and file write. Use documentation to understand the task.",
+      systemPrompt: `You are an agent operating in a bioinformatics benchmark workspace.
+Your available tools: shell (bash), file read, file write.
+
+Workflow phases:
+1. DISCOVER: Read config.yaml, sample_sheet.tsv, and documentation files
+   to understand the analysis configuration and available tools.
+2. PLAN: Produce an execution_plan.json with schema_version "abi-bench.plan.v1",
+   analysis_type, and steps (each with step_id, tool_id, executable, status).
+   Derive tool_ids from the tool registry in config.yaml.
+3. DRY-RUN: Write provenance files (commands.tsv, resolved_inputs.tsv,
+   tool_versions.tsv, resources.json, run_summary.json, progress.jsonl) into
+   a provenance/ subdirectory. Write standard tables (TSV with headers) into
+   a tables/ subdirectory. Write report.md and report.html into a report/
+   subdirectory. Write artifact_manifest.json listing all produced artifacts.
+   Do NOT execute real bioinformatics tools.
+4. INSPECT: Read provenance artifacts to verify step statuses and identify
+   placeholders or missing resources.
+5. DIAGNOSE: When errors occur, systematically inspect config.yaml and
+   sample_sheet.tsv for misconfigurations. Save structured diagnosis to
+   final_answer.json with schema_version "abi-bench.final_answer.v1".
+6. REPORT: Write findings to final_answer.md.
+
+Always distinguish between dry-run and real execution. Never execute real
+bioinformatics tools without explicit confirmation. Write all output
+artifacts to the workspace directory.`,
     },
     G2: {
       tools: ["read", "write", "edit", "bash", "task"],
       forbiddenTools: [],
-      systemPrompt: "You have access to general tool execution. Plan before executing, but note there is no lifecycle control.",
+      systemPrompt: `You are an agent operating in a bioinformatics benchmark workspace.
+Your available tools: shell (bash), task execution, file read, file write.
+
+Workflow phases:
+1. DISCOVER: Read config.yaml, sample_sheet.tsv, and configuration files
+   to understand the analysis configuration and available tools.
+2. PLAN: Produce an execution_plan.json with schema_version "abi-bench.plan.v1",
+   analysis_type, and steps (each with step_id, tool_id, executable, status).
+   Derive tool_ids from the tool registry in config.yaml.
+3. DRY-RUN: Write provenance files (commands.tsv, resolved_inputs.tsv,
+   tool_versions.tsv, resources.json, run_summary.json, progress.jsonl) into
+   a provenance/ subdirectory. Write standard tables (TSV with headers) into
+   a tables/ subdirectory. Write report.md and report.html into a report/
+   subdirectory. Write artifact_manifest.json listing all produced artifacts.
+   Do NOT execute real bioinformatics tools.
+4. INSPECT: Read provenance artifacts to verify step statuses and identify
+   placeholders or missing resources.
+5. DIAGNOSE: When errors occur, systematically inspect config.yaml and
+   sample_sheet.tsv for misconfigurations. Save structured diagnosis to
+   final_answer.json with schema_version "abi-bench.final_answer.v1".
+6. REPORT: Write findings to final_answer.md.
+
+Always distinguish between dry-run and real execution. Never execute real
+bioinformatics tools without explicit confirmation. Use task tool for
+multi-step planning. Write all output artifacts to the workspace directory.`,
     },
     G3: {
       tools: ["read", "write", "edit", "bash", "task"],
@@ -456,7 +504,7 @@ async function main() {
     }
 
     const diagnosisSidecarInstruction = ["T05", "T06", "T07"].includes(TASK_ID)
-      ? ` For diagnosis tasks, also save ${TRACE_DIR}/.agent_log/final_answer.json with schema_version, task_type, cause, sample_id, field, path, resource, config_key, tool_id, executable, env, fix, and confidence fields. If you use ABI diagnose and it writes final_answer.json to the workspace, leave that file in place.`
+      ? ` For diagnosis tasks, also save ${TRACE_DIR}/.agent_log/final_answer.json following the diagnosis schema documented in agent_context.json output_formats.`
       : ""
     const fullPrompt = `${TASK_PROMPT}\n\nWorkspace: ${WORKSPACE_DIR}${fileList}${keyFilesContent}\n\nWrite all output artifacts to the workspace directory. Dry-run tasks must include artifact_manifest.json. Save your final answer to ${TRACE_DIR}/.agent_log/final_answer.md.${diagnosisSidecarInstruction}`
 

@@ -8,9 +8,10 @@ timeout_minutes: 15
 max_agent_steps: 40
 
 prompt: |
-  Create an execution plan for metagenomic plasmid analysis using the available
-  ABI tools. The plan must specify analysis_type "metagenomic_plasmid",
-  include unique step_ids, and reference valid tool_ids from the tool registry.
+  Create an execution plan for metagenomic plasmid analysis.
+  The plan must specify analysis_type "metagenomic_plasmid",
+  include unique step_ids, and reference valid tool_ids
+  from the tool registry found in the workspace configuration.
   Do not execute any real bioinformatics tools.
 
 allowed_actions:

@@ -29,9 +29,108 @@ def load_config_safe(workspace: Path) -> dict:
     return data
 
 
+def summarize_workspace_data(workspace: Path) -> dict:
+    """
+    Return structured RAW DATA about the workspace for LLM interpretation.
+
+    This function collects and organizes workspace information WITHOUT drawing
+    diagnostic conclusions. The LLM must analyze the data and produce its own
+    diagnosis in final_answer.json.
+
+    Groups with ABI access get this as structured JSON from `abi diagnose`.
+    Groups without ABI must manually parse config.yaml and sample_sheet.tsv
+    to gather the same information. All groups must reason about the data.
+    """
+    config = load_config_safe(workspace)
+    sample_sheet_rel = str(config.get("samples", {}).get("sample_sheet", "sample_sheet.tsv"))
+    sample_sheet_path = workspace / sample_sheet_rel
+
+    # Collect sample sheet data
+    samples = []
+    if sample_sheet_path.is_file():
+        try:
+            with open(sample_sheet_path) as f:
+                reader = csv.DictReader(f, delimiter="\t")
+                for row in reader:
+                    samples.append(dict(row))
+        except (OSError, csv.Error) as e:
+            samples.append({"_error": f"Failed to parse sample sheet: {e}"})
+
+    # Collect tool registry data
+    tools = {}
+    for tool_id, meta in config.get("tools", {}).items():
+        if isinstance(meta, dict):
+            tools[tool_id] = {
+                "executable": meta.get("executable", tool_id),
+                "version": meta.get("version", ""),
+                "env": meta.get("env", ""),
+                "purpose": meta.get("purpose", meta.get("description", "")),
+            }
+        else:
+            tools[tool_id] = {"executable": str(meta)}
+
+    # Collect resource data
+    resources = {}
+    for name, meta in config.get("resources", {}).items():
+        if isinstance(meta, dict):
+            resources[name] = {
+                "path": meta.get("path", ""),
+                "type": meta.get("type", ""),
+                "description": meta.get("description", ""),
+            }
+        else:
+            resources[name] = {"path": str(meta)}
+
+    # Check file existence for referenced paths (data, not conclusions)
+    path_checks = []
+    for sample in samples:
+        for field in ("read1", "read2", "assembly"):
+            val = sample.get(field, "")
+            if val:
+                exists = (workspace / val).exists() if not val.startswith("/") else Path(val).exists()
+                path_checks.append({
+                    "source": f"sample_sheet::{sample.get('sample_id', '?')}::{field}",
+                    "path": val,
+                    "exists_on_disk": exists,
+                })
+    for name, meta in resources.items():
+        val = meta.get("path", "")
+        if val:
+            exists = (workspace / val).exists() if not val.startswith("/") else Path(val).exists()
+            path_checks.append({
+                "source": f"config::resources.{name}.path",
+                "path": val,
+                "exists_on_disk": exists,
+            })
+
+    return {
+        "schema_version": "abi-bench.workspace_summary.v1",
+        "workspace": str(workspace),
+        "analysis_type": config.get("analysis", {}).get("type", "unknown"),
+        "samples": samples,
+        "tools": tools,
+        "resources": resources,
+        "path_existence_checks": path_checks,
+        "instruction": (
+            "Above is raw workspace data. Analyze it to identify any faults "
+            "(missing inputs, missing resources, missing tools) and produce "
+            "a structured diagnosis in final_answer.json following the "
+            "abi-bench.final_answer.v1 schema. Do NOT rely on literal "
+            "'/missing/' or 'not installed' grep patterns — verify paths "
+            "and cross-reference the configuration."
+        ),
+    }
+
+
 def diagnose_workspace_structured(workspace: Path) -> dict:
     """
     Inspect the workspace for injected faults and return a structured diagnosis.
+
+    .. deprecated::
+       Prefer :func:`summarize_workspace_data` for new code. This function
+       performs deterministic pattern matching (``/missing/``, ``not installed``)
+       which short-circuits LLM reasoning. It is retained only for backward
+       compatibility with existing scoring validation.
 
     Checks (in order):
       1. Sample sheet for paths containing ``/missing/`` → missing_input

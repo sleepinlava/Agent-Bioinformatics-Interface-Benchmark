@@ -8,8 +8,8 @@ timeout_minutes: 15
 max_agent_steps: 40
 
 prompt: |
-  Create an execution plan for metatranscriptomics analysis using the available
-  ABI tools on the transcriptomics fixture. The plan must include:
+  Create an execution plan for metatranscriptomics analysis
+  on the transcriptomics fixture. The plan must include:
   - analysis_type "metatranscriptomics"
   - fastp for quality control
   - STAR or HISAT2 for alignment
