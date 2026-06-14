@@ -37,12 +37,16 @@ scoring:
       relpath: "execution_plan.json"
       field: "analysis_type"
       expected: "metatranscriptomics"
+  step_ids_unique:
+    points: 1
+  tool_ids_valid:
+    points: 1
   plan_contains_fastp:
     points: 1
   plan_contains_aligner:
-    points: 2
+    points: 1
   plan_contains_featurecounts:
-    points: 2
+    points: 1
 
 failure_codes:
   - artifact_missing

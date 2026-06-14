@@ -23,10 +23,10 @@ tools:
 
 resources:
   genomad_db:
-    path: /hidden/databases/genomad/genomad_db
+    path: resources/genomad_db
     type: directory
   pfam_hmm:
-    path: /hidden/databases/pfam/Pfam-A.hmm
+    path: resources/Pfam-A.hmm
     type: hmm
 
 output:

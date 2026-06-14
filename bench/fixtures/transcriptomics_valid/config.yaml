@@ -37,15 +37,15 @@ tools:
 
 resources:
   genome_index:
-    path: /data/references/metaT_genome_index
+    path: resources/metaT_genome_index
     type: directory
     description: "STAR genome index directory"
   annotation_gtf:
-    path: /data/references/metaT_annotation.gtf
+    path: resources/metaT_annotation.gtf
     type: gtf
     description: "Gene annotation in GTF format"
   rrna_db:
-    path: /data/databases/sortmerna/rrna_db
+    path: resources/rrna_db
     type: directory
     description: "SortMeRNA rRNA database for removal"
 

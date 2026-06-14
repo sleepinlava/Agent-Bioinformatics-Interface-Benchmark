@@ -1,0 +1,5 @@
+tool_id	version	env
+prodigal	2.6.3	prodigal-env
+hmmer	3.3.2	hmmer-env
+genomad	1.5.0	genomad-env
+blast	2.14.0	blast-env

@@ -17,7 +17,7 @@ from pathlib import Path
 
 # Reuse the aggregation logic
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from aggregate_scores import collect_scores, compute_group_stats, build_summary
+from aggregate_scores import collect_scores, compute_group_stats, build_summary, filter_scores
 
 
 def make_table1_main_results(summary: dict, outdir: Path):
@@ -162,14 +162,32 @@ def main():
     parser = argparse.ArgumentParser(description="Generate paper tables from ABI-Bench results")
     parser.add_argument("--results", required=True, type=Path, help="Results directory with score.json files")
     parser.add_argument("--outdir", required=True, type=Path, help="Output directory for TSV tables")
+    parser.add_argument(
+        "--experiment-set",
+        choices=["dev", "main", "ablation", "full", "paper"],
+        help="Filter by experiment set before generating tables",
+    )
+    parser.add_argument(
+        "--fixture-set",
+        choices=["public", "hidden"],
+        help="Filter by fixture set before generating tables",
+    )
     args = parser.parse_args()
 
-    scores = collect_scores(args.results)
+    scores = filter_scores(
+        collect_scores(args.results),
+        experiment_set=args.experiment_set,
+        fixture_set=args.fixture_set,
+    )
     if not scores:
-        print("No scores found in", args.results)
+        print(
+            "No scores found in",
+            args.results,
+            f"(experiment_set={args.experiment_set or 'all'}, fixture_set={args.fixture_set or 'all'})",
+        )
         return 1
 
-    summary = build_summary(scores)
+    summary = build_summary(scores, experiment_set=args.experiment_set, fixture_set=args.fixture_set)
     args.outdir.mkdir(parents=True, exist_ok=True)
 
     print("Generating paper tables...")

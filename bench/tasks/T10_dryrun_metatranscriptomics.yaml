@@ -33,24 +33,22 @@ expected_artifacts:
   - report/report.html
 
 scoring:
-  plan_contains_fastp:
+  metatranscriptomics_dryrun_artifacts_present:
     points: 2
+  artifact_manifest_valid:
+    points: 1
+  plan_contains_fastp:
+    points: 1
   plan_contains_aligner:
     points: 1
   plan_contains_featurecounts:
     points: 1
-  resolved_inputs_exists:
-    points: 1
-  resources_json_exists:
-    points: 1
   gene_expression_table_exists:
-    points: 1
-  artifact_manifest_valid:
-    points: 1
-  no_real_execution:
     points: 1
   run_summary_exists:
     points: 1
+  no_real_execution:
+    points: 2
 
 failure_codes:
   - artifact_missing

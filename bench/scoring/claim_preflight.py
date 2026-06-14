@@ -239,9 +239,10 @@ def _check_completeness(scores, report, required_groups, required_tasks, min_rep
                          f"{gid}: all {len(required_tasks)} tasks present")
 
     # Cross-group task uniformity
+    required_task_set = set(required_tasks)
     task_sets = {}
     for gid in required_groups:
-        task_sets[gid] = set(present.get(gid, {}).keys())
+        task_sets[gid] = set(present.get(gid, {}).keys()) & required_task_set
     if len(set(frozenset(ts) for ts in task_sets.values())) > 1:
         lines = [f"  {gid}: {sorted(ts)}" for gid, ts in sorted(task_sets.items())]
         report.check("cross_group_task_uniformity", False,
@@ -331,6 +332,25 @@ def _check_aggregation_safety(scores, report, all_scores, experiment_set, fixtur
     # Check that G1/G2 scores don't have ABI CLI traces (G3-only capability)
     g1g2_scores = [s for s in scores if s.get("group_id") in ("G1", "G2")]
     g3_scores = [s for s in scores if s.get("group_id") == "G3"]
+
+    leaked = [
+        s for s in g1g2_scores
+        if s.get("metrics", {}).get("abi_interface_used") is True
+        or "abi_interface_leakage" in s.get("failure_codes", [])
+    ]
+    if leaked:
+        examples = ", ".join(
+            f"{s.get('group_id')}/{s.get('task_id')}/rep_{s.get('replicate')}"
+            for s in leaked[:5]
+        )
+        report.check(
+            "baseline_no_abi_usage",
+            False,
+            f"{len(leaked)} G1/G2 score(s) used ABI interface: {examples}"
+            + ("..." if len(leaked) > 5 else ""),
+        )
+    else:
+        report.check("baseline_no_abi_usage", True, "No ABI interface usage detected in G1/G2")
 
     if g3_scores:
         report.check("g3_has_scores", True, f"G3 has {len(g3_scores)} score(s)")

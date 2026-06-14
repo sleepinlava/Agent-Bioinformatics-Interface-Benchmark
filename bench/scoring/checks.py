@@ -61,6 +61,22 @@ def check_report_exists(run_dir: Path) -> bool:
     )
 
 
+def check_paths_exist(run_dir: Path, relpaths: list[str]) -> bool:
+    """Return True if every required relative file/dir exists and is non-empty."""
+    for relpath in relpaths:
+        p = run_dir / relpath
+        if p.is_file():
+            if p.stat().st_size <= 0:
+                return False
+            continue
+        if p.is_dir():
+            if not any(p.iterdir()):
+                return False
+            continue
+        return False
+    return True
+
+
 # ── JSON content checks ─────────────────────────────────────────────────────
 
 def _load_json(run_dir: Path, relpath: str) -> Optional[dict]:
@@ -385,7 +401,7 @@ def check_structured_missing_input_diagnosis(
         "cause": "missing_input",
         "sample_id": "SAMPLE_002",
         "field": "read1",
-        "path": "/data/missing/SAMPLE_002_R1.fastq.gz",
+        "path": "missing/SAMPLE_002_R1.fastq.gz",
         "fix_required": True,
     }
     return (
@@ -408,7 +424,7 @@ def check_structured_missing_resource_diagnosis(
         "cause": "missing_resource",
         "resource": "genomad_db",
         "config_key": "resources.genomad_db.path",
-        "path": "/data/missing/genomad_db_v2",
+        "path": "missing/genomad_db_v2",
         "fix_required": True,
     }
     return (
@@ -479,7 +495,7 @@ def check_final_answer_contains_field(trace_dir: Path) -> bool:
 def check_final_answer_contains_path(trace_dir: Path) -> bool:
     """Check that final answer identifies the incorrect path."""
     text = _read_final_answer(trace_dir).lower()
-    return "/data/missing/" in text or "nonexistent" in text or "missing" in text
+    return "nonexistent" in text or "missing" in text
 
 
 def check_final_answer_contains_fix(trace_dir: Path) -> bool:

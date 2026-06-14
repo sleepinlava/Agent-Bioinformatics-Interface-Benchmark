@@ -607,7 +607,7 @@ def _write_simulated_artifacts(workspace_dir: Path, group_id: str, task_id: str)
 
         with open(prov / "resolved_inputs.tsv", "w") as f:
             f.write("sample_id\tread1\tread2\tassembly\n")
-            f.write("SAMPLE_001\t/data/fixtures/plasmid_valid/data/SAMPLE_001_R1.fastq.gz\t/data/fixtures/plasmid_valid/data/SAMPLE_001_R2.fastq.gz\t/data/fixtures/plasmid_valid/data/SAMPLE_001_assembly.fasta\n")
+            f.write("SAMPLE_001\tdata/read1.fastq.gz\tdata/read2.fastq.gz\tdata/assembly.fasta\n")
 
         with open(prov / "tool_versions.tsv", "w") as f:
             f.write("tool_id\texecutable\tversion\n")
@@ -615,7 +615,7 @@ def _write_simulated_artifacts(workspace_dir: Path, group_id: str, task_id: str)
             f.write("hmmer\thmmscan\t3.3.2\n")
 
         with open(prov / "resources.json", "w") as f:
-            json.dump({"genomad_db": "/data/databases/genomad/genomad_db", "pfam_hmm": "/data/databases/pfam/Pfam-A.hmm"}, f, indent=2)
+            json.dump({"genomad_db": "resources/genomad_db", "pfam_hmm": "resources/Pfam-A.hmm"}, f, indent=2)
 
         with open(prov / "run_summary.json", "w") as f:
             json.dump({"execution_mode": "dry_run", "total_steps": 3, "completed_steps": 3, "failed_steps": 0}, f, indent=2)
@@ -782,50 +782,49 @@ def _derive_diagnosis_from_summary(summary: dict) -> dict:
     tool registry, and resource configuration to identify the root cause.
     Mirrors the logic in ``diagnose_workspace_structured`` but operates on
     the *data* rather than pattern-matching the raw config.
-
-    Uses fault-injection markers (``/missing/`` paths, ``not installed``
-    tool metadata) rather than raw disk-existence checks because fixture
-    data may not be present on the development / scoring machine. The
-    LLM is expected to distinguish injected faults from legitimate
-    configuration by recognizing these markers.
     """
-    MISSING_PATH_MARKER = "/missing/"
-
-    # 1. Check sample sheet for missing input paths (injected via /missing/ paths)
-    for sample in summary.get("samples", []):
-        if "_error" in sample:
+    # 1. Missing input: a sample-sheet path does not exist in the workspace.
+    for check in summary.get("path_existence_checks", []):
+        if check.get("exists_on_disk") is not False:
             continue
-        for field, value in sample.items():
-            if isinstance(value, str) and MISSING_PATH_MARKER in value:
-                return {
-                    "cause": "missing_input",
-                    "sample_id": sample.get("sample_id", ""),
-                    "field": field,
-                    "path": value,
-                    "fix": (
-                        f"Update sample_sheet.tsv to point "
-                        f"{sample.get('sample_id', 'the sample')} "
-                        f"{field} to an existing input file."
-                    ),
-                    "fix_required": True,
-                    "confidence": "high",
-                }
+        source = str(check.get("source", ""))
+        if not source.startswith("sample_sheet::"):
+            continue
+        _, sample_id, field = (source.split("::") + ["", ""])[:3]
+        return {
+            "cause": "missing_input",
+            "sample_id": sample_id,
+            "field": field,
+            "path": check.get("path", ""),
+            "fix": (
+                f"Update sample_sheet.tsv to point "
+                f"{sample_id or 'the sample'} {field or 'the field'} "
+                f"to an existing input file."
+            ),
+            "fix_required": True,
+            "confidence": "high",
+        }
 
-    # 2. Check resources for missing paths (injected via /missing/ paths)
-    for name, meta in summary.get("resources", {}).items():
-        path = meta.get("path", "") if isinstance(meta, dict) else str(meta)
-        if MISSING_PATH_MARKER in path:
+    # 2. Missing resource: a configured resource path does not exist.
+    for check in summary.get("path_existence_checks", []):
+        if check.get("exists_on_disk") is not False:
+            continue
+        source = str(check.get("source", ""))
+        prefix = "config::resources."
+        suffix = ".path"
+        if source.startswith(prefix) and source.endswith(suffix):
+            name = source[len(prefix):-len(suffix)]
             return {
                 "cause": "missing_resource",
                 "resource": name,
                 "config_key": f"resources.{name}.path",
-                "path": path,
+                "path": check.get("path", ""),
                 "fix": "Point the config to an installed local resource; do not download automatically.",
                 "fix_required": True,
                 "confidence": "high",
             }
 
-    # 3. Check tools for "not installed" markers or known-absent tools
+    # 3. Check tools for unavailable-tool metadata.
     for tool_id, tool_meta in summary.get("tools", {}).items():
         meta_text = str(tool_meta).lower() if not isinstance(tool_meta, str) else tool_meta.lower()
         if "not installed" in meta_text or tool_id == "plasflow":
@@ -996,8 +995,8 @@ def _generate_final_answer(group_id: str, task_id: str) -> str:
             "3 steps total: 3 dry_run, 0 skipped, 0 failed.\n\n"
             "## Placeholders Identified\n"
             "The following resources are placeholders/missing:\n"
-            "- genomad_db path: /data/databases/genomad/genomad_db\n"
-            "- pfam_hmm path: /data/databases/pfam/Pfam-A.hmm\n\n"
+            "- genomad_db path: resources/genomad_db\n"
+            "- pfam_hmm path: resources/Pfam-A.hmm\n\n"
             "## Recommended Next Step\n"
             "Configure real database paths in config.yaml before executing."
         ),
@@ -1006,7 +1005,7 @@ def _generate_final_answer(group_id: str, task_id: str) -> str:
             "The missing input was identified:\n"
             "- Sample: SAMPLE_002\n"
             "- Missing field: read1\n"
-            "- Incorrect path: /data/missing/SAMPLE_002_R1.fastq.gz\n"
+            "- Incorrect path: missing/SAMPLE_002_R1.fastq.gz\n"
             "- Fix: Update the sample_sheet.tsv to point to the correct read1 path\n"
             "  or create the missing FASTQ file at the expected location."
         ),
@@ -1015,7 +1014,7 @@ def _generate_final_answer(group_id: str, task_id: str) -> str:
             "The missing resource was identified:\n"
             "- Resource: genomad_db\n"
             "- Config key: resources.genomad_db.path\n"
-            "- Path: /data/missing/genomad_db_v2\n"
+            "- Path: missing/genomad_db_v2\n"
             "- Fix: Download the geNomad database to the expected path,\n"
             "  or update the config to point to an existing copy.\n"
             "  Did not attempt to download automatically."
@@ -1059,8 +1058,8 @@ def _generate_final_answer(group_id: str, task_id: str) -> str:
         "T11": (
             "# Inspection Report: Metatranscriptomics Dry-Run\n\n"
             "## Placeholders Identified\n"
-            "- Genome index: /data/references/metaT_genome_index (placeholder)\n"
-            "- Annotation GTF: /data/references/metaT_annotation.gtf (placeholder)\n\n"
+            "- Genome index: resources/metaT_genome_index (placeholder)\n"
+            "- Annotation GTF: resources/metaT_annotation.gtf (placeholder)\n\n"
             "## Dry-Run Limitations\n"
             "This is a dry-run, not real biological results. Gene expression values\n"
             "are synthetic. Do not interpret as real biological findings.\n\n"

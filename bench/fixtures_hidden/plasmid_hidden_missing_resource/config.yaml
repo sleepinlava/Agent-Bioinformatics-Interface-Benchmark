@@ -23,11 +23,11 @@ tools:
 
 resources:
   mobileog_db:
-    path: /hidden/missing/mobileog_db_2026
+    path: missing/mobileog_db_2026
     type: directory
     description: "Mobile genetic element database"
   pfam_hmm:
-    path: /hidden/databases/pfam/Pfam-A.hmm
+    path: resources/Pfam-A.hmm
     type: hmm
 
 output:

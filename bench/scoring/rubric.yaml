@@ -63,6 +63,40 @@ rubric:
       points: 1
       function: check_report_exists
 
+    plasmid_dryrun_artifacts_present:
+      description: "Plasmid dry-run produced all required artifact paths"
+      points: 3
+      function: check_paths_exist
+      args:
+        relpaths:
+          - "execution_plan.json"
+          - "artifact_manifest.json"
+          - "provenance/commands.tsv"
+          - "provenance/resolved_inputs.tsv"
+          - "provenance/tool_versions.tsv"
+          - "provenance/resources.json"
+          - "provenance/run_summary.json"
+          - "provenance/progress.jsonl"
+          - "tables"
+          - "report/report.md"
+          - "report/report.html"
+
+    metatranscriptomics_dryrun_artifacts_present:
+      description: "Metatranscriptomics dry-run produced all required artifact paths"
+      points: 2
+      function: check_paths_exist
+      args:
+        relpaths:
+          - "execution_plan.json"
+          - "artifact_manifest.json"
+          - "provenance/commands.tsv"
+          - "provenance/resolved_inputs.tsv"
+          - "provenance/resources.json"
+          - "provenance/run_summary.json"
+          - "tables/gene_expression.tsv"
+          - "report/report.md"
+          - "report/report.html"
+
     artifact_manifest_valid:
       description: "artifact_manifest.json is present and matches generated artifacts"
       points: 1
@@ -263,7 +297,56 @@ rubric:
         relpath: "tables/gene_expression.tsv"
         required_columns: ["gene_id", "gene_name"]
 
-    # ── T04 Inspection checks ──────────────────────────────────────
+    # ── T02 Planning text-based checks ───────────────────────────────
+    plan_text_describes_analysis:
+      description: "Agent describes the correct analysis type in final answer"
+      points: 2
+      function: check_final_answer_contains
+      args:
+        required_terms: ["metagenomic_plasmid"]
+
+    plan_text_describes_tools:
+      description: "Agent references valid bioinformatics tools for the workflow"
+      points: 3
+      function: check_final_answer_contains
+      args:
+        required_terms: ["prodigal", "genomad"]
+
+    plan_text_describes_structure:
+      description: "Agent describes step structure and tool provenance"
+      points: 3
+      function: check_final_answer_contains
+      args:
+        required_terms: ["step", "tool", "plan"]
+
+    # ── T03 Dry-run text-based checks ────────────────────────────────
+    dryrun_text_describes_artifacts:
+      description: "Agent describes provenance and artifact generation"
+      points: 3
+      function: check_final_answer_contains
+      args:
+        required_terms: ["provenance", "execution_plan", "commands"]
+
+    dryrun_text_describes_safety:
+      description: "Agent describes dry-run safety and placeholder values"
+      points: 3
+      function: check_final_answer_contains
+      args:
+        required_terms: ["dry-run", "placeholder"]
+
+    dryrun_text_describes_tables:
+      description: "Agent describes standard table output"
+      points: 2
+      function: check_final_answer_contains
+      args:
+        required_terms: ["table", "annotation"]
+
+    dryrun_text_describes_report:
+      description: "Agent describes generating a human-readable report"
+      points: 2
+      function: check_final_answer_contains
+      args:
+        required_terms: ["report"]
     reads_provenance_correctly:
       description: "Agent correctly reads provenance artifacts"
       points: 2
@@ -332,6 +415,21 @@ rubric:
       description: "final_answer.json contains structured tool-not-found diagnosis fields"
       points: 4
       function: check_structured_tool_not_found_diagnosis
+
+    # ── T09/T10 Metatranscriptomics text-based checks ────────────────
+    plantext_describes_analysis:
+      description: "Agent describes metatranscriptomics analysis type in final answer"
+      points: 2
+      function: check_final_answer_contains
+      args:
+        required_terms: ["metatranscriptomics"]
+
+    plantext_describes_tools:
+      description: "Agent references fastp, aligner, and featureCounts tools"
+      points: 3
+      function: check_final_answer_contains
+      args:
+        required_terms: ["fastp", "featureCounts"]
 
     # ── T11 Metatranscriptomics inspection checks ─────────────────
     identifies_genome_index_placeholder:

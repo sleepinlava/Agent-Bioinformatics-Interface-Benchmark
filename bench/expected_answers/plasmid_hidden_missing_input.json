@@ -3,6 +3,6 @@
   "cause": "missing_input",
   "sample_id": "CASE_017",
   "field": "assembly",
-  "path": "/hidden/missing/CASE_017_assembly.fasta",
+  "path": "missing/CASE_017_assembly.fasta",
   "fix_required": true
 }

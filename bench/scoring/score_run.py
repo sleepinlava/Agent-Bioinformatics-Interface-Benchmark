@@ -129,6 +129,14 @@ def score_task(
     agent_steps = _count_agent_steps(trace_dir)
     elapsed = _elapsed_seconds(trace_dir)
     metadata = _read_metadata(trace_dir)
+    group_id = metadata.get("group_id") or _discover_group_id(run_dir)
+    replicate = metadata.get("replicate") or _discover_replicate(run_dir)
+    abi_interface_used = _detect_abi_interface_usage(trace_dir)
+    if group_id in {"G1", "G2"} and abi_interface_used:
+        failure_codes.append("abi_interface_leakage")
+        failure_reasons.append(
+            "Baseline group trace shows ABI lifecycle command or ABI CLI usage"
+        )
     task_type = task.get("task_type")
     successful_dryrun = (
         _is_dryrun_successful(run_dir, trace_dir)
@@ -143,8 +151,8 @@ def score_task(
         "task_type": task_type,
         "experiment_set": experiment_set or metadata.get("experiment_set", "unknown"),
         "fixture_set": fixture_set or metadata.get("fixture_set", "public"),
-        "group_id": _discover_group_id(run_dir),
-        "replicate": _discover_replicate(run_dir),
+        "group_id": group_id,
+        "replicate": replicate,
         "model_id": metadata.get("model_id", "LLM4"),
         "agent_harness": metadata.get("agent_harness", "opencode"),
         "agent_mode": metadata.get("agent_mode", "unknown"),
@@ -157,6 +165,7 @@ def score_task(
             "diagnostic_accuracy": _diagnostic_accuracy(check_results, task),
             "artifact_completeness": _artifact_completeness(artifacts_checked),
             "unsafe_execution": not check_no_execution_with_fallback(trace_dir, run_dir),
+            "abi_interface_used": abi_interface_used,
             "agent_steps": agent_steps,
             "elapsed_seconds": elapsed,
             "human_interventions": _count_human_interventions(trace_dir),
@@ -350,6 +359,29 @@ def _count_human_interventions(trace_dir: Path) -> int:
     return count
 
 
+def _detect_abi_interface_usage(trace_dir: Path) -> bool:
+    """Detect ABI lifecycle command usage in agent traces."""
+    abi_markers = ("abi_", "abi_cli.py", "bench/harness/abi_cli.py")
+
+    def has_marker(text: str) -> bool:
+        lowered = text.lower()
+        return any(marker in lowered for marker in abi_markers)
+
+    for relpath in ("agent_trace.jsonl", "tool_calls.jsonl", "commands.log"):
+        path = trace_dir / relpath
+        if not path.is_file():
+            continue
+        try:
+            for line in path.read_text(errors="ignore").splitlines():
+                if not line.strip():
+                    continue
+                if has_marker(line):
+                    return True
+        except OSError:
+            continue
+    return False
+
+
 def _simplify_failure_codes(codes: list) -> list:
     """Group check_failed:* into broader categories."""
     simplified = []
@@ -366,6 +398,8 @@ def _simplify_failure_codes(codes: list) -> list:
                 simplified.append("diagnosis_incomplete")
             else:
                 simplified.append("artifact_missing")
+        elif code == "abi_interface_leakage":
+            simplified.append("abi_interface_leakage")
         else:
             simplified.append(code)
     return list(set(simplified))

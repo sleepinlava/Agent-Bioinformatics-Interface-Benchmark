@@ -3,6 +3,6 @@
   "cause": "missing_resource",
   "resource": "mobileog_db",
   "config_key": "resources.mobileog_db.path",
-  "path": "/hidden/missing/mobileog_db_2026",
+  "path": "missing/mobileog_db_2026",
   "fix_required": true
 }

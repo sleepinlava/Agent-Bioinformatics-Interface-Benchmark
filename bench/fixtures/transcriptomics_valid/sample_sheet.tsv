@@ -1,5 +1,5 @@
 sample_id	read1	read2	condition	replicate
-META_001	/data/fixtures/transcriptomics_valid/data/META_001_R1.fastq.gz	/data/fixtures/transcriptomics_valid/data/META_001_R2.fastq.gz	control	1
-META_002	/data/fixtures/transcriptomics_valid/data/META_002_R1.fastq.gz	/data/fixtures/transcriptomics_valid/data/META_002_R2.fastq.gz	control	2
-META_003	/data/fixtures/transcriptomics_valid/data/META_003_R1.fastq.gz	/data/fixtures/transcriptomics_valid/data/META_003_R2.fastq.gz	treatment	1
-META_004	/data/fixtures/transcriptomics_valid/data/META_004_R1.fastq.gz	/data/fixtures/transcriptomics_valid/data/META_004_R2.fastq.gz	treatment	2
+META_001	data/read1.fastq.gz	data/read2.fastq.gz	control	1
+META_002	data/read1.fastq.gz	data/read2.fastq.gz	control	2
+META_003	data/read1.fastq.gz	data/read2.fastq.gz	treatment	1
+META_004	data/read1.fastq.gz	data/read2.fastq.gz	treatment	2

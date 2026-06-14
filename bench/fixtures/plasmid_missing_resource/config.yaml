@@ -24,11 +24,11 @@ tools:
 
 resources:
   genomad_db:
-    path: /data/missing/genomad_db_v2
+    path: missing/genomad_db_v2
     type: directory
     description: "geNomad model and database directory — MISSING"
   pfam_hmm:
-    path: /data/databases/pfam/Pfam-A.hmm
+    path: resources/Pfam-A.hmm
     type: hmm
     description: "Pfam HMM profiles"
 

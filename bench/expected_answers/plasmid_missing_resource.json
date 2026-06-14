@@ -3,6 +3,6 @@
   "cause": "missing_resource",
   "resource": "genomad_db",
   "config_key": "resources.genomad_db.path",
-  "path": "/data/missing/genomad_db_v2",
+  "path": "missing/genomad_db_v2",
   "fix_required": true
 }

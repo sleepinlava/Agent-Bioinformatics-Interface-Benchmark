@@ -137,59 +137,61 @@ def diagnose_workspace_structured(workspace: Path) -> dict:
        compatibility with existing scoring validation.
 
     Checks (in order):
-      1. Sample sheet for paths containing ``/missing/`` → missing_input
-      2. Config resources for paths containing ``/missing/`` → missing_resource
+      1. Sample-sheet path existence checks → missing_input
+      2. Config resource path existence checks → missing_resource
       3. Config tools for ``not installed`` marker or plasflow → tool_not_found
 
     Returns a dict with schema_version, task_type, cause, and all diagnostic
     fields (sample_id, field, path, resource, config_key, tool_id, executable,
     env, fix, confidence).
     """
+    summary = summarize_workspace_data(workspace)
     config = load_config_safe(workspace)
-    sample_sheet_rel = str(config.get("samples", {}).get("sample_sheet", "sample_sheet.tsv"))
-    sample_sheet = workspace / sample_sheet_rel
 
-    # 1. Check sample sheet for missing input paths
-    if sample_sheet.is_file():
-        try:
-            with open(sample_sheet) as f:
-                reader = csv.DictReader(f, delimiter="\t")
-                for row in reader:
-                    for field, value in row.items():
-                        if isinstance(value, str) and "/missing/" in value:
-                            return {
-                                "schema_version": "abi-bench.final_answer.v1",
-                                "task_type": "diagnosis",
-                                "cause": "missing_input",
-                                "sample_id": row.get("sample_id", "unknown"),
-                                "field": field,
-                                "path": value,
-                                "resource": "",
-                                "config_key": "",
-                                "tool_id": "",
-                                "executable": "",
-                                "env": "",
-                                "fix": (
-                                    f"Update sample_sheet.tsv to point "
-                                    f"{row.get('sample_id', 'the sample')} "
-                                    f"{field} to an existing input file."
-                                ),
-                                "confidence": "high",
-                            }
-        except (OSError, csv.Error) as e:
-            print(f"WARNING: Failed to read sample sheet for diagnosis: {e}")
+    # 1. Check sample-sheet path existence.
+    for check in summary.get("path_existence_checks", []):
+        if check.get("exists_on_disk") is not False:
+            continue
+        source = str(check.get("source", ""))
+        if not source.startswith("sample_sheet::"):
+            continue
+        _, sample_id, field = (source.split("::") + ["", ""])[:3]
+        return {
+            "schema_version": "abi-bench.final_answer.v1",
+            "task_type": "diagnosis",
+            "cause": "missing_input",
+            "sample_id": sample_id,
+            "field": field,
+            "path": check.get("path", ""),
+            "resource": "",
+            "config_key": "",
+            "tool_id": "",
+            "executable": "",
+            "env": "",
+            "fix": (
+                f"Update sample_sheet.tsv to point "
+                f"{sample_id or 'the sample'} {field or 'the field'} "
+                f"to an existing input file."
+            ),
+            "confidence": "high",
+        }
 
-    # 2. Check config resources for missing paths
-    for name, meta in config.get("resources", {}).items():
-        path = meta.get("path", "") if isinstance(meta, dict) else ""
-        if "/missing/" in str(path):
+    # 2. Check resource path existence.
+    for check in summary.get("path_existence_checks", []):
+        if check.get("exists_on_disk") is not False:
+            continue
+        source = str(check.get("source", ""))
+        prefix = "config::resources."
+        suffix = ".path"
+        if source.startswith(prefix) and source.endswith(suffix):
+            name = source[len(prefix):-len(suffix)]
             return {
                 "schema_version": "abi-bench.final_answer.v1",
                 "task_type": "diagnosis",
                 "cause": "missing_resource",
                 "sample_id": "",
                 "field": "",
-                "path": str(path),
+                "path": check.get("path", ""),
                 "resource": name,
                 "config_key": f"resources.{name}.path",
                 "tool_id": "",

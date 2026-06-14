@@ -158,6 +158,7 @@ def compute_statistics(
     experiment_set: str | None = None,
     fixture_set: str | None = None,
     comparison_pairs: list[tuple[str, str]] = None,
+    bootstrap_iterations: int = 10000,
 ) -> dict:
     """Compute all statistics from collected scores."""
     all_scores = collect_scores(results_dir)
@@ -186,9 +187,18 @@ def compute_statistics(
     group_cis = {}
     for gid in sorted(by_group.keys()):
         normalized = _normalized_totals_by_replicate(by_group[gid])
-        group_cis[gid] = bootstrap_ci(normalized)
+        group_cis[gid] = bootstrap_ci(normalized, n_bootstrap=bootstrap_iterations)
 
     result["bootstrap_ci"] = group_cis
+
+    paired_delta_ci = {}
+    for g_a, g_b in comparison_pairs:
+        deltas = _paired_total_deltas(scores, g_a, g_b)
+        paired_delta_ci[f"{g_a}_vs_{g_b}"] = bootstrap_ci(
+            deltas,
+            n_bootstrap=bootstrap_iterations,
+        )
+    result["paired_delta_ci"] = paired_delta_ci
 
     # ── Per-task effect sizes ─────────────────────────────────────────
     task_ids = sorted({s.get("task_id", "unknown") for s in scores})
@@ -237,7 +247,7 @@ def compute_statistics(
     result["tables"] = _build_paper_tables(group_cis, effect_sizes, taxonomy)
 
     # ── Overall claim statistics ──────────────────────────────────────
-    result["claim_statistics"] = _build_claim_statistics(group_cis, effect_sizes)
+    result["claim_statistics"] = _build_claim_statistics(group_cis, effect_sizes, paired_delta_ci)
 
     return result
 
@@ -254,6 +264,30 @@ def _normalized_totals_by_replicate(scores: list[dict]) -> list[float]:
         max_sum = sum(s.get("max_score", 0) for s in rep_scores)
         normalized.append((score_sum / max_sum * 100) if max_sum > 0 else 0)
     return normalized
+
+
+def _normalized_total_map_by_replicate(scores: list[dict]) -> dict[int, float]:
+    """Return normalized total score by replicate id."""
+    by_rep = defaultdict(list)
+    for s in scores:
+        by_rep[s.get("replicate", 1)].append(s)
+
+    totals = {}
+    for rep, rep_scores in by_rep.items():
+        score_sum = sum(s.get("score", 0) for s in rep_scores)
+        max_sum = sum(s.get("max_score", 0) for s in rep_scores)
+        totals[rep] = (score_sum / max_sum * 100) if max_sum > 0 else 0
+    return totals
+
+
+def _paired_total_deltas(scores: list[dict], group_a: str, group_b: str) -> list[float]:
+    """Return paired normalized total deltas group_a - group_b by replicate."""
+    a_scores = [s for s in scores if s.get("group_id") == group_a]
+    b_scores = [s for s in scores if s.get("group_id") == group_b]
+    a_by_rep = _normalized_total_map_by_replicate(a_scores)
+    b_by_rep = _normalized_total_map_by_replicate(b_scores)
+    common_reps = sorted(set(a_by_rep) & set(b_by_rep))
+    return [a_by_rep[rep] - b_by_rep[rep] for rep in common_reps]
 
 
 def _build_failure_taxonomy(scores: list[dict]) -> dict:
@@ -360,7 +394,7 @@ def _build_paper_tables(group_cis, effect_sizes, taxonomy) -> dict:
     return tables
 
 
-def _build_claim_statistics(group_cis, effect_sizes) -> dict:
+def _build_claim_statistics(group_cis, effect_sizes, paired_delta_ci=None) -> dict:
     """Build claim-level summary statistics."""
     g1_ci = group_cis.get("G1", {})
     g2_ci = group_cis.get("G2", {})
@@ -383,6 +417,24 @@ def _build_claim_statistics(group_cis, effect_sizes) -> dict:
     if g3_ci.get("mean") is not None and g2_ci.get("mean") is not None:
         stats["G3_vs_G2_delta"] = round(g3_ci["mean"] - g2_ci["mean"], 2)
         stats["G3_beats_G2_pct12"] = stats["G3_vs_G2_delta"] >= 12
+
+    paired_delta_ci = paired_delta_ci or {}
+    if "G3_vs_G1" in paired_delta_ci:
+        ci = paired_delta_ci["G3_vs_G1"]
+        stats["G3_vs_G1_paired_delta_ci"] = {
+            "mean": ci.get("mean"),
+            "lower": ci.get("lower"),
+            "upper": ci.get("upper"),
+            "n": ci.get("n_samples"),
+        }
+    if "G3_vs_G2" in paired_delta_ci:
+        ci = paired_delta_ci["G3_vs_G2"]
+        stats["G3_vs_G2_paired_delta_ci"] = {
+            "mean": ci.get("mean"),
+            "lower": ci.get("lower"),
+            "upper": ci.get("upper"),
+            "n": ci.get("n_samples"),
+        }
 
     # Average per-task effect size
     all_d = []
@@ -446,6 +498,7 @@ def main():
         experiment_set=args.experiment_set,
         fixture_set=args.fixture_set,
         comparison_pairs=pairs or None,
+        bootstrap_iterations=args.bootstrap_iterations,
     )
 
     if "error" in stats:
@@ -470,6 +523,18 @@ def main():
     cs = stats.get("claim_statistics", {})
     for k, v in cs.items():
         print(f"  {k}: {v}")
+
+    if stats.get("paired_delta_ci"):
+        print("\nPaired Delta 95% CIs (normalized total score):")
+        for name, ci in sorted(stats["paired_delta_ci"].items()):
+            if ci["mean"] is not None:
+                print(
+                    f"  {name}: {ci['mean']:.1f} "
+                    f"[{ci['lower']:.1f}, {ci['upper']:.1f}] "
+                    f"(n={ci['n_samples']})"
+                )
+            else:
+                print(f"  {name}: insufficient paired data")
 
     print("\nFailure Taxonomy:")
     ft = stats.get("failure_taxonomy", {})

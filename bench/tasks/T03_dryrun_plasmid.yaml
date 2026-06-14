@@ -33,17 +33,20 @@ expected_artifacts:
   - report/report.html
 
 scoring:
-  execution_plan_exists: 1
-  commands_tsv_exists_and_nonempty: 2
-  resolved_inputs_exists: 1
-  tool_versions_exists: 1
-  resources_json_exists: 1
-  run_summary_exists: 1
-  progress_jsonl_exists: 1
-  tables_exist_with_headers: 1
-  artifact_manifest_valid: 1
-  statuses_are_dryrun_or_skipped: 1
-  no_real_execution: 1
+  plasmid_dryrun_artifacts_present:
+    points: 3
+  artifact_manifest_valid:
+    points: 2
+  statuses_are_dryrun_or_skipped:
+    points: 2
+  tool_ids_valid:
+    points: 1
+  tables_exist_with_headers:
+    points: 1
+  report_exists:
+    points: 1
+  no_real_execution:
+    points: 2
 
 failure_codes:
   - artifact_missing

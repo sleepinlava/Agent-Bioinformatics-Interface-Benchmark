@@ -55,6 +55,7 @@ const GROUP_ID = args.group
 const TASK_ID = args.task
 const TASK_PROMPT = args.prompt
 const TIMEOUT_MS = parseInt(args["timeout-minutes"]) * 60 * 1000
+const ABI_GROUPS = new Set(["G3", "A1", "A3", "A4"])
 
 // ── Provider Configuration ───────────────────────────────────────────────────
 
@@ -200,59 +201,21 @@ function getAgentConfig(groupId: string): {
       tools: ["read", "write", "edit", "bash"],
       forbiddenTools: [],
       systemPrompt: `You are an agent operating in a bioinformatics benchmark workspace.
-Your available tools: shell (bash), file read, file write.
-
-Workflow phases:
-1. DISCOVER: Read config.yaml, sample_sheet.tsv, and documentation files
-   to understand the analysis configuration and available tools.
-2. PLAN: Produce an execution_plan.json with schema_version "abi-bench.plan.v1",
-   analysis_type, and steps (each with step_id, tool_id, executable, status).
-   Derive tool_ids from the tool registry in config.yaml.
-3. DRY-RUN: Write provenance files (commands.tsv, resolved_inputs.tsv,
-   tool_versions.tsv, resources.json, run_summary.json, progress.jsonl) into
-   a provenance/ subdirectory. Write standard tables (TSV with headers) into
-   a tables/ subdirectory. Write report.md and report.html into a report/
-   subdirectory. Write artifact_manifest.json listing all produced artifacts.
-   Do NOT execute real bioinformatics tools.
-4. INSPECT: Read provenance artifacts to verify step statuses and identify
-   placeholders or missing resources.
-5. DIAGNOSE: When errors occur, systematically inspect config.yaml and
-   sample_sheet.tsv for misconfigurations. Save structured diagnosis to
-   final_answer.json with schema_version "abi-bench.final_answer.v1".
-6. REPORT: Write findings to final_answer.md.
-
-Always distinguish between dry-run and real execution. Never execute real
-bioinformatics tools without explicit confirmation. Write all output
-artifacts to the workspace directory.`,
+Your available tools are shell (bash), file read, and file write. Use README-style
+documentation and visible workspace files such as config.yaml and sample_sheet.tsv.
+Do not use ABI lifecycle commands, ABI CLI helpers, or structured diagnostic hints.
+Write only the artifacts requested by the task, and never execute real
+bioinformatics tools without explicit confirmation.`,
     },
     G2: {
       tools: ["read", "write", "edit", "bash", "task"],
       forbiddenTools: [],
       systemPrompt: `You are an agent operating in a bioinformatics benchmark workspace.
-Your available tools: shell (bash), task execution, file read, file write.
-
-Workflow phases:
-1. DISCOVER: Read config.yaml, sample_sheet.tsv, and configuration files
-   to understand the analysis configuration and available tools.
-2. PLAN: Produce an execution_plan.json with schema_version "abi-bench.plan.v1",
-   analysis_type, and steps (each with step_id, tool_id, executable, status).
-   Derive tool_ids from the tool registry in config.yaml.
-3. DRY-RUN: Write provenance files (commands.tsv, resolved_inputs.tsv,
-   tool_versions.tsv, resources.json, run_summary.json, progress.jsonl) into
-   a provenance/ subdirectory. Write standard tables (TSV with headers) into
-   a tables/ subdirectory. Write report.md and report.html into a report/
-   subdirectory. Write artifact_manifest.json listing all produced artifacts.
-   Do NOT execute real bioinformatics tools.
-4. INSPECT: Read provenance artifacts to verify step statuses and identify
-   placeholders or missing resources.
-5. DIAGNOSE: When errors occur, systematically inspect config.yaml and
-   sample_sheet.tsv for misconfigurations. Save structured diagnosis to
-   final_answer.json with schema_version "abi-bench.final_answer.v1".
-6. REPORT: Write findings to final_answer.md.
-
-Always distinguish between dry-run and real execution. Never execute real
-bioinformatics tools without explicit confirmation. Use task tool for
-multi-step planning. Write all output artifacts to the workspace directory.`,
+Your available tools are general shell/task execution plus file read and write.
+You may inspect files and construct artifacts manually, but you do not receive
+ABI lifecycle operations, ABI CLI helpers, provenance reasoning interfaces, or
+structured diagnostic hints. Do not use ABI lifecycle commands or ABI CLI paths.
+Never execute real bioinformatics tools without explicit confirmation.`,
     },
     G3: {
       tools: ["read", "write", "edit", "bash", "task"],
@@ -589,8 +552,11 @@ async function main() {
       }
     }
 
-    const diagnosisSidecarInstruction = ["T05", "T06", "T07"].includes(TASK_ID)
-      ? ` For diagnosis tasks: run \`abi diagnose\` to get workspace data (also saved as workspace_summary.json). Then produce ${TRACE_DIR}/.agent_log/final_answer.json with schema_version "abi-bench.final_answer.v1", task_type "diagnosis", and these fields: cause (one of: missing_input, missing_resource, tool_not_found), sample_id, field, path, resource, config_key, tool_id, executable, env, fix, fix_required (boolean), confidence (high/medium/low). See agent_context.json output_formats.diagnosis for the complete field specification.`
+    const isDiagnosisTask = ["T05", "T06", "T07"].includes(TASK_ID)
+    const diagnosisSidecarInstruction = isDiagnosisTask
+      ? ABI_GROUPS.has(GROUP_ID)
+        ? ` For diagnosis tasks: use the ABI diagnose command advertised in agent_context.json to get workspace data when available. Then produce ${TRACE_DIR}/.agent_log/final_answer.json with schema_version "abi-bench.final_answer.v1", task_type "diagnosis", and these fields: cause (one of: missing_input, missing_resource, tool_not_found), sample_id, field, path, resource, config_key, tool_id, executable, env, fix, fix_required (boolean), confidence (high/medium/low). See agent_context.json output_formats.diagnosis for the complete field specification.`
+        : ` For diagnosis tasks: manually inspect visible workspace files such as config.yaml and sample_sheet.tsv. Do not use ABI diagnose or ABI CLI helpers. Produce ${TRACE_DIR}/.agent_log/final_answer.json with schema_version "abi-bench.final_answer.v1", task_type "diagnosis", and fields for cause, sample_id, field, path, resource, config_key, tool_id, executable, env, fix, fix_required, and confidence.`
       : ""
     const fullPrompt = `${TASK_PROMPT}\n\nWorkspace: ${WORKSPACE_DIR}${fileList}${keyFilesContent}\n\nWrite all output artifacts to the workspace directory. Dry-run tasks must include artifact_manifest.json. Save your final answer to ${TRACE_DIR}/.agent_log/final_answer.md.${diagnosisSidecarInstruction}`
 

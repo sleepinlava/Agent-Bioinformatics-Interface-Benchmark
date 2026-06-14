@@ -25,7 +25,7 @@ tools:
 
 resources:
   pfam_hmm:
-    path: /data/databases/pfam/Pfam-A.hmm
+    path: resources/Pfam-A.hmm
     type: hmm
 
 output:
