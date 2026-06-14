@@ -84,6 +84,10 @@ def summarize_workspace_data(workspace: Path) -> dict:
     # Check file existence for referenced paths (data, not conclusions)
     path_checks = []
     for sample in samples:
+        # Skip error placeholders — these contain only an "_error" key
+        # from a failed sample sheet parse, not actual sample data.
+        if "_error" in sample:
+            continue
         for field in ("read1", "read2", "assembly"):
             val = sample.get(field, "")
             if val:

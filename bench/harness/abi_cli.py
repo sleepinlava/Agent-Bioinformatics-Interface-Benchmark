@@ -19,7 +19,10 @@ import yaml
 # Allow direct execution from repo root
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from bench.harness.diagnosis import diagnose_workspace_structured, format_diagnosis_markdown
+# diagnose_workspace_structured and format_diagnosis_markdown are imported
+# lazily inside diagnose_workspace() — the backward-compat wrapper — since
+# they are no longer used by command_diagnose (which uses
+# summarize_workspace_data instead).
 
 
 ANALYSIS_TYPES = ["metagenomic_plasmid", "metatranscriptomics"]
@@ -373,6 +376,12 @@ def command_diagnose(args) -> int:
     produce its own diagnosis in final_answer.json. This ensures that
     all groups (G1/G2/G3) must reason about faults rather than relying
     on deterministic pattern matching.
+
+    The summary is both printed to stdout AND saved to
+    ``workspace_summary.json`` in the workspace so the agent can read it
+    as a file. The agent is responsible for converting this raw data into
+    a structured ``final_answer.json`` following the
+    ``abi-bench.final_answer.v1`` schema.
     """
     workspace = args.workspace.resolve()
     group = args.group
@@ -380,7 +389,13 @@ def command_diagnose(args) -> int:
     from diagnosis import summarize_workspace_data
 
     if group == "A1":
-        # Ablation: no provenance, limited data
+        # Ablation group A1: provenance artifacts are unavailable.
+        # The agent must inspect visible workspace files manually
+        # (config.yaml, sample_sheet.tsv). Even though those files
+        # exist on disk, the provenance/ directory is kept empty to
+        # simulate an agent that cannot access run-history context.
+        # This tests whether the agent can still produce a reasonable
+        # diagnosis from raw configuration alone.
         summary = {
             "schema_version": "abi-bench.workspace_summary.v1",
             "workspace": str(workspace),
@@ -388,23 +403,42 @@ def command_diagnose(args) -> int:
             "instruction": "Inspect visible workspace files manually.",
         }
     elif group == "A3":
-        # Ablation: no diagnostic hints, just raw file listing
+        # Ablation group A3: structured diagnostic hints are suppressed.
+        # The workspace summary is collected but the instruction is
+        # replaced with a deliberately vague message. This tests whether
+        # the agent can independently identify faults without being told
+        # what to look for — a stricter test of diagnostic reasoning.
         summary = summarize_workspace_data(workspace)
-        # Remove the instruction to simulate missing hints
         summary["instruction"] = (
             "Raw workspace data. Structured diagnostic hints are unavailable "
             "for this ablation group. Manually inspect config and sample sheet."
         )
     else:
-        # G3/G2/G1: provide structured workspace data for LLM to interpret
+        # G3/G2/G1: provide structured workspace data for LLM to interpret.
+        # The agent receives the full summary including path existence checks,
+        # tool registry, and sample sheet data. It must cross-reference this
+        # information to identify faults and produce a final_answer.json.
         summary = summarize_workspace_data(workspace)
 
+    # Write summary to workspace so the agent can read it as a file.
+    # The agent is still responsible for producing final_answer.json
+    # — this file provides the raw data, not the diagnosis.
+    summary_path = workspace / "workspace_summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n")
+
+    # Also print to stdout for agents that capture CLI output directly.
     print(json.dumps(summary, indent=2))
     return 0
 
 
 def diagnose_workspace(workspace: Path) -> str:
-    """Thin wrapper retained for backward compatibility."""
+    """Thin wrapper retained for backward compatibility.
+
+    Uses the deprecated ``diagnose_workspace_structured`` which performs
+    deterministic pattern matching. New callers should use
+    ``command_diagnose`` which delegates to ``summarize_workspace_data``.
+    """
+    from bench.harness.diagnosis import diagnose_workspace_structured, format_diagnosis_markdown
     return format_diagnosis_markdown(diagnose_workspace_structured(workspace))
 
 

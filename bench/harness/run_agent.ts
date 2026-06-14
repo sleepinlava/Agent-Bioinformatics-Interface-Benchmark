@@ -495,8 +495,8 @@ async function main() {
       if (existsSync(kfPath)) {
         try {
           const content = readFileSync(kfPath, "utf-8")
-          const preview = content.length > 4000
-            ? content.slice(0, 4000) + "\n... (truncated)"
+          const preview = content.length > 8000
+            ? content.slice(0, 8000) + "\n... (truncated)"
             : content
           keyFilesContent += `\n\n--- ${kf} ---\n${preview}`
         } catch { /* skip */ }
@@ -504,7 +504,7 @@ async function main() {
     }
 
     const diagnosisSidecarInstruction = ["T05", "T06", "T07"].includes(TASK_ID)
-      ? ` For diagnosis tasks, also save ${TRACE_DIR}/.agent_log/final_answer.json following the diagnosis schema documented in agent_context.json output_formats.`
+      ? ` For diagnosis tasks: run \`abi diagnose\` to get workspace data (also saved as workspace_summary.json). Then produce ${TRACE_DIR}/.agent_log/final_answer.json with schema_version "abi-bench.final_answer.v1", task_type "diagnosis", and these fields: cause (one of: missing_input, missing_resource, tool_not_found), sample_id, field, path, resource, config_key, tool_id, executable, env, fix, fix_required (boolean), confidence (high/medium/low). See agent_context.json output_formats.diagnosis for the complete field specification.`
       : ""
     const fullPrompt = `${TASK_PROMPT}\n\nWorkspace: ${WORKSPACE_DIR}${fileList}${keyFilesContent}\n\nWrite all output artifacts to the workspace directory. Dry-run tasks must include artifact_manifest.json. Save your final answer to ${TRACE_DIR}/.agent_log/final_answer.md.${diagnosisSidecarInstruction}`
 
