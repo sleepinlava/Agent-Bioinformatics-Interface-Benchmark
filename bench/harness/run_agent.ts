@@ -85,6 +85,14 @@ for (const [key, value] of Object.entries(dotEnv)) {
   if (!process.env[key]) process.env[key] = value
 }
 
+// Map ABI_BENCH_* env vars to provider-specific env vars for OpenCode compatibility
+if (!process.env.OPENAI_API_KEY && process.env.ABI_BENCH_API_KEY) {
+  process.env.OPENAI_API_KEY = process.env.ABI_BENCH_API_KEY
+}
+if (!process.env.OPENAI_BASE_URL && process.env.ABI_BENCH_API_BASE) {
+  process.env.OPENAI_BASE_URL = process.env.ABI_BENCH_API_BASE
+}
+
 // CLI flags override env vars (highest priority)
 if (args["api-key"] && args["provider"]) {
   const provider = args["provider"]
@@ -98,20 +106,59 @@ if (args["api-key"] && args["provider"]) {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = args["api-key"]
   }
 }
+// Set base URL for custom endpoints
+if (args["api-base"]) {
+  process.env.OPENAI_BASE_URL = args["api-base"]
+}
 
 // Build provider config for OPENCODE_CONFIG_CONTENT
 function buildProviderConfig(): Record<string, unknown> {
-  const provider = args["provider"] || ""
+  const provider = args["provider"] || process.env.ABI_BENCH_PROVIDER || ""
   if (!provider) return {}
 
-  // Standard providers auto-detected by env vars need no config
-  if (["anthropic", "openai", "google"].includes(provider)) return {}
+  const apiKey = args["api-key"] || process.env.ABI_BENCH_API_KEY || ""
+  const apiBase = args["api-base"] || process.env.ABI_BENCH_API_BASE || process.env.OPENAI_BASE_URL || "https://api.deepseek.com"
+  const model = args["model"] || process.env.ABI_BENCH_MODEL || ""
 
-  // openai-compatible (DeepSeek, custom endpoints) needs explicit config
-  const apiKey = args["api-key"] || process.env.OPENAI_API_KEY
-  const apiBase = args["api-base"] || process.env.OPENAI_BASE_URL || "https://api.deepseek.com"
+  // When using openai provider with a custom base URL (e.g. DeepSeek),
+  // register DeepSeek models so OpenCode's model validation passes
+  if (provider === "openai" && apiBase && apiBase.includes("deepseek")) {
+    // Extract model name (strip provider prefix, e.g. "openai/deepseek-chat" → "deepseek-chat")
+    const modelName = model.includes("/") ? model.split("/").pop()! : model
+    return {
+      provider: {
+        openai: {
+          id: "openai",
+          options: {
+            apiKey: apiKey || "",
+            baseURL: apiBase,
+          },
+          models: {
+            [modelName]: {
+              id: modelName,
+              name: modelName,
+              context: { input: 128000, output: 8000 },
+              abilities: {
+                chat: true,
+                image: false,
+                file: false,
+                tool: true,
+                reasoning: false,
+                streaming: true,
+              },
+            },
+          },
+        },
+      },
+    }
+  }
 
+  // Standard OpenAI/Anthropic/Google providers auto-detected by env vars
+  if (["anthropic", "google"].includes(provider)) return {}
+
+  // openai-compatible / deepseek as standalone provider
   if (provider === "deepseek" || provider === "openai-compatible") {
+    const modelName = model.includes("/") ? model.split("/").pop()! : model
     return {
       provider: {
         [provider === "deepseek" ? "openai-compatible" : provider]: {
@@ -120,6 +167,19 @@ function buildProviderConfig(): Record<string, unknown> {
             apiKey: apiKey || "",
             baseURL: apiBase,
           },
+          ...(modelName ? {
+            models: {
+              [modelName]: {
+                id: modelName,
+                name: modelName,
+                context: { input: 128000, output: 8000 },
+                abilities: {
+                  chat: true, image: false, file: false,
+                  tool: true, reasoning: false, streaming: true,
+                },
+              },
+            },
+          } : {}),
         },
       },
     }
@@ -362,8 +422,17 @@ async function createServer(options: {
     logLevel: "ERROR",
     ...providerConfig,
   }
-  if (args["model"]) {
-    ;(configContent as any).model = args["model"]
+  if (args["model"] || process.env.ABI_BENCH_MODEL) {
+    // Use provider/model format for model in config content
+    const providerName = args["provider"] || process.env.ABI_BENCH_PROVIDER || ""
+    const pidMap: Record<string, string> = {
+      anthropic: "anthropic", openai: "openai", google: "google",
+      deepseek: "openai-compatible", "openai-compatible": "openai-compatible",
+    }
+    const pid = pidMap[providerName] || providerName || "openai-compatible"
+    const rawModel = args["model"] || process.env.ABI_BENCH_MODEL || ""
+    const bareModel = rawModel.includes("/") ? rawModel.split("/").pop()! : rawModel
+    ;(configContent as any).model = `${pid}/${bareModel}`
   }
 
   const proc = launch(procArgs[0], procArgs.slice(1), {
@@ -525,13 +594,38 @@ async function main() {
       : ""
     const fullPrompt = `${TASK_PROMPT}\n\nWorkspace: ${WORKSPACE_DIR}${fileList}${keyFilesContent}\n\nWrite all output artifacts to the workspace directory. Dry-run tasks must include artifact_manifest.json. Save your final answer to ${TRACE_DIR}/.agent_log/final_answer.md.${diagnosisSidecarInstruction}`
 
+    // Resolve model: accept "provider/model" or bare "model-name".
+    // When a bare name is given, infer the providerID from --provider (or env).
+    const modelStr = args["model"] || process.env.ABI_BENCH_MODEL || ""
+    const providerName = args["provider"] || process.env.ABI_BENCH_PROVIDER || ""
+    let modelObj: { providerID: string; modelID: string } | undefined
+
+    if (modelStr.includes("/")) {
+      const [pid, mid] = modelStr.split("/")
+      modelObj = { providerID: pid, modelID: mid }
+    } else if (modelStr) {
+      // Infer providerID from --provider flag
+      const pidMap: Record<string, string> = {
+        anthropic: "anthropic",
+        openai: "openai",
+        google: "google",
+        deepseek: "openai-compatible",
+        "openai-compatible": "openai-compatible",
+      }
+      const inferredPid = pidMap[providerName] || providerName || "openai-compatible"
+      modelObj = { providerID: inferredPid, modelID: modelStr }
+    }
+
     // Send prompt (v2 API: flat parameters with sessionID)
     console.log("  Sending prompt...")
     console.log(`  Prompt length: ${fullPrompt.length} chars`)
+    console.log(`  Model: ${modelStr} → providerID=${modelObj?.providerID}, modelID=${modelObj?.modelID}`)
 
-    await client.session.prompt({
-      sessionID: sessionId,
+    await client.session.promptAsync({
+      id: sessionId,
       directory: WORKSPACE_DIR,
+      model: modelObj,
+      agent: "build",
       parts: [
         {
           type: "text",
@@ -613,23 +707,25 @@ async function main() {
       // Strategy 3: message-based fallback
       try {
         const messagesResp = await client.session.messages({
-          sessionID: sessionId,
+          id: sessionId,
           directory: WORKSPACE_DIR,
           limit: 1000,
         })
         const messagesData = (messagesResp as any).data || messagesResp
         const messages = Array.isArray(messagesData) ? messagesData : []
+        let newMsgs = 0
         for (const m of messages) {
           const mid = m.info?.id || m.id || ""
           if (mid && !seenMessageIds.has(mid)) {
             seenMessageIds.add(mid)
+            newMsgs++
             const role = m.info?.role || m.info?.type || ""
             if (role === "assistant") hasAssistantMsg = true
           }
         }
-        if (hasAssistantMsg && newOrModified > 0) {
+        if (hasAssistantMsg && newMsgs > 0) {
           isDone = true
-          console.log(`  Agent done — has assistant msgs + ${newOrModified} new files`)
+          console.log(`  Agent done — has assistant msgs + ${newMsgs} new messages`)
         }
       } catch { /* continue */ }
 
@@ -646,7 +742,7 @@ async function main() {
     // Collect messages as traces
     console.log("  Collecting traces...")
     const finalMessagesResp = await client.session.messages({
-      sessionID: sessionId,
+      id: sessionId,
       directory: WORKSPACE_DIR,
       limit: 10000,
     })
