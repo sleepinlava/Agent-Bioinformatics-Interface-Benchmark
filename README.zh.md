@@ -91,8 +91,8 @@ ABI-Bench 吸收了七个领域 benchmark 的方法论精华：
 
 **核心设计原则**：三组使用**完全相同的 LLM**、**相同的 agent harness**、
 **相同的仓库 commit**、**相同的 task fixture**。唯一变量是 agent 可用的接口层。
-ABI-Bench 支持三种 agent 执行模式：`direct`（Python 直连，推荐）、
-`opencode`（兼容旧版）、`simulated`（无 LLM，CI/测试用）。
+ABI-Bench 支持两种 agent 执行模式：`direct`（Python 直连，推荐）、
+`simulated`（无 LLM，CI/测试用）。
 
 ### 4.2 ABI 内部消融组
 
@@ -110,7 +110,7 @@ ABI-Bench 支持三种 agent 执行模式：`direct`（Python 直连，推荐）
 
 | 变量 | 固定值 |
 |---|---|
-| Agent harness | Python 直连 agent（`direct_agent.py`，默认）或 OpenCode（旧版） |
+| Agent harness | Python 直连 agent（`direct_agent.py`） |
 | LLM | 同一版本，所有组相同 |
 | Temperature | 0（或最低可用值） |
 | Max agent steps | 50 |
@@ -319,8 +319,7 @@ bench/
 │   ├── run_task.py                  #   单任务运行（支持 3 种 agent 模式）
 │   ├── run_group.py                 #   单组运行（支持 --parallel 并行）
 │   ├── direct_agent.py              #   **Python 直连 agent loop（推荐）**
-│   ├── run_agent.ts                 #   OpenCode agent harness（TypeScript，旧版）
-│   ├── deepseek_proxy.py            #   DeepSeek 认证代理（旧版模式 workaround）
+
 │   ├── abi_cli.py                   #   ABI lifecycle CLI (list-types/plan/dry-run/run)
 │   ├── reset_workspace.py           #   workspace 重置
 │   ├── collect_trace.py             #   trace 收集
@@ -359,16 +358,14 @@ bench/
 | **Python ≥ 3.10** | harness 执行、scoring | 系统包管理器 |
 | **PyYAML** | 读取 task/group 配置 | `pip install pyyaml` |
 | **openai** | LLM API 客户端（direct 模式） | `pip install openai` |
-| **OpenCode + Bun** | 旧版 agent 运行时（可选） | 见下方 |
 
 ### 9.2 Agent 执行模式
 
-ABI-Bench 支持三种 agent 模式：
+ABI-Bench 支持两种 agent 模式：
 
 | 模式 | Flag | 依赖 | 用途 |
 |------|------|------|------|
 | **direct** | `--agent-mode direct` | `pip install openai` + API key | **推荐**——正式实验 |
-| **opencode** | `--agent-mode opencode` | Bun + OpenCode + API key | 旧版兼容（TypeScript） |
 | **simulated** | `--agent-mode simulated`（默认） | 无 | CI、基础设施验证 |
 
 ### 9.3 Direct 模式（推荐）
@@ -418,24 +415,7 @@ Simulated agent 不调用真实 LLM，直接生成符合预期的 artifact。用
 - CI 和快速回归测试
 - 消融实验的 group-aware 模拟（A1/A3/A4 产生差异化输出）
 
-### 9.5 OpenCode 模式（旧版兼容）
-
-使用 OpenCode agent harness（`run_agent.ts`）。需要安装 Bun 和 OpenCode。
-
-**安装 OpenCode（仅 `--agent-mode opencode` 需要）：**
-```bash
-npm install -g opencode        # 全局安装（推荐）
-# 或
-git clone https://github.com/anomalyco/opencode.git agent/opencode
-cd agent/opencode && bun install  # 本地 fallback
-```
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-... \
-  python bench/harness/run_task.py --group G3 --task T03 --agent-mode opencode
-```
-
-### 9.6 支持的 Provider
+### 9.5 支持的 Provider
 
 | Provider | 所需环境变量 | 配置方式 |
 |----------|-------------|---------|
@@ -447,7 +427,7 @@ ANTHROPIC_API_KEY=sk-ant-... \
 
 所有 API key 通过环境变量传入，不写入磁盘，不被 git 跟踪。`bench/.env` 已加入 `.gitignore`。
 
-### 9.7 单任务运行示例
+### 9.6 单任务运行示例
 
 ```bash
 # Direct 模式（推荐 — DeepSeek v4-pro）
@@ -455,12 +435,6 @@ ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py \
   --group G3 --task T03 --replicate 1 \
   --agent-mode direct \
   --experiment-set main --fixture-set public
-
-# OpenCode 模式（旧版 — Anthropic Claude）
-ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_task.py \
-  --group G3 --task T03 --replicate 1 \
-  --experiment-set main --fixture-set public \
-  --agent-mode opencode
 
 # Simulated 模式（默认，无需 API key）
 python bench/harness/run_task.py \
@@ -491,7 +465,7 @@ python bench/harness/run_task.py \
 4. **trace 收集**：保存 `agent_trace.jsonl`、`tool_calls.jsonl`、`commands.log`
 5. **scoring**：自动生成 `score.json`
 
-### 9.8 全 Benchmark 运行
+### 9.7 全 Benchmark 运行
 
 ```bash
 # 三组主实验（direct 模式，3 次重复，并行执行）
@@ -501,14 +475,6 @@ for group in G1 G2 G3; do
     --agent-mode direct --parallel --workers 4 \
     --experiment-set main --fixture-set public \
     --outdir bench/results/$group
-done
-
-# 旧版 OpenCode 模式（需要 Bun + OpenCode）
-for group in G1 G2 G3; do
-  ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_group.py \
-    --group $group --tasks mvp --replicates 3 \
-    --experiment-set main --fixture-set hidden \
-    --agent-mode opencode --outdir bench/results/$group
 done
 
 # 消融实验

@@ -2,7 +2,7 @@
 """
 ABI-Bench Direct Agent — DeepSeek API agent loop (no OpenCode dependency).
 
-Replaces run_agent.ts by calling the LLM API directly via the openai SDK.
+Replaces the legacy OpenCode harness (removed in v0.1.1) by calling the LLM API directly via the openai SDK.
 Handles tool calls (bash, read_file, write_file, list_files) in a simple
 agent loop until the model produces a final answer or max steps is reached.
 
@@ -17,6 +17,7 @@ Usage (standalone):
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -28,66 +29,122 @@ from openai import OpenAI
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# ── Tool definitions (OpenAI/DeepSeek function-calling format) ────────────────
+# ── Tool builder is now _build_tools() below, invoked at agent startup ─────────
 
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "bash",
-            "description": "Execute a shell command in the workspace. Use for ABI CLI commands (list-types, plan, dry-run, inspect, diagnose, report) and other shell operations. Returns stdout and stderr.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string", "description": "Shell command to execute"},
-                },
-                "required": ["command"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_file",
-            "description": "Read the contents of a file in the workspace.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Relative or absolute path to the file"},
-                },
-                "required": ["path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "write_file",
-            "description": "Write content to a file in the workspace. Creates parent directories if needed.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Relative or absolute path to write"},
-                    "content": {"type": "string", "description": "Content to write to the file"},
-                },
-                "required": ["path", "content"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_files",
-            "description": "List files and directories in the workspace.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Directory path to list (default: workspace root)", "default": "."},
+# ── Group classification ───────────────────────────────────────────────────────
+
+ABI_GROUPS = {"G3", "A1", "A3", "A4"}
+
+# Canonical list of ABI lifecycle subcommands (hyphenated form, as used by abi_cli.py).
+# Used by the bash tool description and the command-level guard regex.
+_ABI_LIFECYCLE_COMMANDS = ("list-types", "plan", "dry-run", "inspect", "diagnose", "report", "run")
+
+# Regex to detect ABI CLI invocations in bash commands.
+# Matches: abi_cli.py as a path/word token, or ABI lifecycle subcommands as whole words.
+# Uses word-boundary anchors to avoid false positives like:
+#   - "list_types" in filenames (T01_list_types.yaml)
+#   - "abi_run" substring in "--mode abi_run_simulation"
+_ABI_CLI_RE = re.compile(
+    r"(?:\b|[/\\])abi_cli\.py\b"          # abi_cli.py as path component or standalone word
+    r"|"
+    r"\babi_(?:plan|dry_run|inspect|diagnose|report|run)\b"  # lifecycle subcommands
+)
+
+# ── Tool builder (group-aware) ─────────────────────────────────────────────────
+
+def _build_tools(group_id: str, allowed_actions: dict = None) -> list:
+    """Build the tools list for a given group, with group-aware descriptions
+    and task-level action constraints applied.
+
+    Mirrors the logic previously in run_agent.ts:getAgentConfig().
+    """
+    allowed = allowed_actions or {}
+
+    # Base tool definitions with group-aware descriptions
+    cmds = ", ".join(_ABI_LIFECYCLE_COMMANDS)
+    bash_description = (
+        f"Execute a shell command in the workspace. "
+        f"Use for ABI CLI commands ({cmds}) "
+        f"and other shell operations. Returns stdout and stderr."
+        if group_id in ABI_GROUPS
+        else "Execute a shell command in the workspace. Returns stdout and stderr."
+    )
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "description": bash_description,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string", "description": "Shell command to execute"},
+                    },
+                    "required": ["command"],
                 },
             },
         },
-    },
-]
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read the contents of a file in the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Relative or absolute path to the file"},
+                    },
+                    "required": ["path"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "description": "Write content to a file in the workspace. Creates parent directories if needed.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Relative or absolute path to write"},
+                        "content": {"type": "string", "description": "Content to write to the file"},
+                    },
+                    "required": ["path", "content"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_files",
+                "description": "List files and directories in the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Directory path to list (default: workspace root)", "default": "."},
+                    },
+                },
+            },
+        },
+    ]
+
+    # ── Apply allowed_actions constraints ──────────────────────────────────
+    is_abi = group_id in ABI_GROUPS
+
+    # Non-ABI groups with run_shell=false lose bash entirely.
+    # ABI groups always keep bash (they need it to call the ABI CLI).
+    if allowed.get("run_shell") is False and not is_abi:
+        tools = [t for t in tools if t["function"]["name"] != "bash"]
+
+    if allowed.get("write_files") is False:
+        tools = [t for t in tools if t["function"]["name"] != "write_file"]
+
+    if allowed.get("read_files") is False:
+        tools = [t for t in tools if t["function"]["name"] not in ("read_file", "list_files")]
+
+    return tools
+
 
 # ── System prompts per group ──────────────────────────────────────────────────
 
@@ -95,7 +152,7 @@ SYSTEM_PROMPTS = {
     "G1": """You are an agent operating in a bioinformatics benchmark workspace.
 Your available tools are shell (bash), file read, and file write.
 Use README-style documentation and visible workspace files such as config.yaml and sample_sheet.tsv.
-Do not use ABI lifecycle commands or ABI CLI helpers.
+You are FORBIDDEN from using ABI lifecycle commands, ABI CLI helpers, or calling abi_cli.py.
 Write only the artifacts requested by the task, and never execute real
 bioinformatics tools without explicit confirmation.""",
 
@@ -103,7 +160,8 @@ bioinformatics tools without explicit confirmation.""",
 Your available tools are general shell/task execution plus file read and write.
 You may inspect files and construct artifacts manually, but you do not receive
 ABI lifecycle operations, ABI CLI helpers, provenance reasoning interfaces, or
-structured diagnostic hints. Do not use ABI lifecycle commands or ABI CLI paths.
+structured diagnostic hints. You are FORBIDDEN from using ABI lifecycle commands,
+ABI CLI paths, or calling abi_cli.py.
 Never execute real bioinformatics tools without explicit confirmation.""",
 
     "G3": """You are an ABI-enabled bioinformatics agent. Use the ABI lifecycle:
@@ -127,7 +185,7 @@ Never execute real bioinformatics tools without explicit confirmation.""",
 }
 
 # Ablation groups inherit G3's prompt
-for g in ("A1", "A3", "A4"):
+for g in ABI_GROUPS - {"G3"}:
     SYSTEM_PROMPTS[g] = SYSTEM_PROMPTS["G3"]
 
 
@@ -159,11 +217,20 @@ def resolve_path(workspace: Path, path: str) -> Path:
     return workspace / p
 
 
-def execute_tool(tool_name: str, args: dict, workspace: Path) -> str:
+def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G3") -> str:
     """Execute a tool call and return the result as a string."""
     try:
         if tool_name == "bash":
             cmd = args.get("command", "")
+
+            # ── Layer 3: Block ABI CLI usage by non-ABI groups ──────────
+            if group_id not in ABI_GROUPS and _ABI_CLI_RE.search(cmd):
+                return (
+                    "ERROR: ABI CLI access is not available to non-ABI groups (G1, G2). "
+                    "This group does not receive ABI lifecycle commands. "
+                    "Please use standard shell commands and file operations instead."
+                )
+
             timeout = 120  # seconds
             result = subprocess.run(
                 cmd, shell=True, cwd=workspace,
@@ -224,6 +291,7 @@ def run_agent(
     max_tokens: int = 8000,
     timeout_minutes: int = 20,
     task_type: str = "",
+    allowed_actions: dict = None,
 ) -> int:
     """Run the agent loop with direct DeepSeek API calls."""
 
@@ -235,10 +303,13 @@ def run_agent(
 
     client = OpenAI(api_key=api_key, base_url=api_base)
 
+    # ── Build group-aware tools ──────────────────────────────────────────
+    tools = _build_tools(group_id, allowed_actions)
+
     system_prompt = SYSTEM_PROMPTS.get(group_id, SYSTEM_PROMPTS["G3"])
 
     # Inject ABI CLI paths into G3 system prompt
-    if group_id in ("G3", "A1", "A3", "A4"):
+    if group_id in ABI_GROUPS:
         abi_cli = PROJECT_ROOT / "bench" / "harness" / "abi_cli.py"
         system_prompt = system_prompt.replace(
             "python bench/harness/abi_cli.py",
@@ -319,7 +390,7 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                tools=TOOLS,
+                tools=tools,
                 temperature=0,
                 max_tokens=max_tokens,
             )
@@ -377,7 +448,7 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
                     args = {}
 
                 tool_name = tc.function.name
-                result = execute_tool(tool_name, args, workspace)
+                result = execute_tool(tool_name, args, workspace, group_id)
 
                 print(f"tool={tool_name}", end=" ", flush=True)
 
@@ -444,7 +515,7 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
     answer_path = trace_dir / "final_answer.md"
     answer_path.write_text(final_answer)
 
-    # Write .agent_log variants (same format as run_agent.ts)
+    # Write .agent_log variants (same trace format)
     with open(log_dir / "agent_trace.jsonl", "w") as f:
         for entry in agent_trace:
             f.write(json.dumps(entry) + "\n")
@@ -475,6 +546,8 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
         "total_completion_tokens": total_completion_tokens,
         "total_thinking_tokens": total_thinking_tokens,
         "reasoning_used": total_thinking_tokens > 0,
+        "allowed_actions": allowed_actions or {},
+        "tools_provided": [t["function"]["name"] for t in tools],
     }
     with open(log_dir / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
@@ -507,7 +580,17 @@ def main():
     parser.add_argument("--max-steps", type=int, default=50)
     parser.add_argument("--max-tokens", type=int, default=8000)
     parser.add_argument("--timeout-minutes", type=int, default=20)
+    parser.add_argument("--allowed-actions", type=str, default=None,
+                        help="JSON string of allowed_actions from task YAML")
     args = parser.parse_args()
+
+    allowed_actions = None
+    if args.allowed_actions:
+        try:
+            allowed_actions = json.loads(args.allowed_actions)
+        except json.JSONDecodeError:
+            print(f"ERROR: Invalid JSON for --allowed-actions: {args.allowed_actions}", file=sys.stderr)
+            sys.exit(2)
 
     sys.exit(run_agent(
         workspace=args.workspace.resolve(),
@@ -518,6 +601,7 @@ def main():
         max_steps=args.max_steps,
         max_tokens=args.max_tokens,
         timeout_minutes=args.timeout_minutes,
+        allowed_actions=allowed_actions,
     ))
 
 

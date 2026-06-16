@@ -109,8 +109,8 @@ bioinformatics workflows.**
 **Critical design principle**: All three groups use the **same LLM**, **same
 agent harness**, **same repository commit**, and **same task
 fixtures**. The only variable is the interface layer available to the agent.
-ABI-Bench supports three agent execution modes: `direct` (Python native, recommended),
-`opencode` (legacy), and `simulated` (no LLM, CI/testing).
+ABI-Bench supports two agent execution modes: `direct` (Python native, recommended)
+and `simulated` (no LLM, CI/testing).
 
 ### 4.2 Ablation Groups
 
@@ -128,7 +128,7 @@ permission model) contribute how much to ABI's overall advantage?"*
 
 | Variable | Fixed Value |
 |---|---|
-| Agent harness | Python direct agent (`direct_agent.py`, default) or OpenCode (legacy) |
+| Agent harness | Python direct agent (`direct_agent.py`) |
 | LLM | Same model version for all groups |
 | Temperature | 0 (or lowest available) |
 | Max agent steps | 50 |
@@ -345,8 +345,7 @@ bench/
 │   ├── run_task.py                  #   Single task runner (supports 3 agent modes)
 │   ├── run_group.py                 #   Group runner (supports --parallel)
 │   ├── direct_agent.py              #   **Direct Python agent loop (recommended)**
-│   ├── run_agent.ts                 #   OpenCode agent harness (TypeScript, legacy)
-│   ├── deepseek_proxy.py            #   DeepSeek auth proxy (workaround for legacy mode)
+
 │   ├── abi_cli.py                   #   ABI lifecycle CLI (list-types/plan/dry-run/run)
 │   ├── reset_workspace.py           #   Workspace reset from fixture
 │   ├── collect_trace.py             #   Trace collection
@@ -385,16 +384,15 @@ bench/
 | **Python ≥ 3.10** | Harness execution, scoring | System package manager |
 | **PyYAML** | Parse task/group YAML configs | `pip install pyyaml` |
 | **openai** | LLM API client (direct mode) | `pip install openai` |
-| **OpenCode + Bun** | Legacy agent runtime (optional) | See below |
+
 
 ### 9.2 Agent Execution Modes
 
-ABI-Bench supports three agent modes:
+ABI-Bench supports two agent modes:
 
 | Mode | Flag | Requires | Use case |
 |------|------|----------|----------|
 | **direct** | `--agent-mode direct` | `pip install openai` + API key | **Recommended** — production experiments |
-| **opencode** | `--agent-mode opencode` | Bun + OpenCode + API key | Legacy (TypeScript agent harness) |
 | **simulated** | `--agent-mode simulated` (default) | Nothing | CI, infrastructure validation |
 
 ### 9.3 Direct Mode (Recommended)
@@ -445,25 +443,7 @@ Useful for:
 - CI and rapid regression testing
 - Group-aware ablation simulation (A1/A3/A4 produce differentiated outputs)
 
-### 9.5 OpenCode Mode (Legacy)
-
-Uses the OpenCode agent harness (`run_agent.ts`) with a real LLM backend. Requires
-Bun and OpenCode installation.
-
-**Installing OpenCode (only for --agent-mode opencode):**
-```bash
-npm install -g opencode        # Global (recommended)
-# or
-git clone https://github.com/anomalyco/opencode.git agent/opencode
-cd agent/opencode && bun install  # Vendored fallback
-```
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-... \
-  python bench/harness/run_task.py --group G3 --task T03 --agent-mode opencode
-```
-
-### 9.6 Supported Providers
+### 9.5 Supported Providers
 
 | Provider | Required Env Var | Configuration |
 |----------|-----------------|---------------|
@@ -476,7 +456,7 @@ ANTHROPIC_API_KEY=sk-ant-... \
 All API keys are passed via environment variables and are never written to disk
 or tracked by git. The `bench/.env` file is in `.gitignore`.
 
-### 9.7 Single Task Run Examples
+### 9.6 Single Task Run Examples
 
 ```bash
 # Direct mode (recommended — DeepSeek v4-pro)
@@ -484,12 +464,6 @@ ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py \
   --group G3 --task T03 --replicate 1 \
   --agent-mode direct \
   --experiment-set main --fixture-set public
-
-# OpenCode mode (legacy — Anthropic Claude)
-ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_task.py \
-  --group G3 --task T03 --replicate 1 \
-  --experiment-set main --fixture-set public \
-  --agent-mode opencode
 
 # Simulated mode (default, no API key)
 python bench/harness/run_task.py \
@@ -521,7 +495,7 @@ Before each task run, the harness automatically:
 4. **Trace collection**: Saves `agent_trace.jsonl`, `tool_calls.jsonl`, `commands.log`
 5. **Scoring**: Generates `score.json`
 
-### 9.8 Full Benchmark Run
+### 9.7 Full Benchmark Run
 
 ```bash
 # Main experiment — three groups (direct mode, 3 replicates, parallel)
@@ -531,14 +505,6 @@ for group in G1 G2 G3; do
     --agent-mode direct --parallel --workers 4 \
     --experiment-set main --fixture-set public \
     --outdir bench/results/$group
-done
-
-# Legacy OpenCode mode (requires Bun + OpenCode)
-for group in G1 G2 G3; do
-  ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_group.py \
-    --group $group --tasks mvp --replicates 3 \
-    --experiment-set main --fixture-set hidden \
-    --agent-mode opencode --outdir bench/results/$group
 done
 
 # Ablation experiments

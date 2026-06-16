@@ -6,15 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ABI-Bench v0.1** (Agent-Bioinformatics Interface Benchmark) evaluates whether a structured ABI control layer improves LLM agent operation of bioinformatics workflows. It fixes all variables (model, agent harness, repository, fixtures) and varies only the interface layer — comparing G1 (README + Shell), G2 (Plain Tool Calling), and G3 (ABI Control Layer), plus ablation groups (A1, A3, A4).
 
-The repo has two top-level components:
+The repo has a single top-level component:
 - **`bench/`** — Python benchmark framework: harness, scoring, tasks, fixtures, agent profiles
-- **`opencode/`** — Vendored OpenCode source (legacy agent runtime; optional since `--agent-mode direct` was added)
+
+Note: `opencode/` directory (vendored OpenCode source) was **removed from the benchmark in v0.1.1**. The benchmark now uses a native Python agent loop (`direct_agent.py`) that calls LLM APIs directly via the `openai` SDK. See `docs/development/opencode_removal.md` for the rationale and migration notes.
 
 ## Prerequisites
 
 - **Python ≥ 3.10** + PyYAML (`pip install pyyaml`)
 - **openai Python SDK** (`pip install openai`) — required for `--agent-mode direct`
-- *Optional*: **Bun** + **OpenCode** — only needed for `--agent-mode opencode` (legacy)
 
 ## Common Commands
 
@@ -24,17 +24,11 @@ The repo has two top-level components:
 # Single task (simulated mode — no LLM needed)
 python bench/harness/run_task.py --group G3 --task T03 --replicate 1 --experiment-set dev --fixture-set public
 
-# Single task (direct Python agent — DeepSeek/OpenAI-compatible, recommended)
+# Single task (direct Python agent — recommended)
 ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py --group G3 --task T03 --replicate 1 --agent-mode direct --experiment-set main --fixture-set public
-
-# Single task (legacy OpenCode agent)
-ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_task.py --group G3 --task T03 --replicate 1 --agent-mode opencode --experiment-set main --fixture-set public
 
 # Run a full group (direct mode, 3 replicates, parallel)
 ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py --group G3 --tasks mvp --replicates 3 --agent-mode direct --parallel --workers 4 --experiment-set main --fixture-set public
-
-# Run a full group (legacy OpenCode)
-python bench/harness/run_group.py --group G3 --tasks mvp --replicates 3 --experiment-set main --fixture-set hidden --agent-mode opencode
 
 # Run a group in parallel
 python bench/harness/run_group.py --group G3 --tasks mvp --replicates 3 --parallel --workers 4
@@ -59,19 +53,6 @@ python bench/scoring/compute_statistics.py --results bench/results --experiment-
 
 **Important**: `run_task.py`/`run_group.py` default `--experiment-set` to `dev`, but `claim_preflight.py`/`compute_statistics.py` default to `main`. Always pass `--experiment-set` explicitly to avoid mismatches.
 
-### OpenCode (the agent harness)
-
-```bash
-cd opencode
-bun install
-bun run lint           # oxlint
-bun typecheck          # runs turbo typecheck across packages
-# Tests must NOT be run from repo root — run from individual package dirs:
-cd packages/opencode && bun test
-```
-
-OpenCode's default branch is `dev` (not `main`). Use `dev` or `origin/dev` for diffs.
-
 ## Architecture
 
 ### Benchmark Pipeline
@@ -80,7 +61,7 @@ The harness executes a 5-step pipeline per task run:
 
 1. **Workspace reset** (`reset_workspace.py`): Copies fixture → isolated `workspaces/{group}/{task}/replicate_{n}/`
 2. **Agent context export** (`export_agent_context.py`): Writes `agent_context.json` with tool permissions based on group profile
-3. **Agent launch**: Either simulated (writes expected artifacts directly, no LLM) or real OpenCode (starts OpenCode server, creates session, runs agent)
+3. **Agent launch**: Either simulated (writes expected artifacts directly, no LLM) or direct (Python agent loop calling LLM API)
 4. **Trace collection** (`collect_trace.py`): Saves `agent_trace.jsonl`, `tool_calls.jsonl`, `commands.log`
 5. **Scoring** (`score_run.py`): Runs checks from `rubric.yaml` against artifacts and traces, writes `score.json`
 
@@ -95,17 +76,14 @@ Each group controls what tools and information the agent receives:
 - **A3** (no diagnostic hints): G3 minus structured error codes
 - **A4** (no permission model): G3 minus confirmation gating
 
-These are configured in `bench/agent_profiles/*.yaml` and mapped to tool sets in `direct_agent.py:SYSTEM_PROMPTS` (and `run_agent.ts:getAgentConfig()` for legacy OpenCode mode).
+These are configured in `bench/agent_profiles/*.yaml` and mapped to tool sets in `direct_agent.py:SYSTEM_PROMPTS`.
 
 ### Agent Harness
 
-Three agent execution modes are available:
+Two agent execution modes are available:
 
 **`direct` (recommended)** — `bench/harness/direct_agent.py`:
-A ~250-line Python agent loop that calls the LLM API directly via the `openai` SDK. No OpenCode, Bun, or Node.js required. Handles tool calls (bash, read_file, write_file, list_files) in a simple loop until the model produces a final answer or max_steps is reached. Supports all OpenAI-compatible providers (DeepSeek, Qwen, GLM, Kimi, etc.) plus Anthropic and Google. Configure via `bench/.env` or `ABI_BENCH_*` env vars.
-
-**`opencode` (legacy)** — `bench/harness/run_agent.ts`:
-TypeScript harness that starts an OpenCode server, creates sessions, and polls for completion. Still functional but adds overhead (server startup, 3s polling) and requires Bun + OpenCode. Provider support and reasoning model detection are documented in `run_agent.ts`.
+A ~250-line Python agent loop that calls the LLM API directly via the `openai` SDK. No external dependencies beyond `pip install openai`. Handles tool calls (bash, read_file, write_file, list_files) in a simple loop until the model produces a final answer or max_steps is reached. Supports all OpenAI-compatible providers (DeepSeek, Qwen, GLM, Kimi, etc.) plus Anthropic and Google. Configure via `bench/.env` or `ABI_BENCH_*` env vars.
 
 **`simulated`** — Python function in `run_task.py`:
 Produces expected artifacts directly without calling an LLM. Used for infrastructure validation and CI.
@@ -125,27 +103,6 @@ Fixture-local expected answers live in `bench/expected_answers/` and are passed 
 - `bench/fixtures/` — public fixtures (5 sets: plasmid_valid, plasmid_missing_input, plasmid_missing_resource, plasmid_tool_missing, transcriptomics_valid)
 - `bench/fixtures_hidden/` — hidden fixtures for diagnosis tasks (prevent answer leakage)
 - `--fixture-set public|hidden` selects which set; hidden is only meaningful for T05/T06/T07 (falls back to public for others)
-
-## OpenCode Monorepo Structure
-
-OpenCode is organized as a Bun workspace with packages under `opencode/packages/`:
-
-| Package | Purpose |
-|---------|---------|
-| `core` | Core types, schemas, project/state management |
-| `opencode` | Main OpenCode application (CLI entry point) |
-| `cli` | CLI binary |
-| `server` | HTTP server |
-| `sdk/js` | JavaScript SDK client (`@opencode-ai/sdk`) |
-| `app` | Web UI (SolidJS) |
-| `desktop` | Tauri desktop app |
-| `tui` | Terminal UI |
-| `ui` | Shared UI components |
-| `llm` | LLM provider adapters |
-| `plugin` | Plugin system |
-| `function` | Serverless function runtime |
-
-The benchmark harness uses the SDK (`createOpencodeClient`) to create sessions and the CLI's `serve` command to start the server. Follow OpenCode conventions: no `any`, no alias imports, prefer `const`/early returns, snake_case for DB columns.
 
 ## Key Design Constraints
 

@@ -15,7 +15,7 @@ Usage:
       --task T03 \
       --replicate 1 \
       --model LLM4 \
-      --agent opencode \
+      --agent direct \
       --outdir bench/results/G3/T03/replicate_01
 """
 
@@ -44,9 +44,8 @@ from bench.harness.diagnosis import summarize_workspace_data as _summarize_works
 def _load_dotenv(path: Path) -> None:
     """Load key=value pairs from *path* into ``os.environ``.
 
-    Mirrors ``run_agent.ts:loadDotEnv()`` so the Python harness sees the
-    same configuration as the TypeScript harness (provider, model,
-    reasoning flags, etc.).
+    Loads key=value pairs so the Python harness sees provider, model,
+    and other configuration flags.
     """
     if not path.is_file():
         return
@@ -77,7 +76,7 @@ def run_task(
     task_id: str,
     replicate: int = 1,
     model_id: str = "LLM4",
-    agent_harness: str = "opencode",
+    agent_harness: str = "direct",
     experiment_set: str = "dev",
     fixture_set: str = "public",
     outdir: Path = None,
@@ -86,7 +85,7 @@ def run_task(
 ):
     """Run a single task end-to-end.
 
-    agent_mode: 'simulated' (no LLM), 'opencode' (via OpenCode harness), or 'direct' (Python agent loop)."""
+    agent_mode: 'simulated' (no LLM) or 'direct' (Python agent loop)."""
     task_yaml = _task_yaml_path(task_id)
     if task_yaml is None:
         print(f"ERROR: No task YAML found for {task_id}")
@@ -162,10 +161,20 @@ def run_task(
             return result.returncode
         print(result.stdout.strip())
 
-        # Step 3: Launch agent (simulated by default; use --agent-mode opencode or direct for real LLM)
+        # Step 3: Launch agent (simulated by default; use --agent-mode direct for real LLM)
         print("\n[3/5] Launching agent...")
-        agent_result = _launch_agent_opencode(
+        task_prompt = task_def.get("prompt", "").strip()
+        timeout_minutes = task_def.get("timeout_minutes", 20)
+        max_agent_steps = task_def.get("max_agent_steps", 50)
+        task_type = task_def.get("task_type", "")
+        allowed_actions = task_def.get("allowed_actions", {})
+        agent_result = _run_agent(
             group_id, task_id, workspace_dir, trace_dir, context_path,
+            task_prompt=task_prompt,
+            timeout_minutes=timeout_minutes,
+            max_agent_steps=max_agent_steps,
+            task_type=task_type,
+            allowed_actions=allowed_actions,
             replicate=replicate,
             experiment_set=experiment_set,
             fixture_set=fixture_set,
@@ -311,116 +320,31 @@ def _expected_answer_path(fixture_name: str) -> Path | None:
     return path if path.is_file() else None
 
 
-def _is_reasoning_model() -> bool:
-    """Detect whether the configured model supports reasoning/thinking.
-
-    Mirrors ``run_agent.ts:isReasoningModel()`` so the Python-side
-    subprocess timeout stays in sync with the TypeScript harness's
-    ``effectiveTimeoutMs`` computation.
-    """
-    import re
-
-    # Explicit env override takes precedence
-    env_reasoning = os.environ.get("ABI_BENCH_REASONING", "")
-    if env_reasoning == "true":
-        return True
-    if env_reasoning == "false":
-        return False
-
-    model = os.environ.get("ABI_BENCH_MODEL", "").lower()
-    provider = os.environ.get("ABI_BENCH_PROVIDER", "").lower()
-
-    if not model:
-        return False
-
-    # Anthropic models that support extended thinking (Claude 4/5 Opus/Sonnet)
-    if provider == "anthropic" and re.search(r"claude.*(?:opus|sonnet).*(?:4|5)", model):
-        return True
-
-    # OpenAI reasoning models (o1, o3 series)
-    if provider == "openai" and re.match(r"^o[13]", model):
-        return True
-
-    # Google Gemini thinking models
-    if provider == "google" and re.search(r"gemini.*(?:thinking|pro)", model):
-        return True
-
-    # DeepSeek: R1/reasoner, V4/V3 Pro series
-    if provider in ("deepseek", "openai-compatible") and re.search(r"r1|reasoner|v4|v3(?!-chat)", model):
-        return True
-
-    # Qwen / DashScope: QwQ series, Qwen3 thinking variants
-    if provider in ("qwen", "dashscope", "openai-compatible") and re.search(
-        r"qwq|qwen.*thinking|qwen.*reason|qwen3", model, re.IGNORECASE
-    ):
-        return True
-
-    # GLM / Zhipu: thinking/reasoning variants
-    if provider in ("glm", "zhipu", "openai-compatible") and re.search(
-        r"glm.*thinking|chatglm.*thinking|glm.*reason|glm-4", model, re.IGNORECASE
-    ):
-        return True
-
-    # Kimi / Moonshot: K1.5, K2 reasoning models
-    if provider in ("kimi", "moonshot", "openai-compatible") and re.search(
-        r"kimi.*k[12]|kimi.*thinking|moonshot.*reason|kimi.*reason", model, re.IGNORECASE
-    ):
-        return True
-
-    # MiMo: thinking/reasoning variants
-    if provider in ("mimo", "openai-compatible") and re.search(
-        r"mimo.*think|mimo.*reason|mimo.*pro", model, re.IGNORECASE
-    ):
-        return True
-
-    # Provider-level defaults: these providers are primarily reasoning-model
-    # providers.  Default to True unless the model name signals a plain chat variant.
-    reasoning_default_providers = {"qwen", "dashscope", "glm", "zhipu", "kimi", "moonshot", "mimo"}
-    if provider in reasoning_default_providers:
-        if not re.search(r"(?:-instruct|-chat-no|vanilla|standard)(?:\b|$)", model, re.IGNORECASE):
-            return True
-
-    return False
-
-
-def _get_reasoning_timeout_extra_seconds() -> float:
-    """Extra subprocess timeout (seconds) for reasoning models.
-
-    Uses the same formula as ``run_agent.ts``:
-
-        extra_ms = thinking_budget * 0.1 * 1000
-
-    where *0.1* converts tokens → seconds (assuming ≈10 tok/s thinking
-    speed), and *1000* converts seconds → ms.  We return seconds directly
-    so it can be added to ``subprocess.run(timeout=...)``.
-
-    Returns 0 when the model is not a reasoning model.
-    """
-    if not _is_reasoning_model():
-        return 0.0
-    thinking_budget = int(os.environ.get("ABI_BENCH_THINKING_BUDGET", "16000"))
-    # thinking_budget * 0.1  = estimated thinking time in seconds
-    return thinking_budget * 0.1
-
-
-def _launch_agent_opencode(
+def _run_agent(
     group_id: str,
     task_id: str,
     workspace_dir: Path,
     trace_dir: Path,
     context_path: Path,
+    task_prompt: str = "",
+    timeout_minutes: int = 20,
+    max_agent_steps: int = 50,
+    task_type: str = "",
+    allowed_actions: dict = None,
     replicate: int = 1,
     experiment_set: str = "dev",
     fixture_set: str = "public",
-    agent_mode: str = "opencode",
+    agent_mode: str = "simulated",
 ) -> int:
     """
     Launch the agent for this task.
 
     agent_mode:
       - 'simulated': Produces expected artifacts directly (no LLM).
-      - 'opencode':  Uses OpenCode harness (TypeScript, Bun).
-      - 'direct':    Uses Python agent loop with direct DeepSeek API calls.
+      - 'direct':    Uses Python agent loop with direct LLM API calls.
+
+    Task fields (task_prompt, timeout_minutes, etc.) are pre-extracted
+    by the caller to avoid a redundant YAML load.
     """
     if agent_mode == "simulated":
         print("  Using simulated agent (agent_mode=simulated)")
@@ -431,22 +355,8 @@ def _launch_agent_opencode(
             fixture_set=fixture_set,
         )
 
-    # Load task YAML to get the prompt
-    task_files = list(PROJECT_ROOT.glob(f"bench/tasks/{task_id}_*.yaml"))
-    if not task_files:
-        msg = f"No task YAML found for {task_id}; cannot run agent."
-        print(f"  ERROR: {msg}")
-        _write_agent_failure(trace_dir, task_id, msg)
-        return 1
-
-    with open(task_files[0]) as f:
-        task_def = yaml.safe_load(f)
-    task_prompt = task_def.get("prompt", "").strip()
-    timeout_minutes = task_def.get("timeout_minutes", 20)
-    max_agent_steps = task_def.get("max_agent_steps", 50)
-
     if agent_mode == "direct":
-        print("  Direct agent mode (Python, DeepSeek API)")
+        print("  Direct agent mode (Python, LLM API)")
         trace_dir.mkdir(parents=True, exist_ok=True)
         from bench.harness.direct_agent import run_agent
         return run_agent(
@@ -458,129 +368,12 @@ def _launch_agent_opencode(
             max_steps=max_agent_steps,
             max_tokens=int(os.environ.get("ABI_BENCH_MAX_TOKENS", "8000")),
             timeout_minutes=timeout_minutes,
-            task_type=task_def.get("task_type", ""),
+            task_type=task_type,
+            allowed_actions=allowed_actions or {},
         )
 
-    # Check for bun availability
-    bun_path = shutil.which("bun")
-    home_bun = Path.home() / ".bun" / "bin" / "bun"
-    if not bun_path and home_bun.exists():
-        bun_path = str(home_bun)
-
-    if not bun_path:
-        msg = "bun not found; cannot run opencode agent mode."
-        print(f"  ERROR: {msg}")
-        _write_agent_failure(trace_dir, task_id, msg)
-        return 127
-
-    # Load task YAML to get the prompt
-    task_files = list(PROJECT_ROOT.glob(f"bench/tasks/{task_id}_*.yaml"))
-    if not task_files:
-        msg = f"No task YAML found for {task_id}; cannot run opencode agent mode."
-        print(f"  ERROR: {msg}")
-        _write_agent_failure(trace_dir, task_id, msg)
-        return 1
-
-    with open(task_files[0]) as f:
-        task_def = yaml.safe_load(f)
-    task_prompt = task_def.get("prompt", "").strip()
-    timeout_minutes = task_def.get("timeout_minutes", 20)
-
-    # Build the harness script path
-    harness_script = PROJECT_ROOT / "bench" / "harness" / "run_agent.ts"
-
-    # Build environment with bun on PATH.
-    # Do NOT prepend the opencode wrapper to PATH — the TypeScript harness
-    # (run_agent.ts) already resolves opencode via its own which() + vendored
-    # fallback.  Prepending the wrapper caused it to find itself recursively.
-    env = os.environ.copy()
-    if str(home_bun.parent) not in env["PATH"]:
-        env["PATH"] = f"{home_bun.parent}:{env['PATH']}"
-
-    trace_dir.mkdir(parents=True, exist_ok=True)
-
-    # Build cmd with optional provider flags
-    provider = os.environ.get("ABI_BENCH_PROVIDER", "")
-    api_key = os.environ.get("ABI_BENCH_API_KEY", "")
-    api_base = os.environ.get("ABI_BENCH_API_BASE", "")
-    model = os.environ.get("ABI_BENCH_MODEL", "")
-
-    cmd = [
-        bun_path, "run",
-        str(harness_script),
-        "--workspace", str(workspace_dir),
-        "--trace-dir", str(trace_dir),
-        "--group", group_id,
-        "--task", task_id,
-        "--prompt", task_prompt,
-        "--timeout-minutes", str(timeout_minutes),
-    ]
-    if provider:
-        cmd.extend(["--provider", provider])
-    if api_key:
-        cmd.extend(["--api-key", api_key])
-    if api_base:
-        cmd.extend(["--api-base", api_base])
-    if model:
-        cmd.extend(["--model", model])
-
-    # Pass task-level action constraints so the TypeScript harness can
-    # dynamically disable tools (e.g. bash when run_shell=false).
-    allowed_actions = task_def.get("allowed_actions", {})
-    if allowed_actions:
-        cmd.extend(["--allowed-actions", json.dumps(allowed_actions)])
-
-    # Match the TypeScript harness's effectiveTimeoutMs for reasoning models
-    # so the subprocess isn't killed before the agent harness itself times out.
-    reasoning_extra_s = _get_reasoning_timeout_extra_seconds()
-    effective_timeout_s = timeout_minutes * 60 + 180 + reasoning_extra_s
-
-    print(f"  OpenCode agent harness: bun run run_agent.ts")
-    print(f"  Group: {group_id}, Task: {task_id}")
-    if reasoning_extra_s > 0:
-        print(f"  Timeout: {timeout_minutes} min + {reasoning_extra_s / 60:.0f} min reasoning = {effective_timeout_s / 60:.0f} min effective")
-    else:
-        print(f"  Timeout: {timeout_minutes} min")
-
-    try:
-        result = subprocess.run(
-            cmd,
-            cwd=PROJECT_ROOT,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=effective_timeout_s,
-        )
-        # Print agent output
-        if result.stdout:
-            for line in result.stdout.strip().split("\n"):
-                print(f"  [agent] {line}")
-        if result.stderr:
-            # Only print stderr lines that look like errors
-            for line in result.stderr.strip().split("\n"):
-                if "error" in line.lower() or "fail" in line.lower() or "exception" in line.lower():
-                    print(f"  [agent:err] {line}")
-
-        if result.returncode != 0:
-            print(f"  Agent exited with code {result.returncode} (check traces for details)")
-            # Don't fail the whole run — scoring will handle missing artifacts
-        else:
-            print(f"  Agent completed successfully")
-
-        return result.returncode
-
-    except subprocess.TimeoutExpired:
-        effective_label = f"{effective_timeout_s / 60:.0f} min" if reasoning_extra_s > 0 else f"{timeout_minutes} min"
-        print(f"  Agent timed out after {effective_label}")
-        # Write timeout marker
-        (trace_dir / ".agent_log").mkdir(parents=True, exist_ok=True)
-        with open(trace_dir / ".agent_log" / "final_answer.md", "w") as f:
-            f.write(f"# Timeout\n\nAgent run exceeded {effective_label} timeout.")
-        return 124  # Standard timeout exit code
-    except Exception as e:
-        print(f"  ERROR launching agent: {e}")
-        _write_agent_failure(trace_dir, task_id, str(e))
-        return 1
+    print(f"  ERROR: Unknown agent_mode '{agent_mode}'")
+    return 1
 
 
 def _write_agent_failure(trace_dir: Path, task_id: str, message: str):
@@ -1181,7 +974,7 @@ def main():
     parser.add_argument("--task", required=True, type=str, help="Task ID (T01-T12)")
     parser.add_argument("--replicate", type=int, default=1, help="Replicate number")
     parser.add_argument("--model", type=str, default="LLM4", help="Model ID")
-    parser.add_argument("--agent", type=str, default="opencode", help="Agent harness name")
+    parser.add_argument("--agent", type=str, default="direct", help="Agent harness name")
     parser.add_argument(
         "--experiment-set",
         type=str,
@@ -1198,8 +991,8 @@ def main():
     )
     parser.add_argument("--outdir", type=Path, help="Output directory for results")
     parser.add_argument("--dry-run-scoring-only", action="store_true", help="Only score, skip agent run")
-    parser.add_argument("--agent-mode", type=str, choices=["simulated", "opencode", "direct"], default="simulated",
-                        help="Agent execution mode: simulated (default), opencode (via OpenCode), or direct (Python + DeepSeek API)")
+    parser.add_argument("--agent-mode", type=str, choices=["simulated", "direct"], default="simulated",
+                        help="Agent execution mode: simulated (default) or direct (Python + LLM API)")
     args = parser.parse_args()
     return run_task(
         group_id=args.group,

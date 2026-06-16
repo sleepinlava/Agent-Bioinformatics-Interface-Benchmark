@@ -89,7 +89,7 @@ LLM agent 操作生信 workflow 面临五大特有困难：
 | **G2** | Plain Tool Calling | 普通工具函数、CLI wrapper、文件读写 | 纯工具暴露（无 lifecycle）是否足够 |
 | **G3** | ABI Control Layer | ABI lifecycle、JSON envelope、provenance、standard tables、permission model | **ABI 中间层的完整贡献** |
 
-**所有三组使用相同的 LLM、agent harness (OpenCode)、仓库 commit、task fixture。唯一变量是接口层。**
+**所有三组使用相同的 LLM、agent harness、仓库 commit、task fixture。唯一变量是接口层。**
 
 ### 4.2 消融组
 
@@ -105,7 +105,7 @@ LLM agent 操作生信 workflow 面临五大特有困难：
 
 | 变量 | 固定值 |
 |---|---|
-| Agent harness | Python 直连 agent（`direct_agent.py`，默认）或 OpenCode（旧版） |
+| Agent harness | Python 直连 agent（`direct_agent.py`） |
 | LLM | 同一版本，所有组相同 |
 | Temperature | 0（最低可用值） |
 | Max agent steps | 50 |
@@ -229,14 +229,12 @@ ABI-Bench v0.1 **仅当以下全部满足**时，才支持"ABI 改进了 agent-o
 | **Python ≥ 3.10** | harness 执行、scoring | 系统包管理器 |
 | **PyYAML** | 读取 task/group 配置 | `pip install pyyaml` |
 | **openai** | LLM API 客户端（direct 模式） | `pip install openai` |
-| **OpenCode + Bun** | 旧版 agent 运行时（可选） | 见下方 |
 
 ### 8.2 Agent 执行模式
 
 | 模式 | Flag | 依赖 | 用途 |
 |------|------|------|------|
 | **direct** | `--agent-mode direct` | `pip install openai` + API key | **推荐**——正式实验 |
-| **opencode** | `--agent-mode opencode` | Bun + OpenCode + API key | 旧版兼容 |
 | **simulated** | `--agent-mode simulated`（默认） | 无 | CI、基础设施验证 |
 
 ### 8.3 Direct 模式配置（推荐）
@@ -254,15 +252,6 @@ ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
   --group G3 --tasks mvp --replicates 3 \
   --agent-mode direct --parallel --workers 4 \
   --experiment-set main --fixture-set public
-```
-
-### 8.4 OpenCode 模式（旧版兼容，可选）
-
-```bash
-npm install -g opencode    # 全局安装
-# 或
-git clone https://github.com/anomalyco/opencode.git agent/opencode
-cd agent/opencode && bun install    # 本地 fallback
 ```
 
 ---
@@ -310,7 +299,7 @@ python bench/scoring/compute_statistics.py \
 ```
 [1/5] Reset workspace      从 fixture 复制干净副本
 [2/5] Export agent context  根据 group profile 注入 tool permission
-[3/5] Launch agent          调用 OpenCode 或模拟 agent
+[3/5] Launch agent          启动 direct 或模拟 agent
 [4/5] Collect traces        保存 agent_trace.jsonl / tool_calls.jsonl
 [5/5] Score                 自动生成 score.json
 ```
@@ -321,18 +310,16 @@ python bench/scoring/compute_statistics.py \
 |---|---|---|
 | **direct** | **推荐**——Python 直连 LLM API，快速可靠 | `--agent-mode direct` |
 | **simulated** | 本地快速验证评分逻辑，无需 LLM/API | `--agent-mode simulated`（默认） |
-| **opencode** | 旧版兼容——通过 OpenCode server 运行 | `--agent-mode opencode` |
 
 Direct 模式下，agent 通过 `openai` SDK 直接调用 LLM API，在 Python 进程内完成完整的
-tool-calling 循环。无需启动外部 server，无需轮询，比 OpenCode 模式快 5-10 倍且更可靠。
+tool-calling 循环。无需启动外部 server，无需轮询。
 
 模拟模式下，harness 为每个 group/task 生成对应的 artifact 和 final_answer。消融组
 （A1/A3/A4）的模拟 agent 会产生**刻意不完整**的输出——A1 不生成 provenance、A3 
 诊断模糊、A4 绕过 permission gate。这使得评分逻辑可以在不消耗 API 调用的情况下完整验证。
 
 **并行执行**（`--parallel --workers N`）：同一 replicate batch 内的 task 通过线程池
-并发执行，每个 task 使用独立的 workspace/trace/results 目录，互不冲突。在 direct 和
-opencode 模式下均可大幅缩短墙钟时间。
+并发执行，每个 task 使用独立的 workspace/trace/results 目录，互不冲突。
 
 ### 10.3 三组主实验
 
@@ -380,17 +367,14 @@ bench/
 │   └── transcriptomics_valid/
 │
 ├── harness/                         # 执行基础设施 (Python + TypeScript)
-│   ├── run_task.py                  #   单任务 5 步编排（支持 3 种 agent 模式）
+│   ├── run_task.py                  #   单任务 5 步编排（支持 2 种 agent 模式）
 │   ├── run_group.py                 #   批量组运行（支持 --parallel 并行）
 │   ├── direct_agent.py              #   **Python 直连 agent loop（推荐）**
-│   ├── run_agent.ts                 #   OpenCode server 启动与 session 管理（旧版）
-│   ├── deepseek_proxy.py            #   DeepSeek 认证代理（旧版模式 workaround）
 │   ├── reset_workspace.py           #   workspace 重置
 │   ├── export_agent_context.py      #   agent 上下文导出
 │   ├── collect_trace.py             #   trace 收集
 │   ├── diagnosis.py                 #   共享诊断工具（供 simulated agent 和 abi_cli 共用）
-│   ├── abi_cli.py                   #   ABI lifecycle CLI（G3 组 agent 可调用）
-│   └── opencode                     #   opencode CLI wrapper（旧版）
+│   └── abi_cli.py                   #   ABI lifecycle CLI（G3 组 agent 可调用）
 │
 ├── scoring/                         # 自动评分 (Python)
 │   ├── rubric.yaml                  #   集中评分规则

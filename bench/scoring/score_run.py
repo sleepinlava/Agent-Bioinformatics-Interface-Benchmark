@@ -179,7 +179,7 @@ def score_task(
         "group_id": group_id,
         "replicate": replicate,
         "model_id": metadata.get("model_id", "LLM4"),
-        "agent_harness": metadata.get("agent_harness", "opencode"),
+        "agent_harness": metadata.get("agent_harness", "direct"),
         "agent_mode": metadata.get("agent_mode", "unknown"),
         "score": total_points,
         "max_score": max_points,

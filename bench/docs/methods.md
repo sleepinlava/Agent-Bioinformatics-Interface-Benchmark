@@ -48,14 +48,16 @@ to match the expected behavior of each ablation condition:
 - **A4 (no-permission-model)**: Adds `confirm_execution=true` to tool calls
   and creates a `real_execution_marker` to simulate safety boundary violation.
 
-### 2. OpenCode Mode (`--agent-mode opencode`)
+### 2. Direct Mode (`--agent-mode direct`)
 
-Uses the OpenCode agent harness with a real LLM backend. Requires an
-LLM provider API key. See [Provider Configuration](#provider-configuration).
+Uses the Python native agent loop (`bench/harness/direct_agent.py`) with a
+real LLM backend. Calls the LLM API directly via the `openai` SDK — no
+external server, no polling, no JavaScript dependencies. Requires an
+LLM provider API key.
 
 ## Provider Configuration
 
-OpenCode mode requires an LLM provider. The recommended approach is the
+Direct mode requires an LLM provider. The recommended approach is the
 `bench/.env` file:
 
 ```bash
@@ -67,7 +69,7 @@ cp bench/.env.example bench/.env
 
 # 3. Run with real LLM agent (reads bench/.env automatically)
 python bench/harness/run_group.py \
-  --group G3 --tasks mvp --replicates 3 --agent-mode opencode
+  --group G3 --tasks mvp --replicates 3 --agent-mode direct
 ```
 
 Alternatively, set environment variables directly:
@@ -75,19 +77,18 @@ Alternatively, set environment variables directly:
 ```bash
 # Anthropic Claude
 ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_group.py \
-  --group G3 --task T03 --agent-mode opencode
+  --group G3 --task T03 --agent-mode direct
 
 # OpenAI-compatible (e.g. DeepSeek)
 ABI_BENCH_PROVIDER=deepseek \
 ABI_BENCH_API_KEY=sk-... \
 ABI_BENCH_API_BASE=https://api.deepseek.com \
 python bench/harness/run_group.py \
-  --group G3 --task T03 --agent-mode opencode
+  --group G3 --task T03 --agent-mode direct
 ```
 
-All API keys are passed as environment variables to the OpenCode server
-process and are never written to disk or tracked by git. The `bench/.env`
-file is in `.gitignore`.
+All API keys are passed as environment variables and are never written
+to disk or tracked by git. The `bench/.env` file is in `.gitignore`.
 
 ## Task Suite (v0.1)
 
@@ -179,7 +180,7 @@ ABI-Bench v0.1 supports the main claim that ABI improves agent-operability when:
 
 ## Fixed Variables
 
-- Agent harness: OpenCode
+- Agent harness: Python direct agent (`direct_agent.py`)
 - LLM: same version for all groups
 - Temperature: 0 (or lowest available)
 - Max agent steps: 50
@@ -196,13 +197,13 @@ within each replicate batch via `--parallel`:
 ```bash
 # Run up to 4 tasks concurrently
 python bench/harness/run_group.py --group G3 --tasks mvp --replicates 3 \
-  --agent-mode opencode --parallel --workers 4
+  --agent-mode direct --parallel --workers 4
 ```
 
 Each task uses an independent workspace, trace, and results directory, so
 there is no filesystem contention. Replicate batches are still run
 sequentially to maintain clean state. In simulated mode, parallelism
-reduces wall-clock time from ~8 s to ~2 s; in opencode mode, the reduction
+reduces wall-clock time from ~8 s to ~2 s; in direct mode, the reduction
 is proportional to the number of workers (expected 60%+ reduction).
 
 ## Reproducibility
@@ -231,7 +232,7 @@ python bench/harness/run_group.py --group A1 --tasks ablation --replicates 1
 cp bench/.env.example bench/.env
 # Edit bench/.env: uncomment one provider and add your API key
 python bench/harness/run_group.py \
-  --group G3 --tasks mvp --replicates 3 --agent-mode opencode --parallel --workers 4
+  --group G3 --tasks mvp --replicates 3 --agent-mode direct --parallel --workers 4
 
 # Aggregate results
 python bench/scoring/aggregate_scores.py \

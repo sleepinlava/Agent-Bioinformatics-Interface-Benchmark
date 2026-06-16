@@ -10,7 +10,7 @@ Usage:
       --tasks mvp \\
       --replicates 3 \\
       --model LLM4 \\
-      --agent opencode \\
+      --agent direct \\
       --outdir bench/results/G3
 
 Parallel execution (runs tasks concurrently within each replicate batch):
@@ -120,7 +120,7 @@ def run_group(
     tasks: list[str],
     replicates: int = 3,
     model_id: str = "LLM4",
-    agent_harness: str = "opencode",
+    agent_harness: str = "direct",
     agent_mode: str = "simulated",
     experiment_set: str = "dev",
     fixture_set: str = "public",
@@ -219,7 +219,7 @@ def main():
                         help="Task spec: 'mvp', 'full', 'ablation', or comma-separated list")
     parser.add_argument("--replicates", type=int, default=3, help="Number of replicates per task")
     parser.add_argument("--model", type=str, default="LLM4", help="Model ID")
-    parser.add_argument("--agent", type=str, default="opencode", help="Agent harness name")
+    parser.add_argument("--agent", type=str, default="direct", help="Agent harness name")
     parser.add_argument(
         "--experiment-set",
         type=str,
@@ -230,9 +230,9 @@ def main():
     parser.add_argument(
         "--agent-mode",
         type=str,
-        choices=["simulated", "opencode", "direct"],
+        choices=["simulated", "direct"],
         default="simulated",
-        help="Agent execution mode: simulated (default), opencode (real LLM via OpenCode), or direct (Python + DeepSeek API)",
+        help="Agent execution mode: simulated (default) or direct (Python + LLM API)",
     )
     parser.add_argument(
         "--fixture-set",

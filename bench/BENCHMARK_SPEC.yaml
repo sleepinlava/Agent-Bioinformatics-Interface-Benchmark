@@ -8,7 +8,7 @@ benchmark:
     and permission-gated execution.
 
 environment:
-  agent_harness: opencode
+  agent_harness: direct
   model_id: LLM4
   temperature: 0
   max_agent_steps: 50

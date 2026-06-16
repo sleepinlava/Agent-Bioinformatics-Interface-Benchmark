@@ -1,6 +1,16 @@
 # ABI-Bench v0.1 Feasibility Check Report
 
-Date: 2026-06-13
+Date: 2026-06-13 | **Updated: 2026-06-17** (OpenCode removed — replaced by `direct_agent.py`)
+
+## Update (2026-06-17): OpenCode Removed
+
+The OpenCode middleware has been completely removed from the benchmark in v0.1.1.
+The `direct_agent.py` Python agent loop (calling the LLM API via the `openai` SDK)
+is now the sole real-agent execution mode. All "remaining problems" referencing
+OpenCode below are therefore resolved or moot. See `docs/development/opencode_removal.md`
+for the full rationale.
+
+## Original Report
 
 ## Conclusion
 
