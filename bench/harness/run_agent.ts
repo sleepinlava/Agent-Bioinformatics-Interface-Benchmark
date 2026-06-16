@@ -74,14 +74,49 @@ function isReasoningModel(modelId: string, provider: string): boolean {
 
   // Auto-detect by model name patterns
   const model = modelId.toLowerCase()
+
   // Anthropic models that support extended thinking (Claude 4/5 Opus/Sonnet)
   if (provider === "anthropic" && /claude.*(?:opus|sonnet).*(?:4|5)/.test(model)) return true
+
   // OpenAI reasoning models (o1, o3 series)
   if (provider === "openai" && /^o[13]/.test(model)) return true
-  // DeepSeek reasoning models (R1, reasoner variants)
-  if ((provider === "deepseek" || provider === "openai-compatible") && /r1|reasoner/.test(model)) return true
+
   // Google Gemini thinking models
   if (provider === "google" && /gemini.*(?:thinking|pro)/.test(model)) return true
+
+  // DeepSeek: R1/reasoner, V4/V3 Pro series (newer DeepSeek models with reasoning)
+  // deepseek-chat (V3 vanilla) is a standard chat model — not auto-detected.
+  if ((provider === "deepseek" || provider === "openai-compatible") &&
+      /r1|reasoner|v4|v3(?!-chat)/.test(model)) return true
+
+  // Qwen / DashScope: QwQ series, Qwen3 thinking variants
+  if ((provider === "qwen" || provider === "dashscope" || provider === "openai-compatible") &&
+      /qwq|qwen.*thinking|qwen.*reason|qwen3/i.test(model)) return true
+
+  // GLM / Zhipu BigModel: GLM-4 thinking/reasoning variants
+  if ((provider === "glm" || provider === "zhipu" || provider === "openai-compatible") &&
+      /glm.*thinking|chatglm.*thinking|glm.*reason|glm-4/i.test(model)) return true
+
+  // Kimi / Moonshot: K1.5, K2 reasoning models
+  if ((provider === "kimi" || provider === "moonshot" || provider === "openai-compatible") &&
+      /kimi.*k[12]|kimi.*thinking|moonshot.*reason|kimi.*reason/i.test(model)) return true
+
+  // MiMo: thinking/reasoning variants
+  if ((provider === "mimo" || provider === "openai-compatible") &&
+      /mimo.*think|mimo.*reason|mimo.*pro/i.test(model)) return true
+
+  // Provider-level defaults: these providers are primarily reasoning-model providers.
+  // When the model name didn't match a known non-reasoning variant, default to true
+  // unless the model name explicitly signals a plain chat variant.
+  const reasoningDefaultProviders = new Set([
+    "qwen", "dashscope", "glm", "zhipu", "kimi", "moonshot", "mimo",
+  ])
+  if (reasoningDefaultProviders.has(provider)) {
+    // Explicit non-reasoning indicators: instruct, chat-no, vanilla, standard
+    if (/(?:-instruct|-chat-no|vanilla|standard)(?:\b|$)/i.test(model)) return false
+    return true  // default to reasoning for these providers
+  }
+
   return false
 }
 
@@ -125,12 +160,12 @@ if (args["api-key"] && args["provider"]) {
   const provider = args["provider"]
   if (provider === "anthropic") {
     process.env.ANTHROPIC_API_KEY = args["api-key"]
-  } else if (provider === "openai") {
-    process.env.OPENAI_API_KEY = args["api-key"]
-  } else if (provider === "deepseek") {
-    process.env.OPENAI_API_KEY = args["api-key"]
   } else if (provider === "google") {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = args["api-key"]
+  } else {
+    // All other providers (openai, deepseek, qwen, glm, kimi, mimo, etc.)
+    // use the OpenAI-compatible API key env var.
+    process.env.OPENAI_API_KEY = args["api-key"]
   }
 }
 // Set base URL for custom endpoints
@@ -144,7 +179,22 @@ function buildProviderConfig(): Record<string, unknown> {
   if (!provider) return {}
 
   const apiKey = args["api-key"] || process.env.ABI_BENCH_API_KEY || ""
-  const apiBase = args["api-base"] || process.env.ABI_BENCH_API_BASE || process.env.OPENAI_BASE_URL || "https://api.deepseek.com"
+
+  // Provider-specific default API base URLs.
+  // These can be overridden by ABI_BENCH_API_BASE / OPENAI_BASE_URL / --api-base.
+  const DEFAULT_BASE_URLS: Record<string, string> = {
+    deepseek: "https://api.deepseek.com",
+    qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    glm: "https://open.bigmodel.cn/api/paas/v4",
+    zhipu: "https://open.bigmodel.cn/api/paas/v4",
+    kimi: "https://api.moonshot.cn/v1",
+    moonshot: "https://api.moonshot.cn/v1",
+    // mimo: no default — user must provide ABI_BENCH_API_BASE
+  }
+  const defaultBase = DEFAULT_BASE_URLS[provider] || ""
+  const apiBase = args["api-base"] || process.env.ABI_BENCH_API_BASE || process.env.OPENAI_BASE_URL || defaultBase
+
   const model = args["model"] || process.env.ABI_BENCH_MODEL || ""
   const modelName = model.includes("/") ? model.split("/").pop()! : model
   const useReasoning = isReasoningModel(modelName, provider)
@@ -172,11 +222,38 @@ function buildProviderConfig(): Record<string, unknown> {
       const thinkingBudget = parseInt(process.env.ABI_BENCH_THINKING_BUDGET || "16000")
       opts.thinking = { type: "enabled", budgetTokens: thinkingBudget }
     }
-    // OpenAI reasoning effort
-    if (useReasoning && (provider === "openai" || (provider === "openai-compatible" && !apiBase?.includes("deepseek")))) {
-      const effort = process.env.ABI_BENCH_REASONING_EFFORT || "medium"
-      opts.reasoningEffort = effort
+
+    // Reasoning effort parameter (supported by OpenAI, Qwen, GLM, Kimi, MiMo, and
+    // most OpenAI-compatible endpoints).  Only pass when explicitly configured so
+    // providers that reject unknown parameters don't break.
+    if (useReasoning && process.env.ABI_BENCH_REASONING_EFFORT) {
+      const effort = process.env.ABI_BENCH_REASONING_EFFORT
+      // Providers known to support reasoning_effort natively
+      const effortProviders = new Set([
+        "openai", "qwen", "dashscope", "glm", "zhipu", "kimi", "moonshot", "mimo",
+        "openai-compatible",
+      ])
+      if (effortProviders.has(provider)) {
+        opts.reasoningEffort = effort
+      }
+      // Anthropic / Google use different mechanisms (handled above / below)
     }
+
+    // Google Gemini thinking config
+    if (useReasoning && provider === "google") {
+      const thinkingBudget = parseInt(process.env.ABI_BENCH_THINKING_BUDGET || "16000")
+      opts.thinkingConfig = { thinkingBudget }
+    }
+
+    // Qwen / DashScope: may use anthropic-style thinking parameter via
+    // compatible endpoint, depending on the API version in use.
+    if (useReasoning && (provider === "qwen" || provider === "dashscope")) {
+      const thinkingBudget = parseInt(process.env.ABI_BENCH_THINKING_BUDGET || "0")
+      if (thinkingBudget > 0) {
+        opts.thinking = { type: "enabled", budgetTokens: thinkingBudget }
+      }
+    }
+
     return opts
   }
 
@@ -251,11 +328,17 @@ function buildProviderConfig(): Record<string, unknown> {
     return {}
   }
 
-  // openai-compatible / deepseek as standalone provider
-  if (provider === "deepseek" || provider === "openai-compatible") {
+  // OpenAI-compatible providers: deepseek, qwen, glm, kimi, mimo, and the
+  // generic openai-compatible catch-all.  All use the same config shape with
+  // provider-specific base URLs and reasoning parameters.
+  const openaiCompatibleProviders = new Set([
+    "deepseek", "qwen", "dashscope", "glm", "zhipu", "kimi", "moonshot", "mimo",
+    "openai-compatible",
+  ])
+  if (openaiCompatibleProviders.has(provider)) {
     return {
       provider: {
-        [provider === "deepseek" ? "openai-compatible" : provider]: {
+        "openai-compatible": {
           id: "openai-compatible",
           options: providerOptions(),
           ...(modelName ? {
@@ -478,6 +561,10 @@ async function createServer(options: {
     const pidMap: Record<string, string> = {
       anthropic: "anthropic", openai: "openai", google: "google",
       deepseek: "openai-compatible", "openai-compatible": "openai-compatible",
+      qwen: "openai-compatible", dashscope: "openai-compatible",
+      glm: "openai-compatible", zhipu: "openai-compatible",
+      kimi: "openai-compatible", moonshot: "openai-compatible",
+      mimo: "openai-compatible",
     }
     const pid = pidMap[providerName] || providerName || "openai-compatible"
     const rawModel = args["model"] || process.env.ABI_BENCH_MODEL || ""
@@ -664,6 +751,10 @@ async function main() {
         google: "google",
         deepseek: "openai-compatible",
         "openai-compatible": "openai-compatible",
+        qwen: "openai-compatible", dashscope: "openai-compatible",
+        glm: "openai-compatible", zhipu: "openai-compatible",
+        kimi: "openai-compatible", moonshot: "openai-compatible",
+        mimo: "openai-compatible",
       }
       const inferredPid = pidMap[providerName] || providerName || "openai-compatible"
       modelObj = { providerID: inferredPid, modelID: modelStr }
