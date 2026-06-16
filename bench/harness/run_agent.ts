@@ -41,6 +41,7 @@ const {
     "api-key":   { type: "string" },       // API key
     "api-base":  { type: "string" },       // base URL for openai-compatible
     "model":     { type: "string" },       // model override, e.g. "claude-sonnet-4-5"
+    "allowed-actions": { type: "string" }, // JSON: task-level action constraints
   },
 })
 
@@ -56,6 +57,22 @@ const TASK_ID = args.task
 const TASK_PROMPT = args.prompt
 const TIMEOUT_MS = parseInt(args["timeout-minutes"]) * 60 * 1000
 const ABI_GROUPS = new Set(["G3", "A1", "A3", "A4"])
+
+// ── Shared provider→providerID mapping ─────────────────────────────────────
+// Maps ABI_BENCH_PROVIDER / --provider values to OpenCode provider IDs.
+// Used by buildProviderConfig() and session model resolution — a single
+// source of truth so the two code paths never drift.
+const PROVIDER_ID_MAP: Record<string, string> = {
+  anthropic: "anthropic",
+  openai: "openai",
+  google: "google",
+  deepseek: "openai-compatible",
+  "openai-compatible": "openai-compatible",
+  qwen: "openai-compatible", dashscope: "openai-compatible",
+  glm: "openai-compatible", zhipu: "openai-compatible",
+  kimi: "openai-compatible", moonshot: "openai-compatible",
+  mimo: "openai-compatible",
+}
 
 // ── Provider Configuration ───────────────────────────────────────────────────
 
@@ -140,12 +157,15 @@ function loadDotEnv(path: string): Record<string, string> {
 }
 
 // Load from bench/.env if present (lowest priority)
-const projectRoot = resolve(dirname(import.meta.dir || "."), "../..")
+// NOTE: import.meta.dir is already a directory — do NOT wrap with dirname()
+// or the path will be one level too shallow.
+const projectRoot = resolve(import.meta.dir || ".", "../..")
 const dotEnvPath = join(projectRoot, "bench", ".env")
 const dotEnv = loadDotEnv(dotEnvPath)
 for (const [key, value] of Object.entries(dotEnv)) {
   if (!process.env[key]) process.env[key] = value
 }
+
 
 // Map ABI_BENCH_* env vars to provider-specific env vars for OpenCode compatibility
 if (!process.env.OPENAI_API_KEY && process.env.ABI_BENCH_API_KEY) {
@@ -201,13 +221,17 @@ function buildProviderConfig(): Record<string, unknown> {
 
   // Build model abilities with reasoning flag
   function modelAbilities(): Record<string, boolean> {
+    // Anthropic / OpenAI / Google reasoning models may require streaming disabled.
+    // OpenAI-compatible providers (DeepSeek, Qwen, GLM, Kimi, MiMo) all support
+    // streaming with reasoning — disabling it breaks the agent loop.
+    const disableStreaming = useReasoning && ["anthropic", "openai", "google"].includes(provider)
     return {
       chat: true,
       image: false,
       file: false,
       tool: true,
       reasoning: useReasoning,
-      streaming: !useReasoning, // some reasoning models disable streaming
+      streaming: !disableStreaming,
     }
   }
 
@@ -336,7 +360,7 @@ function buildProviderConfig(): Record<string, unknown> {
     "openai-compatible",
   ])
   if (openaiCompatibleProviders.has(provider)) {
-    return {
+    const config = {
       provider: {
         "openai-compatible": {
           id: "openai-compatible",
@@ -354,6 +378,7 @@ function buildProviderConfig(): Record<string, unknown> {
         },
       },
     }
+    return config
   }
 
   return {}
@@ -361,7 +386,10 @@ function buildProviderConfig(): Record<string, unknown> {
 
 // ── Agent Configuration ─────────────────────────────────────────────────────
 
-function getAgentConfig(groupId: string): {
+function getAgentConfig(
+  groupId: string,
+  allowedActions?: Record<string, boolean>,
+): {
   tools: Record<string, boolean>
   systemPrompt: string
 } {
@@ -432,6 +460,26 @@ whether missing confirmation gating increases unsafe execution risk.`,
   for (const t of cfg.tools) {
     tools[t] = true
   }
+
+  // Apply task-level action constraints.  When a task YAML sets
+  // run_shell=false the bash tool is removed, preventing the agent from
+  // circumventing planning/diagnosis tasks by executing shell commands.
+  if (allowedActions) {
+    if (allowedActions.run_shell === false) {
+      delete tools.bash
+      console.log("  Task constraint: bash DISABLED (run_shell=false)")
+    }
+    if (allowedActions.write_files === false) {
+      delete tools.write
+      delete tools.edit
+      console.log("  Task constraint: write/edit DISABLED (write_files=false)")
+    }
+    if (allowedActions.read_files === false) {
+      delete tools.read
+      console.log("  Task constraint: read DISABLED (read_files=false)")
+    }
+  }
+
   return { tools, systemPrompt: cfg.systemPrompt }
 }
 
@@ -558,15 +606,7 @@ async function createServer(options: {
   if (args["model"] || process.env.ABI_BENCH_MODEL) {
     // Use provider/model format for model in config content
     const providerName = args["provider"] || process.env.ABI_BENCH_PROVIDER || ""
-    const pidMap: Record<string, string> = {
-      anthropic: "anthropic", openai: "openai", google: "google",
-      deepseek: "openai-compatible", "openai-compatible": "openai-compatible",
-      qwen: "openai-compatible", dashscope: "openai-compatible",
-      glm: "openai-compatible", zhipu: "openai-compatible",
-      kimi: "openai-compatible", moonshot: "openai-compatible",
-      mimo: "openai-compatible",
-    }
-    const pid = pidMap[providerName] || providerName || "openai-compatible"
+    const pid = PROVIDER_ID_MAP[providerName] || providerName || "openai-compatible"
     const rawModel = args["model"] || process.env.ABI_BENCH_MODEL || ""
     const bareModel = rawModel.includes("/") ? rawModel.split("/").pop()! : rawModel
     ;(configContent as any).model = `${pid}/${bareModel}`
@@ -660,7 +700,10 @@ async function main() {
   mkdirSync(TRACE_DIR, { recursive: true })
   mkdirSync(join(TRACE_DIR, ".agent_log"), { recursive: true })
 
-  const agentConfig = getAgentConfig(GROUP_ID)
+  const allowedActions: Record<string, boolean> | undefined = args["allowed-actions"]
+    ? JSON.parse(args["allowed-actions"])
+    : undefined
+  const agentConfig = getAgentConfig(GROUP_ID, allowedActions)
   const startTime = new Date().toISOString()
 
   // Start OpenCode server
@@ -678,11 +721,31 @@ async function main() {
   })
 
   try {
+    // Resolve model BEFORE session creation so the session is associated with
+    // the correct model from the start.  Accept "provider/model" or bare
+    // "model-name".  When a bare name is given, infer the providerID from
+    // --provider (or env).
+    const modelStr = args["model"] || process.env.ABI_BENCH_MODEL || ""
+    const providerName = args["provider"] || process.env.ABI_BENCH_PROVIDER || ""
+    let modelObj: { providerID: string; modelID: string } | undefined
+
+    if (modelStr.includes("/")) {
+      const [pid, mid] = modelStr.split("/")
+      modelObj = { providerID: pid, modelID: mid }
+    } else if (modelStr) {
+      const inferredPid = PROVIDER_ID_MAP[providerName] || providerName || "openai-compatible"
+      modelObj = { providerID: inferredPid, modelID: modelStr }
+    }
+
     // Create session (v2 API: flat parameters)
     console.log("  Creating session...")
+    console.log(`  Model: ${modelStr} → providerID=${modelObj?.providerID}, modelID=${modelObj?.modelID}`)
+    // NOTE: session.create() expects model as {id, providerID} (not {providerID, modelID})
+    const sessionModel = modelObj ? { id: modelObj.modelID, providerID: modelObj.providerID } : undefined
     const sessionResp: any = await client.session.create({
       directory: WORKSPACE_DIR,
       title: `${GROUP_ID}/${TASK_ID}`,
+      model: sessionModel,
     })
 
     // Debug: log raw response structure
@@ -729,36 +792,10 @@ async function main() {
     const isDiagnosisTask = ["T05", "T06", "T07"].includes(TASK_ID)
     const diagnosisSidecarInstruction = isDiagnosisTask
       ? ABI_GROUPS.has(GROUP_ID)
-        ? ` For diagnosis tasks: use the ABI diagnose command advertised in agent_context.json to get workspace data when available. Then produce ${TRACE_DIR}/.agent_log/final_answer.json with schema_version "abi-bench.final_answer.v1", task_type "diagnosis", and these fields: cause (one of: missing_input, missing_resource, tool_not_found), sample_id, field, path, resource, config_key, tool_id, executable, env, fix, fix_required (boolean), confidence (high/medium/low). See agent_context.json output_formats.diagnosis for the complete field specification.`
-        : ` For diagnosis tasks: manually inspect visible workspace files such as config.yaml and sample_sheet.tsv. Do not use ABI diagnose or ABI CLI helpers. Produce ${TRACE_DIR}/.agent_log/final_answer.json with schema_version "abi-bench.final_answer.v1", task_type "diagnosis", and fields for cause, sample_id, field, path, resource, config_key, tool_id, executable, env, fix, fix_required, and confidence.`
+        ? ` For diagnosis tasks: use the ABI diagnose command advertised in agent_context.json to get workspace data when available. Then produce ${WORKSPACE_DIR}/final_answer.json with schema_version "abi-bench.final_answer.v1", task_type "diagnosis", and these fields: cause (one of: missing_input, missing_resource, tool_not_found), sample_id, field, path, resource, config_key, tool_id, executable, env, fix, fix_required (boolean), confidence (high/medium/low). See agent_context.json output_formats.diagnosis for the complete field specification.`
+        : ` For diagnosis tasks: manually inspect visible workspace files such as config.yaml and sample_sheet.tsv. Do not use ABI diagnose or ABI CLI helpers. Produce ${WORKSPACE_DIR}/final_answer.json with schema_version "abi-bench.final_answer.v1", task_type "diagnosis", and fields for cause, sample_id, field, path, resource, config_key, tool_id, executable, env, fix, fix_required, and confidence.`
       : ""
-    const fullPrompt = `${TASK_PROMPT}\n\nWorkspace: ${WORKSPACE_DIR}${fileList}${keyFilesContent}\n\nWrite all output artifacts to the workspace directory. Dry-run tasks must include artifact_manifest.json. Save your final answer to ${TRACE_DIR}/.agent_log/final_answer.md.${diagnosisSidecarInstruction}`
-
-    // Resolve model: accept "provider/model" or bare "model-name".
-    // When a bare name is given, infer the providerID from --provider (or env).
-    const modelStr = args["model"] || process.env.ABI_BENCH_MODEL || ""
-    const providerName = args["provider"] || process.env.ABI_BENCH_PROVIDER || ""
-    let modelObj: { providerID: string; modelID: string } | undefined
-
-    if (modelStr.includes("/")) {
-      const [pid, mid] = modelStr.split("/")
-      modelObj = { providerID: pid, modelID: mid }
-    } else if (modelStr) {
-      // Infer providerID from --provider flag
-      const pidMap: Record<string, string> = {
-        anthropic: "anthropic",
-        openai: "openai",
-        google: "google",
-        deepseek: "openai-compatible",
-        "openai-compatible": "openai-compatible",
-        qwen: "openai-compatible", dashscope: "openai-compatible",
-        glm: "openai-compatible", zhipu: "openai-compatible",
-        kimi: "openai-compatible", moonshot: "openai-compatible",
-        mimo: "openai-compatible",
-      }
-      const inferredPid = pidMap[providerName] || providerName || "openai-compatible"
-      modelObj = { providerID: inferredPid, modelID: modelStr }
-    }
+    const fullPrompt = `${TASK_PROMPT}\n\nWorkspace: ${WORKSPACE_DIR}${fileList}${keyFilesContent}\n\nWrite all output artifacts to the workspace directory. Dry-run tasks must include artifact_manifest.json. Save your final answer to ${WORKSPACE_DIR}/final_answer.md.${diagnosisSidecarInstruction}`
 
     // Send prompt (v2 API: flat parameters with sessionID)
     console.log("  Sending prompt...")
@@ -800,8 +837,10 @@ async function main() {
     //    has produced assistant messages (reduces required stable polls).
     console.log("  Waiting for agent to complete...")
     const deadline = Date.now() + effectiveTimeoutMs
-    const faTracePath = join(TRACE_DIR, ".agent_log", "final_answer.md")
+    // Primary completion signal: agent writes final_answer.md to workspace root.
+    // Fallback: also check trace_dir/.agent_log/ for backward compatibility.
     const wsFaPath = join(WORKSPACE_DIR, "final_answer.md")
+    const faTracePath = join(TRACE_DIR, ".agent_log", "final_answer.md")
     let isDone = false
     let pollCount = 0
     const seenMessageIds = new Set<string>()
@@ -831,8 +870,9 @@ async function main() {
       await sleep(3000)  // 3-second poll interval
       pollCount++
 
-      // Strategy 1: check for final_answer.md
-      for (const faPath of [faTracePath, wsFaPath]) {
+      // Strategy 1: check for final_answer.md (workspace root first, then
+      // trace_dir/.agent_log as backward-compatible fallback).
+      for (const faPath of [wsFaPath, faTracePath]) {
         if (existsSync(faPath)) {
           try {
             const content = readFileSync(faPath, "utf-8").trim()
@@ -895,18 +935,15 @@ async function main() {
             seenMessageIds.add(mid)
             newMsgs++
             const role = m.info?.role || m.info?.type || ""
-            if (role === "assistant") hasAssistantMsg = true
-            // Count tool-call messages as agent steps
-            if (role === "tool" || role === "function" || role === "tool_call") {
+            if (role === "assistant") {
+              hasAssistantMsg = true
+              // Each assistant message = one full "think → act" cycle.
+              // This is provider-agnostic: works for reasoning models
+              // (which may produce zero tool calls) and standard models
+              // alike, and yields comparable step counts across groups.
               stepCount++
             }
           }
-        }
-
-        // Estimate step count from message volume if explicit tool messages
-        // aren't available (some providers use a flat message stream).
-        if (stepCount === 0 && hasAssistantMsg) {
-          stepCount = Math.floor(seenMessageIds.size / 2)  // rough: user↔assistant pairs
         }
 
         if (newMsgs > 0 && pollCount % 3 === 0) {
@@ -1034,20 +1071,22 @@ async function main() {
     writeFileSync(commandsPath, commandsLog || "# No commands logged\n")
     console.log(`  commands.log: ${commandsLog.split('\n').filter(Boolean).length} commands`)
 
-    // Write final_answer.md — use the file already written by the agent if present
-    const agentWrittenFaPath = join(TRACE_DIR, ".agent_log", "final_answer.md")
-    if (existsSync(agentWrittenFaPath)) {
-      const existingFa = readFileSync(agentWrittenFaPath, "utf-8").trim()
+    // Write final_answer.md — use agent-written file from workspace root first,
+    // then fall back to trace_dir/.agent_log/ for backward-compatible runs.
+    const agentWrittenFaPath = join(WORKSPACE_DIR, "final_answer.md")
+    const legacyFaPath = join(TRACE_DIR, ".agent_log", "final_answer.md")
+    const faSourcePath = existsSync(agentWrittenFaPath) ? agentWrittenFaPath
+      : existsSync(legacyFaPath) ? legacyFaPath : null
+    if (faSourcePath) {
+      const existingFa = readFileSync(faSourcePath, "utf-8").trim()
       if (existingFa.length > 20) {
         finalAnswer = existingFa
         console.log(`  final_answer.md: using agent-written file (${finalAnswer.length} chars)`)
       }
     }
-    if (!finalAnswer) {
-      writeFileSync(agentWrittenFaPath, finalAnswer || `# Task ${TASK_ID} — No final answer\n\nAgent completed without producing a text response.`)
-    } else {
-      writeFileSync(agentWrittenFaPath, finalAnswer)
-    }
+    // Ensure the trace copy always exists so collect_trace.py can find it
+    const traceFaPath = join(TRACE_DIR, ".agent_log", "final_answer.md")
+    writeFileSync(traceFaPath, finalAnswer || `# Task ${TASK_ID} — No final answer\n\nAgent completed without producing a text response.`)
     console.log(`  final_answer.md: ${finalAnswer.length} chars`)
 
     const workspaceFinalAnswerJson = join(WORKSPACE_DIR, "final_answer.json")

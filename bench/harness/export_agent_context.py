@@ -80,6 +80,7 @@ def export_context(
     workspace: Path,
     experiment_set: str = "dev",
     fixture_set: str = "public",
+    replicate: int = 1,
 ) -> dict:
     """Build the agent context manifest."""
     profile = load_agent_profile(group_id)
@@ -113,7 +114,7 @@ def export_context(
             "required_behavior": profile.get("required_behavior", []),
             "rule": profile.get("rule", {}).get("description", ""),
         },
-        "abi_interface": build_abi_interface(group_id, profile, task_id, experiment_set),
+        "abi_interface": build_abi_interface(group_id, profile, task_id, experiment_set, replicate),
         "workspace_files": workspace_files,
         "expected_artifacts": task.get("expected_artifacts", []),
         "output_formats": build_output_formats(task),
@@ -209,7 +210,7 @@ def build_output_formats(task: dict) -> dict:
     }
 
 
-def build_abi_interface(group_id: str, profile: dict, task_id: str, experiment_set: str) -> dict:
+def build_abi_interface(group_id: str, profile: dict, task_id: str, experiment_set: str, replicate: int = 1) -> dict:
     """Expose callable ABI lifecycle commands only to ABI-enabled groups."""
     allowed_tools = profile.get("allowed_tools", [])
     abi_enabled = (
@@ -227,7 +228,7 @@ def build_abi_interface(group_id: str, profile: dict, task_id: str, experiment_s
     workspace_token = "{workspace}"
     analysis_token = "{analysis_type}"
     base = f"python {cli}"
-    metadata_args = f"--task-id {task_id} --experiment-set {experiment_set}"
+    metadata_args = f"--task-id {task_id} --experiment-set {experiment_set} --replicate {replicate}"
     return {
         "available": True,
         "cli": str(cli),
@@ -265,11 +266,12 @@ def main():
         default="public",
         help="Fixture set label for the exported context",
     )
+    parser.add_argument("--replicate", type=int, default=1, help="Replicate number for generated metadata")
     parser.add_argument("--workspace", required=True, type=Path, help="Workspace directory")
     parser.add_argument("--output", type=Path, help="Output JSON path (default: workspace/agent_context.json)")
     args = parser.parse_args()
 
-    context = export_context(args.group, args.task, args.workspace, args.experiment_set, args.fixture_set)
+    context = export_context(args.group, args.task, args.workspace, args.experiment_set, args.fixture_set, args.replicate)
     if context is None:
         return 1
 

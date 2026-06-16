@@ -36,7 +36,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # Allow direct execution from repo root
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from bench.harness.diagnosis import diagnose_workspace_structured as _diagnose_workspace_structured
+from bench.harness.diagnosis import diagnose_workspace_structured
 from bench.harness.diagnosis import format_diagnosis_markdown as _format_diagnosis_markdown
 from bench.harness.diagnosis import summarize_workspace_data as _summarize_workspace_data
 
@@ -118,6 +118,7 @@ def run_task(
             str(PROJECT_ROOT / "bench" / "harness" / "export_agent_context.py"),
             "--group", group_id,
             "--task", task_id,
+            "--replicate", str(replicate),
             "--experiment-set", experiment_set,
             "--fixture-set", fixture_set,
             "--workspace", str(workspace_dir),
@@ -375,6 +376,12 @@ def _launch_agent_opencode(
         cmd.extend(["--api-base", api_base])
     if model:
         cmd.extend(["--model", model])
+
+    # Pass task-level action constraints so the TypeScript harness can
+    # dynamically disable tools (e.g. bash when run_shell=false).
+    allowed_actions = task_def.get("allowed_actions", {})
+    if allowed_actions:
+        cmd.extend(["--allowed-actions", json.dumps(allowed_actions)])
 
     print(f"  OpenCode agent harness: bun run run_agent.ts")
     print(f"  Group: {group_id}, Task: {task_id}")
@@ -735,11 +742,11 @@ def _tables_have_headers(tables_dir: Path) -> bool:
 def _generate_final_answer_json(group_id: str, task_id: str, workspace_dir: Path) -> dict | None:
     """Generate structured diagnosis sidecars for tasks that require them.
 
-    For A1/A3 ablation groups the answer reflects the limited information
-    available. For all other groups the diagnosis is derived from
-    ``summarize_workspace_data`` — the same raw data source that the
-    real agent receives via ``abi diagnose``. This keeps the simulated
-    and real-agent code paths consistent.
+    Delegates to ``diagnose_workspace_structured`` in ``diagnosis.py`` so the
+    simulated agent uses the **exact same** diagnostic logic as the ABI CLI.
+    This eliminates the divergence described in B5 — previously the simulated
+    path had its own ``_derive_diagnosis_from_summary`` that could drift from
+    the canonical implementation.
     """
     if task_id not in ("T05", "T06", "T07"):
         return None
@@ -759,8 +766,6 @@ def _generate_final_answer_json(group_id: str, task_id: str, workspace_dir: Path
         "confidence": "high",
     }
     if group_id == "A1":
-        # A1 (no-provenance): agent has no access to provenance artifacts.
-        # Cannot perform structured diagnosis — must inspect files manually.
         return {
             **base,
             "cause": "unknown",
@@ -768,8 +773,6 @@ def _generate_final_answer_json(group_id: str, task_id: str, workspace_dir: Path
             "fix": "Check all inputs/resources/tools after regenerating provenance.",
         }
     if group_id == "A3":
-        # A3 (no-diagnostic-hints): agent receives workspace data but
-        # without explicit hints about what to look for.
         return {
             **base,
             "cause": "unstructured_failure",
@@ -777,90 +780,8 @@ def _generate_final_answer_json(group_id: str, task_id: str, workspace_dir: Path
             "fix": "Inspect the workspace manually because no structured hint was available.",
         }
 
-    # Use summarize_workspace_data (same source as real agent via abi diagnose)
-    # and derive a diagnosis — mirroring what the LLM would reason.
-    summary = _summarize_workspace_data(workspace_dir)
-    diagnosis = _derive_diagnosis_from_summary(summary)
-    return {**base, **diagnosis}
-
-
-def _derive_diagnosis_from_summary(summary: dict) -> dict:
-    """Derive a structured diagnosis from workspace summary data.
-
-    This simulates the LLM's reasoning process: inspect path existence checks,
-    tool registry, and resource configuration to identify the root cause.
-    Mirrors the logic in ``diagnose_workspace_structured`` but operates on
-    the *data* rather than pattern-matching the raw config.
-    """
-    # 1. Missing input: a sample-sheet path does not exist in the workspace.
-    for check in summary.get("path_existence_checks", []):
-        if check.get("exists_on_disk") is not False:
-            continue
-        source = str(check.get("source", ""))
-        if not source.startswith("sample_sheet::"):
-            continue
-        _, sample_id, field = (source.split("::") + ["", ""])[:3]
-        return {
-            "cause": "missing_input",
-            "sample_id": sample_id,
-            "field": field,
-            "path": check.get("path", ""),
-            "fix": (
-                f"Update sample_sheet.tsv to point "
-                f"{sample_id or 'the sample'} {field or 'the field'} "
-                f"to an existing input file."
-            ),
-            "fix_required": True,
-            "confidence": "high",
-        }
-
-    # 2. Missing resource: a configured resource path does not exist.
-    for check in summary.get("path_existence_checks", []):
-        if check.get("exists_on_disk") is not False:
-            continue
-        source = str(check.get("source", ""))
-        prefix = "config::resources."
-        suffix = ".path"
-        if source.startswith(prefix) and source.endswith(suffix):
-            name = source[len(prefix):-len(suffix)]
-            return {
-                "cause": "missing_resource",
-                "resource": name,
-                "config_key": f"resources.{name}.path",
-                "path": check.get("path", ""),
-                "fix": "Point the config to an installed local resource; do not download automatically.",
-                "fix_required": True,
-                "confidence": "high",
-            }
-
-    # 3. Check tools for unavailable-tool metadata.
-    for tool_id, tool_meta in summary.get("tools", {}).items():
-        if isinstance(tool_meta, dict):
-            meta_text = str(tool_meta.get("description", "")).lower()
-            executable = tool_meta.get("executable", tool_id)
-            env = tool_meta.get("env", "")
-        else:
-            meta_text = str(tool_meta).lower()
-            executable = str(tool_meta)
-            env = ""
-        if "not installed" in meta_text or "not available" in meta_text:
-            return {
-                "cause": "tool_not_found",
-                "tool_id": tool_id,
-                "executable": executable,
-                "env": env,
-                "fix": f"Install {executable} in the {env or 'expected'} Conda environment before real execution.",
-                "fix_required": True,
-                "confidence": "high",
-            }
-
-    # 4. No injected faults detected
-    return {
-        "cause": "none",
-        "fix": "No injected missing input, missing resource, or missing tool was detected.",
-        "fix_required": False,
-        "confidence": "medium",
-    }
+    # Canonical diagnosis — same code path as the real agent via abi diagnose.
+    return diagnose_workspace_structured(workspace_dir)
 
 
 def _generate_final_answer(group_id: str, task_id: str) -> str:
