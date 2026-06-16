@@ -105,8 +105,8 @@ LLM agent 操作生信 workflow 面临五大特有困难：
 
 | 变量 | 固定值 |
 |---|---|
-| Agent harness | OpenCode |
-| LLM | 同一 LLM4 版本 |
+| Agent harness | Python 直连 agent（`direct_agent.py`，默认）或 OpenCode（旧版） |
+| LLM | 同一版本，所有组相同 |
 | Temperature | 0（最低可用值） |
 | Max agent steps | 50 |
 | Timeout | 每任务 20 分钟 |
@@ -228,31 +228,42 @@ ABI-Bench v0.1 **仅当以下全部满足**时，才支持"ABI 改进了 agent-o
 |---|---|---|
 | **Python ≥ 3.10** | harness 执行、scoring | 系统包管理器 |
 | **PyYAML** | 读取 task/group 配置 | `pip install pyyaml` |
-| **OpenCode** | Agent harness（运行时引擎） | 见下方 |
-| **Bun** | 运行 OpenCode server | `curl -fsSL https://bun.sh/install \| bash` |
+| **openai** | LLM API 客户端（direct 模式） | `pip install openai` |
+| **OpenCode + Bun** | 旧版 agent 运行时（可选） | 见下方 |
 
-### 8.2 安装 OpenCode
+### 8.2 Agent 执行模式
 
-**方案一：全局安装（推荐）**
+| 模式 | Flag | 依赖 | 用途 |
+|------|------|------|------|
+| **direct** | `--agent-mode direct` | `pip install openai` + API key | **推荐**——正式实验 |
+| **opencode** | `--agent-mode opencode` | Bun + OpenCode + API key | 旧版兼容 |
+| **simulated** | `--agent-mode simulated`（默认） | 无 | CI、基础设施验证 |
+
+### 8.3 Direct 模式配置（推荐）
 
 ```bash
-npm install -g opencode
+# 安装依赖
+pip install pyyaml openai
+
+# 配置 bench/.env
+cp bench/.env.example bench/.env
+# 编辑 bench/.env — 填入你的 provider 和 API key
+
+# 运行
+ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
+  --group G3 --tasks mvp --replicates 3 \
+  --agent-mode direct --parallel --workers 4 \
+  --experiment-set main --fixture-set public
+```
+
+### 8.4 OpenCode 模式（旧版兼容，可选）
+
+```bash
+npm install -g opencode    # 全局安装
 # 或
-bun install -g opencode
-```
-
-harness 会自动从 PATH 找到 `opencode` 命令。
-
-**方案二：本地 clone**
-
-```bash
 git clone https://github.com/anomalyco/opencode.git agent/opencode
-cd agent/opencode && bun install
+cd agent/opencode && bun install    # 本地 fallback
 ```
-
-harness 会自动检测 `agent/opencode` 目录并使用它。
-
-**为什么 `agent/` 不在仓库里**：OpenCode 是外部依赖，不是本项目的一部分。AIBench 通过固定 LLM、固定 agent harness 来保证组间比较的公平性，但 OpenCode 本身不是我们开发的，不需要作为 benchmark 的一部分分发。
 
 ---
 
@@ -260,28 +271,34 @@ harness 会自动检测 `agent/opencode` 目录并使用它。
 
 ```bash
 # 1. 安装依赖
-pip install pyyaml
+pip install pyyaml openai
 
-# 2. 配置 LLM provider（复制 .env.example 并填入 API key）
+# 2. 配置 LLM provider
 cp bench/.env.example bench/.env
-# 编辑 bench/.env，取消注释你要使用的 provider 并填入 API key
+# 编辑 bench/.env，填入你的 provider 和 API key
 # 支持: anthropic, openai, deepseek, google, openai-compatible
 
-# 3. 模拟模式验证（不依赖 OpenCode / LLM，纯本地跑评分逻辑）
+# 3. 模拟模式验证（不依赖 LLM，纯本地跑评分逻辑）
 python bench/harness/run_group.py --group G3 --tasks T01,T02,T03 --replicates 1
 
 # 4. 并行模拟（加速验证）
 python bench/harness/run_group.py --group G3 --tasks mvp --replicates 1 --parallel --workers 4
 
-# 5. 聚合评分
-python bench/scoring/aggregate_scores.py \
-  --results bench/results \
-  --output bench/results/leaderboard.tsv \
-  --summary bench/results/summary.json
+# 5. Direct 模式真实运行（推荐）
+ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
+  --group G3 --tasks mvp --replicates 3 --agent-mode direct --parallel --workers 4
 
-# 6. 真实 LLM 运行（需要安装 OpenCode 并配置 bench/.env）
-python bench/harness/run_group.py \
-  --group G3 --tasks mvp --replicates 3 --agent-mode opencode --parallel --workers 4
+# 6. 聚合评分
+python bench/scoring/aggregate_scores.py \
+  --results bench/results --experiment-set main --fixture-set public \
+  --output bench/results/leaderboard.tsv --summary bench/results/summary.json
+
+# 7. 统计分析
+python bench/scoring/claim_preflight.py \
+  --results bench/results --experiment-set main --fixture-set public --min-replicates 3
+python bench/scoring/compute_statistics.py \
+  --results bench/results --experiment-set main --fixture-set public \
+  --output bench/results/statistics.json
 ```
 
 ---
@@ -302,25 +319,35 @@ python bench/harness/run_group.py \
 
 | 模式 | 用途 | 命令 |
 |---|---|---|
+| **direct** | **推荐**——Python 直连 LLM API，快速可靠 | `--agent-mode direct` |
 | **simulated** | 本地快速验证评分逻辑，无需 LLM/API | `--agent-mode simulated`（默认） |
-| **opencode** | 真实 LLM agent 运行，产生实验结果 | `--agent-mode opencode` |
+| **opencode** | 旧版兼容——通过 OpenCode server 运行 | `--agent-mode opencode` |
 
-模拟模式下，harness 为每个 group/task 生成对应的 artifact 和 final_answer。消融组（A1/A3/A4）的模拟 agent 会产生**刻意不完整**的输出——A1 不生成 provenance、A3 诊断模糊、A4 绕过 permission gate。这使得评分逻辑可以在不消耗 API 调用的情况下完整验证。
+Direct 模式下，agent 通过 `openai` SDK 直接调用 LLM API，在 Python 进程内完成完整的
+tool-calling 循环。无需启动外部 server，无需轮询，比 OpenCode 模式快 5-10 倍且更可靠。
 
-**并行执行**（`--parallel --workers N`）：同一 replicate batch 内的 task 通过线程池并发执行，每个 task 使用独立的 workspace/trace/results 目录，互不冲突。适用于 opencode 模式下大幅缩短墙钟时间（预计缩短 60%+）。
+模拟模式下，harness 为每个 group/task 生成对应的 artifact 和 final_answer。消融组
+（A1/A3/A4）的模拟 agent 会产生**刻意不完整**的输出——A1 不生成 provenance、A3 
+诊断模糊、A4 绕过 permission gate。这使得评分逻辑可以在不消耗 API 调用的情况下完整验证。
+
+**并行执行**（`--parallel --workers N`）：同一 replicate batch 内的 task 通过线程池
+并发执行，每个 task 使用独立的 workspace/trace/results 目录，互不冲突。在 direct 和
+opencode 模式下均可大幅缩短墙钟时间。
 
 ### 10.3 三组主实验
 
 ```bash
 for group in G1 G2 G3; do
-  python bench/harness/run_group.py \
+  ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
     --group $group --tasks mvp --replicates 3 \
-    --agent-mode opencode
+    --agent-mode direct --parallel --workers 4 \
+    --experiment-set main --fixture-set public \
+    --outdir bench/results/$group
 done
 
 python bench/scoring/aggregate_scores.py \
-  --results bench/results \
-  --output bench/results/leaderboard.tsv
+  --results bench/results --experiment-set main --fixture-set public \
+  --output bench/results/leaderboard.tsv --summary bench/results/summary.json
 ```
 
 ---
@@ -353,21 +380,25 @@ bench/
 │   └── transcriptomics_valid/
 │
 ├── harness/                         # 执行基础设施 (Python + TypeScript)
-│   ├── run_task.py                  #   单任务 5 步编排
+│   ├── run_task.py                  #   单任务 5 步编排（支持 3 种 agent 模式）
 │   ├── run_group.py                 #   批量组运行（支持 --parallel 并行）
+│   ├── direct_agent.py              #   **Python 直连 agent loop（推荐）**
+│   ├── run_agent.ts                 #   OpenCode server 启动与 session 管理（旧版）
+│   ├── deepseek_proxy.py            #   DeepSeek 认证代理（旧版模式 workaround）
 │   ├── reset_workspace.py           #   workspace 重置
 │   ├── export_agent_context.py      #   agent 上下文导出
-│   ├── run_agent.ts                 #   OpenCode server 启动与 session 管理
 │   ├── collect_trace.py             #   trace 收集
 │   ├── diagnosis.py                 #   共享诊断工具（供 simulated agent 和 abi_cli 共用）
 │   ├── abi_cli.py                   #   ABI lifecycle CLI（G3 组 agent 可调用）
-│   └── opencode                     #   opencode CLI wrapper
+│   └── opencode                     #   opencode CLI wrapper（旧版）
 │
 ├── scoring/                         # 自动评分 (Python)
 │   ├── rubric.yaml                  #   集中评分规则
 │   ├── checks.py                    #   基础检查函数库
 │   ├── score_run.py                 #   单次运行评分
 │   ├── aggregate_scores.py          #   跨运行聚合
+│   ├── claim_preflight.py           #   Claim 预检一致性检查
+│   ├── compute_statistics.py        #   Bootstrap CI、效应量、失败分类
 │   └── make_tables.py               #   论文表格生成
 │
 ├── workspaces/                      # 每 run 的独立工作目录

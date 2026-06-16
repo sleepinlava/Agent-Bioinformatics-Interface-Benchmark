@@ -4,7 +4,7 @@ plugin: both
 task_type: result_interpretation
 fixture: plasmid_valid
 max_score: 4
-timeout_minutes: 10
+timeout_minutes: 15
 max_agent_steps: 30
 
 prompt: |

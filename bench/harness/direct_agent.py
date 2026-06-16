@@ -1,0 +1,525 @@
+#!/usr/bin/env python3
+"""
+ABI-Bench Direct Agent — DeepSeek API agent loop (no OpenCode dependency).
+
+Replaces run_agent.ts by calling the LLM API directly via the openai SDK.
+Handles tool calls (bash, read_file, write_file, list_files) in a simple
+agent loop until the model produces a final answer or max steps is reached.
+
+Usage (standalone):
+    python bench/harness/direct_agent.py \\
+      --workspace bench/workspaces/G3/T01/replicate_01 \\
+      --trace-dir bench/traces/G3/T01/replicate_01 \\
+      --group G3 --task T01 \\
+      --max-tokens 8000
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+from openai import OpenAI
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+# ── Tool definitions (OpenAI/DeepSeek function-calling format) ────────────────
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "Execute a shell command in the workspace. Use for ABI CLI commands (list-types, plan, dry-run, inspect, diagnose, report) and other shell operations. Returns stdout and stderr.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "Shell command to execute"},
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read the contents of a file in the workspace.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative or absolute path to the file"},
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Write content to a file in the workspace. Creates parent directories if needed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative or absolute path to write"},
+                    "content": {"type": "string", "description": "Content to write to the file"},
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "List files and directories in the workspace.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Directory path to list (default: workspace root)", "default": "."},
+                },
+            },
+        },
+    },
+]
+
+# ── System prompts per group ──────────────────────────────────────────────────
+
+SYSTEM_PROMPTS = {
+    "G1": """You are an agent operating in a bioinformatics benchmark workspace.
+Your available tools are shell (bash), file read, and file write.
+Use README-style documentation and visible workspace files such as config.yaml and sample_sheet.tsv.
+Do not use ABI lifecycle commands or ABI CLI helpers.
+Write only the artifacts requested by the task, and never execute real
+bioinformatics tools without explicit confirmation.""",
+
+    "G2": """You are an agent operating in a bioinformatics benchmark workspace.
+Your available tools are general shell/task execution plus file read and write.
+You may inspect files and construct artifacts manually, but you do not receive
+ABI lifecycle operations, ABI CLI helpers, provenance reasoning interfaces, or
+structured diagnostic hints. Do not use ABI lifecycle commands or ABI CLI paths.
+Never execute real bioinformatics tools without explicit confirmation.""",
+
+    "G3": """You are an ABI-enabled bioinformatics agent. Use the ABI lifecycle:
+1. Plan: Create execution plans with analysis_type, step_ids, and tool_ids
+2. Dry-run: Validate plans without real bioinformatics execution
+3. Inspect: Read provenance artifacts to diagnose issues
+4. Report: Generate structured reports
+
+Call the ABI CLI with these commands:
+- python bench/harness/abi_cli.py list-types
+- python bench/harness/abi_cli.py plan --workspace {workspace}
+- python bench/harness/abi_cli.py dry-run --workspace {workspace}
+- python bench/harness/abi_cli.py inspect --workspace {workspace}
+- python bench/harness/abi_cli.py diagnose --workspace {workspace}
+- python bench/harness/abi_cli.py report --workspace {workspace}
+
+Always read config.yaml and sample_sheet.tsv first to understand the workspace.
+Prefer ABI CLI lifecycle commands over direct shell commands.
+Always distinguish between dry-run and real execution.
+Never execute real bioinformatics tools without explicit confirmation.""",
+}
+
+# Ablation groups inherit G3's prompt
+for g in ("A1", "A3", "A4"):
+    SYSTEM_PROMPTS[g] = SYSTEM_PROMPTS["G3"]
+
+
+def load_dotenv(path: str) -> dict:
+    """Load key=value pairs from a dotenv file."""
+    result = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    key = key.strip()
+                    value = value.strip().strip("'").strip('"')
+                    if key not in result:
+                        result[key] = value
+    except OSError:
+        pass
+    return result
+
+
+def resolve_path(workspace: Path, path: str) -> Path:
+    """Resolve a path relative to workspace."""
+    p = Path(path)
+    if p.is_absolute():
+        return p
+    return workspace / p
+
+
+def execute_tool(tool_name: str, args: dict, workspace: Path) -> str:
+    """Execute a tool call and return the result as a string."""
+    try:
+        if tool_name == "bash":
+            cmd = args.get("command", "")
+            timeout = 120  # seconds
+            result = subprocess.run(
+                cmd, shell=True, cwd=workspace,
+                capture_output=True, text=True, timeout=timeout,
+                env={**os.environ, "PATH": os.environ.get("PATH", "")},
+            )
+            out = result.stdout
+            if result.stderr:
+                out += "\n[stderr]\n" + result.stderr
+            if result.returncode != 0:
+                out += f"\n[exit code: {result.returncode}]"
+            return out.strip() or "(no output)"
+
+        elif tool_name == "read_file":
+            path = resolve_path(workspace, args.get("path", ""))
+            if not path.exists():
+                return f"ERROR: File not found: {path}"
+            if path.stat().st_size > 100_000:
+                return f"File too large ({path.stat().st_size} bytes). First 5000 chars:\n{path.read_text()[:5000]}"
+            return path.read_text()
+
+        elif tool_name == "write_file":
+            path = resolve_path(workspace, args.get("path", ""))
+            content = args.get("content", "")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+            return f"Wrote {len(content)} chars to {path}"
+
+        elif tool_name == "list_files":
+            path = resolve_path(workspace, args.get("path", "."))
+            if not path.is_dir():
+                return f"ERROR: Not a directory: {path}"
+            lines = []
+            for entry in sorted(path.iterdir()):
+                if entry.name.startswith("."):
+                    continue
+                suffix = "/" if entry.is_dir() else ""
+                size = entry.stat().st_size if entry.is_file() else 0
+                lines.append(f"  {entry.name}{suffix}  ({size} bytes)")
+            return "\n".join(lines) if lines else "(empty directory)"
+
+        else:
+            return f"ERROR: Unknown tool: {tool_name}"
+
+    except subprocess.TimeoutExpired:
+        return "ERROR: Command timed out (120s)"
+    except Exception as e:
+        return f"ERROR: {type(e).__name__}: {e}"
+
+
+def run_agent(
+    workspace: Path,
+    trace_dir: Path,
+    group_id: str,
+    task_id: str,
+    task_prompt: str,
+    max_steps: int = 50,
+    max_tokens: int = 8000,
+    timeout_minutes: int = 20,
+    task_type: str = "",
+) -> int:
+    """Run the agent loop with direct DeepSeek API calls."""
+
+    # ── Load config ───────────────────────────────────────────────────────
+    env = load_dotenv(str(PROJECT_ROOT / "bench" / ".env"))
+    api_key = os.environ.get("ABI_BENCH_API_KEY") or env.get("ABI_BENCH_API_KEY", "")
+    api_base = os.environ.get("ABI_BENCH_API_BASE") or env.get("ABI_BENCH_API_BASE", "https://api.deepseek.com")
+    model = os.environ.get("ABI_BENCH_MODEL") or env.get("ABI_BENCH_MODEL", "deepseek-v4-pro")
+
+    client = OpenAI(api_key=api_key, base_url=api_base)
+
+    system_prompt = SYSTEM_PROMPTS.get(group_id, SYSTEM_PROMPTS["G3"])
+
+    # Inject ABI CLI paths into G3 system prompt
+    if group_id in ("G3", "A1", "A3", "A4"):
+        abi_cli = PROJECT_ROOT / "bench" / "harness" / "abi_cli.py"
+        system_prompt = system_prompt.replace(
+            "python bench/harness/abi_cli.py",
+            f"python {abi_cli}",
+        )
+
+    # ── Diagnosis task: inject structured output requirement ─────────────
+    if task_type == "diagnosis":
+        system_prompt += """
+
+## CRITICAL: Structured Diagnosis Output Required
+
+For this diagnosis task, you MUST write a `final_answer.json` file AND a `final_answer.md` file.
+
+The JSON file must follow this schema exactly:
+```json
+{
+  "schema_version": "abi-bench.final_answer.v1",
+  "task_type": "diagnosis",
+  "cause": "<missing_input|missing_resource|tool_not_found>",
+  "sample_id": "<affected sample>",
+  "field": "<affected field name>",
+  "path": "<incorrect or missing path>",
+  "resource": "<affected resource name>",
+  "config_key": "<config.yaml key path>",
+  "tool_id": "<affected tool identifier>",
+  "executable": "<expected executable name>",
+  "env": "<expected environment name>",
+  "fix": "<suggested corrective action>",
+  "fix_required": true,
+  "confidence": "<high|medium|low>"
+}
+```
+
+Use the write_file tool to create `final_answer.json` with the actual diagnosis data.
+Only include fields relevant to the specific fault type.
+Then write a human-readable `final_answer.md` summarizing the diagnosis."""
+
+    # ── Build initial messages ────────────────────────────────────────────
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": task_prompt},
+    ]
+
+    # ── Trace storage ─────────────────────────────────────────────────────
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    log_dir = trace_dir / ".agent_log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    agent_trace = []
+    tool_calls_log = []
+    commands_log = []
+
+    start_time = datetime.now(timezone.utc)
+    total_thinking_tokens = 0
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+
+    # ── Agent loop ────────────────────────────────────────────────────────
+    final_answer = ""
+    step_count = 0
+
+    print(f"  Direct agent: model={model}, max_tokens={max_tokens}, max_steps={max_steps}")
+    print(f"  System prompt: {len(system_prompt)} chars")
+    print(f"  Task prompt: {len(task_prompt)} chars")
+
+    for step in range(max_steps):
+        elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+        if elapsed > timeout_minutes * 60:
+            print(f"  Timeout after {elapsed:.0f}s ({step} steps)")
+            final_answer = f"# Timeout\n\nAgent run exceeded {timeout_minutes} minute timeout."
+            break
+
+        step_count = step + 1
+        print(f"  Step {step_count}/{max_steps} ({elapsed:.0f}s)...", end=" ", flush=True)
+
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=TOOLS,
+                temperature=0,
+                max_tokens=max_tokens,
+            )
+        except Exception as e:
+            print(f"API ERROR: {e}")
+            final_answer = f"# API Error\n\n{e}"
+            break
+
+        msg = response.choices[0].message
+        finish = response.choices[0].finish_reason
+
+        # Track token usage
+        if response.usage:
+            total_prompt_tokens += response.usage.prompt_tokens or 0
+            total_completion_tokens += response.usage.completion_tokens or 0
+            details = getattr(response.usage, "completion_tokens_details", None)
+            if details and getattr(details, "reasoning_tokens", 0):
+                total_thinking_tokens += details.reasoning_tokens
+
+        # If the model responds with content (final answer) and no tool calls
+        if msg.content and not msg.tool_calls:
+            final_answer = msg.content
+            print(f"DONE ({response.usage.completion_tokens} tokens)")
+            agent_trace.append({
+                "step": step_count,
+                "action": "final_answer",
+                "observation": final_answer[:500],
+                "human_intervention": False,
+            })
+            break
+
+        # If the model makes tool calls
+        if msg.tool_calls:
+            # Add assistant message with tool calls
+            assistant_msg = {
+                "role": "assistant",
+                "content": msg.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    }
+                    for tc in msg.tool_calls
+                ],
+            }
+            messages.append(assistant_msg)
+
+            # Execute each tool and add results
+            tool_results = []
+            for tc in msg.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    args = {}
+
+                tool_name = tc.function.name
+                result = execute_tool(tool_name, args, workspace)
+
+                print(f"tool={tool_name}", end=" ", flush=True)
+
+                agent_trace.append({
+                    "step": step_count,
+                    "action": tool_name,
+                    "args": args,
+                    "observation": result[:500],
+                })
+                tool_calls_log.append({
+                    "tool": tool_name,
+                    "args": args,
+                    "result": result[:1000],
+                })
+
+                if tool_name == "bash":
+                    commands_log.append(args.get("command", ""))
+
+                tool_results.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result[:4000],  # Truncate long results
+                })
+
+            messages.extend(tool_results)
+            print(f"({len(msg.tool_calls)} calls)")
+            continue
+
+        # finish_reason was "stop" or "length" without content — treat as final
+        final_answer = msg.content or "(no content)"
+        print(f"STOP (finish={finish}, {response.usage.completion_tokens} tokens)")
+        agent_trace.append({
+            "step": step_count,
+            "action": "stop",
+            "observation": final_answer[:500],
+        })
+        break
+
+    if step_count >= max_steps:
+        final_answer = f"# Max Steps Reached\n\nAgent exceeded {max_steps} steps without producing a final answer."
+        print(f"  MAX STEPS ({max_steps})")
+
+    # ── Write traces ──────────────────────────────────────────────────────
+    end_time = datetime.now(timezone.utc)
+
+    # agent_trace.jsonl
+    with open(trace_dir / "agent_trace.jsonl", "w") as f:
+        for entry in agent_trace:
+            f.write(json.dumps(entry) + "\n")
+
+    # tool_calls.jsonl
+    with open(trace_dir / "tool_calls.jsonl", "w") as f:
+        for entry in tool_calls_log:
+            f.write(json.dumps(entry) + "\n")
+
+    # commands.log
+    with open(trace_dir / "commands.log", "w") as f:
+        for cmd in commands_log:
+            f.write(f"[AGENT] {cmd}\n")
+        if not commands_log:
+            f.write("# No commands logged\n")
+
+    # final_answer.md
+    answer_path = trace_dir / "final_answer.md"
+    answer_path.write_text(final_answer)
+
+    # Write .agent_log variants (same format as run_agent.ts)
+    with open(log_dir / "agent_trace.jsonl", "w") as f:
+        for entry in agent_trace:
+            f.write(json.dumps(entry) + "\n")
+    with open(log_dir / "tool_calls.jsonl", "w") as f:
+        for entry in tool_calls_log:
+            f.write(json.dumps(entry) + "\n")
+    with open(log_dir / "commands.log", "w") as f:
+        for cmd in commands_log:
+            f.write(f"[AGENT] {cmd}\n")
+        if not commands_log:
+            f.write("# No commands logged\n")
+    with open(log_dir / "final_answer.md", "w") as f:
+        f.write(final_answer)
+
+    # metadata.json
+    metadata = {
+        "benchmark": "ABI-Bench",
+        "version": "0.1",
+        "task_id": task_id,
+        "group_id": group_id,
+        "agent_mode": "direct",
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+        "model": model,
+        "max_tokens": max_tokens,
+        "step_count": step_count,
+        "total_prompt_tokens": total_prompt_tokens,
+        "total_completion_tokens": total_completion_tokens,
+        "total_thinking_tokens": total_thinking_tokens,
+        "reasoning_used": total_thinking_tokens > 0,
+    }
+    with open(log_dir / "metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    # ── Copy workspace artifacts to trace_dir ────────────────────────────
+    for filename in ["final_answer.json", "artifact_manifest.json"]:
+        ws_path = workspace / filename
+        if ws_path.is_file():
+            import shutil
+            dest = trace_dir / filename
+            shutil.copy2(ws_path, dest)
+            log_dir_dest = log_dir / filename
+            shutil.copy2(ws_path, log_dir_dest)
+
+    print(f"  Done. {step_count} steps, {total_thinking_tokens} thinking tokens, "
+          f"{total_completion_tokens} completion tokens, "
+          f"final_answer: {len(final_answer)} chars")
+    return 0
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description="ABI-Bench Direct Agent")
+    parser.add_argument("--workspace", required=True, type=Path)
+    parser.add_argument("--trace-dir", required=True, type=Path)
+    parser.add_argument("--group", required=True)
+    parser.add_argument("--task", required=True)
+    parser.add_argument("--prompt", required=True)
+    parser.add_argument("--max-steps", type=int, default=50)
+    parser.add_argument("--max-tokens", type=int, default=8000)
+    parser.add_argument("--timeout-minutes", type=int, default=20)
+    args = parser.parse_args()
+
+    sys.exit(run_agent(
+        workspace=args.workspace.resolve(),
+        trace_dir=args.trace_dir.resolve(),
+        group_id=args.group,
+        task_id=args.task,
+        task_prompt=args.prompt,
+        max_steps=args.max_steps,
+        max_tokens=args.max_tokens,
+        timeout_minutes=args.timeout_minutes,
+    ))
+
+
+if __name__ == "__main__":
+    main()

@@ -107,8 +107,10 @@ bioinformatics workflows.**
 | **G3** | ABI Control Layer | Full ABI lifecycle, JSON envelope, provenance, standard tables, permission model | **Complete ABI contribution** |
 
 **Critical design principle**: All three groups use the **same LLM**, **same
-agent harness (OpenCode)**, **same repository commit**, and **same task
+agent harness**, **same repository commit**, and **same task
 fixtures**. The only variable is the interface layer available to the agent.
+ABI-Bench supports three agent execution modes: `direct` (Python native, recommended),
+`opencode` (legacy), and `simulated` (no LLM, CI/testing).
 
 ### 4.2 Ablation Groups
 
@@ -126,7 +128,7 @@ permission model) contribute how much to ABI's overall advantage?"*
 
 | Variable | Fixed Value |
 |---|---|
-| Agent harness | OpenCode |
+| Agent harness | Python direct agent (`direct_agent.py`, default) or OpenCode (legacy) |
 | LLM | Same model version for all groups |
 | Temperature | 0 (or lowest available) |
 | Max agent steps | 50 |
@@ -340,10 +342,11 @@ bench/
 │   └── plasmid_hidden_tool_missing.json
 │
 ├── harness/                         # Execution infrastructure
-│   ├── run_task.py                  #   Single task runner
-│   ├── run_group.py                 #   Group runner
-│   ├── run_agent.ts                 #   OpenCode agent harness (TypeScript)
-│   ├── opencode                     #   OpenCode CLI wrapper
+│   ├── run_task.py                  #   Single task runner (supports 3 agent modes)
+│   ├── run_group.py                 #   Group runner (supports --parallel)
+│   ├── direct_agent.py              #   **Direct Python agent loop (recommended)**
+│   ├── run_agent.ts                 #   OpenCode agent harness (TypeScript, legacy)
+│   ├── deepseek_proxy.py            #   DeepSeek auth proxy (workaround for legacy mode)
 │   ├── abi_cli.py                   #   ABI lifecycle CLI (list-types/plan/dry-run/run)
 │   ├── reset_workspace.py           #   Workspace reset from fixture
 │   ├── collect_trace.py             #   Trace collection
@@ -381,75 +384,86 @@ bench/
 |---|---|---|
 | **Python ≥ 3.10** | Harness execution, scoring | System package manager |
 | **PyYAML** | Parse task/group YAML configs | `pip install pyyaml` |
-| **OpenCode** | Agent harness (runtime engine) | See below |
-| **Bun** | Run OpenCode server | `curl -fsSL https://bun.sh/install \| bash` |
+| **openai** | LLM API client (direct mode) | `pip install openai` |
+| **OpenCode + Bun** | Legacy agent runtime (optional) | See below |
 
-### 9.2 Installing OpenCode
+### 9.2 Agent Execution Modes
 
-ABI-Bench uses **OpenCode** as its agent harness — the runtime that wraps the LLM
-and tool-calling loop. OpenCode is an external dependency, **not** part of the ABI-Bench
-repository (the `agent/` directory is gitignored).
+ABI-Bench supports three agent modes:
 
-**Option A: Global install (recommended)**
+| Mode | Flag | Requires | Use case |
+|------|------|----------|----------|
+| **direct** | `--agent-mode direct` | `pip install openai` + API key | **Recommended** — production experiments |
+| **opencode** | `--agent-mode opencode` | Bun + OpenCode + API key | Legacy (TypeScript agent harness) |
+| **simulated** | `--agent-mode simulated` (default) | Nothing | CI, infrastructure validation |
 
+### 9.3 Direct Mode (Recommended)
+
+Uses a Python-native agent loop (`bench/harness/direct_agent.py`) that calls the
+LLM API directly via the `openai` SDK. No OpenCode, Bun, or Node.js required.
+
+**Configuration via bench/.env:**
 ```bash
-npm install -g opencode
-# or
-bun install -g opencode
+cp bench/.env.example bench/.env
+# Edit bench/.env — uncomment one provider and fill in your API key
+vim bench/.env
 ```
 
-The harness auto-detects `opencode` on PATH. No local clone needed.
-
-**Option B: Local clone (for OpenCode development)**
-
-```bash
-git clone https://github.com/anomalyco/opencode.git agent/opencode
-cd agent/opencode && bun install
+**Example `.env` for DeepSeek:**
+```
+ABI_BENCH_PROVIDER=deepseek
+ABI_BENCH_API_KEY=sk-...
+ABI_BENCH_API_BASE=https://api.deepseek.com
+ABI_BENCH_MODEL=deepseek-v4-pro
+ABI_BENCH_MAX_TOKENS=8000
 ```
 
-The harness auto-detects `agent/opencode` and falls back to it when no global
-install is found.
+**Running with direct mode:**
+```bash
+# Single task
+ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py \
+  --group G3 --task T03 --replicate 1 \
+  --agent-mode direct \
+  --experiment-set main --fixture-set public
 
-### 9.3 Simulated Mode (No LLM / API Required)
+# Full group with parallel execution
+ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
+  --group G3 --tasks mvp --replicates 3 \
+  --agent-mode direct --parallel --workers 4 \
+  --experiment-set main --fixture-set public
+```
+
+### 9.4 Simulated Mode (No LLM / API Required)
 
 ```bash
 python bench/harness/run_task.py --group G3 --task T03 --agent-mode simulated
 ```
 
-The simulated agent produces expected artifacts directly without calling an LLM
-or starting OpenCode. Useful for:
+The simulated agent produces expected artifacts directly without calling an LLM.
+Useful for:
 - Validating harness / scoring infrastructure
 - CI and rapid regression testing
 - Group-aware ablation simulation (A1/A3/A4 produce differentiated outputs)
 
-### 9.4 OpenCode Mode (Real LLM Agent)
+### 9.5 OpenCode Mode (Legacy)
 
-Uses the OpenCode agent harness with a real LLM backend. Requires provider
-configuration and an API key.
+Uses the OpenCode agent harness (`run_agent.ts`) with a real LLM backend. Requires
+Bun and OpenCode installation.
 
-**Method 1: Environment Variables**
+**Installing OpenCode (only for --agent-mode opencode):**
+```bash
+npm install -g opencode        # Global (recommended)
+# or
+git clone https://github.com/anomalyco/opencode.git agent/opencode
+cd agent/opencode && bun install  # Vendored fallback
+```
+
 ```bash
 ANTHROPIC_API_KEY=sk-ant-... \
   python bench/harness/run_task.py --group G3 --task T03 --agent-mode opencode
 ```
 
-**Method 2: bench/.env File**
-```bash
-cp bench/.env.example bench/.env
-# Edit bench/.env with your API key
-vim bench/.env
-python bench/harness/run_group.py --group G3 --tasks mvp --agent-mode opencode
-```
-
-**Method 3: ABI_BENCH_* Variables (for custom endpoints)**
-```bash
-ABI_BENCH_PROVIDER=deepseek \
-ABI_BENCH_API_KEY=sk-... \
-ABI_BENCH_API_BASE=https://api.deepseek.com \
-  python bench/harness/run_group.py --group G3 --tasks mvp --agent-mode opencode
-```
-
-### 9.5 Supported Providers
+### 9.6 Supported Providers
 
 | Provider | Required Env Var | Configuration |
 |----------|-----------------|---------------|
@@ -459,30 +473,28 @@ ABI_BENCH_API_BASE=https://api.deepseek.com \
 | Google Gemini | `GOOGLE_GENERATIVE_AI_API_KEY` | Auto-detected |
 | Custom OpenAI-compatible | `ABI_BENCH_PROVIDER=openai-compatible` | bench/.env |
 
-All API keys are passed to the OpenCode server process via environment
-variables and are never written to disk or tracked by git.
+All API keys are passed via environment variables and are never written to disk
+or tracked by git. The `bench/.env` file is in `.gitignore`.
 
-### 9.6 Single Task Run
+### 9.7 Single Task Run Examples
 
 ```bash
-# Simulated mode (default, public fixtures)
-python bench/harness/run_task.py \
+# Direct mode (recommended — DeepSeek v4-pro)
+ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py \
   --group G3 --task T03 --replicate 1 \
-  --experiment-set dev --fixture-set public \
-  --outdir bench/results/G3/T03/replicate_01
+  --agent-mode direct \
+  --experiment-set main --fixture-set public
 
-# Simulated mode with hidden fixtures
-python bench/harness/run_task.py \
-  --group G3 --task T05 --replicate 1 \
-  --experiment-set main --fixture-set hidden \
-  --outdir bench/results/G3/T05/replicate_01
-
-# Real LLM agent mode (public fixtures)
+# OpenCode mode (legacy — Anthropic Claude)
 ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_task.py \
   --group G3 --task T03 --replicate 1 \
   --experiment-set main --fixture-set public \
-  --agent-mode opencode \
-  --outdir bench/results/G3/T03/replicate_01
+  --agent-mode opencode
+
+# Simulated mode (default, no API key)
+python bench/harness/run_task.py \
+  --group G3 --task T03 --replicate 1 \
+  --experiment-set dev --fixture-set public
 ```
 
 > **Fixture set notes**: `--fixture-set hidden` is only meaningful for diagnosis
@@ -509,18 +521,19 @@ Before each task run, the harness automatically:
 4. **Trace collection**: Saves `agent_trace.jsonl`, `tool_calls.jsonl`, `commands.log`
 5. **Scoring**: Generates `score.json`
 
-### 9.7 Full Benchmark Run
+### 9.8 Full Benchmark Run
 
 ```bash
-# Main experiment — three groups (simulated mode)
+# Main experiment — three groups (direct mode, 3 replicates, parallel)
 for group in G1 G2 G3; do
-  python bench/harness/run_group.py \
+  ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
     --group $group --tasks mvp --replicates 3 \
+    --agent-mode direct --parallel --workers 4 \
     --experiment-set main --fixture-set public \
     --outdir bench/results/$group
 done
 
-# Real LLM agent mode (hidden fixtures for paper run)
+# Legacy OpenCode mode (requires Bun + OpenCode)
 for group in G1 G2 G3; do
   ANTHROPIC_API_KEY=sk-ant-... python bench/harness/run_group.py \
     --group $group --tasks mvp --replicates 3 \

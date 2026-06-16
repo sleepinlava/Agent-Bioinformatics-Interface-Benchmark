@@ -230,9 +230,9 @@ def main():
     parser.add_argument(
         "--agent-mode",
         type=str,
-        choices=["simulated", "opencode"],
+        choices=["simulated", "opencode", "direct"],
         default="simulated",
-        help="Agent execution mode: simulated (default) or opencode (real LLM)",
+        help="Agent execution mode: simulated (default), opencode (real LLM via OpenCode), or direct (Python + DeepSeek API)",
     )
     parser.add_argument(
         "--fixture-set",

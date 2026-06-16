@@ -62,11 +62,17 @@ const ABI_GROUPS = new Set(["G3", "A1", "A3", "A4"])
 // Maps ABI_BENCH_PROVIDER / --provider values to OpenCode provider IDs.
 // Used by buildProviderConfig() and session model resolution — a single
 // source of truth so the two code paths never drift.
+//
+// NOTE: deepseek maps to "openai" (not "openai-compatible") because the
+// OpenCode server auto-detects DeepSeek as a "native" provider that sends
+// the API key in the request body, which DeepSeek rejects with
+// "Authentication Fails".  Using "openai" forces the server to use the
+// standard Authorization: Bearer header.
 const PROVIDER_ID_MAP: Record<string, string> = {
   anthropic: "anthropic",
   openai: "openai",
   google: "google",
-  deepseek: "openai-compatible",
+  deepseek: "openai",
   "openai-compatible": "openai-compatible",
   qwen: "openai-compatible", dashscope: "openai-compatible",
   glm: "openai-compatible", zhipu: "openai-compatible",
@@ -222,9 +228,20 @@ function buildProviderConfig(): Record<string, unknown> {
   // Build model abilities with reasoning flag
   function modelAbilities(): Record<string, boolean> {
     // Anthropic / OpenAI / Google reasoning models may require streaming disabled.
-    // OpenAI-compatible providers (DeepSeek, Qwen, GLM, Kimi, MiMo) all support
-    // streaming with reasoning — disabling it breaks the agent loop.
-    const disableStreaming = useReasoning && ["anthropic", "openai", "google"].includes(provider)
+    //
+    // OpenAI-compatible providers (DeepSeek, Qwen, GLM, Kimi, MiMo) MUST use
+    // stream=false because many of them emit reasoning_content chunks even when
+    // reasoning is not explicitly requested (e.g. DeepSeek v4-pro always thinks
+    // before responding).  Those chunks confuse OpenCode's message parser and
+    // result in 0 collected messages.
+    //
+    // We always disable streaming for openai-compatible providers and DeepSeek
+    // because the 3-second poll loop already gives acceptable latency; streaming
+    // would only help for real-time UX which this benchmark harness does not need.
+    const isOpenAICompatible = PROVIDER_ID_MAP[provider] === "openai-compatible"
+    const disableStreaming = provider === "deepseek"
+      || isOpenAICompatible
+      || (useReasoning && ["anthropic", "openai", "google"].includes(provider))
     return {
       chat: true,
       image: false,
@@ -279,6 +296,31 @@ function buildProviderConfig(): Record<string, unknown> {
     }
 
     return opts
+  }
+
+  // DeepSeek: use the "openai" provider ID (not "openai-compatible").
+  // The OpenCode server auto-detects DeepSeek from its base URL and
+  // switches to a "native" provider type that places the API key in the
+  // request body.  DeepSeek's API rejects that format ("Authentication
+  // Fails").  Registering DeepSeek under the "openai" provider forces
+  // the standard OpenAI Authorization: Bearer header.
+  if (provider === "deepseek") {
+    return {
+      provider: {
+        openai: {
+          id: "openai",
+          options: providerOptions(),
+          models: {
+            [modelName]: {
+              id: modelName,
+              name: modelName,
+              context: { input: 128000, output: 8000 },
+              abilities: modelAbilities(),
+            },
+          },
+        },
+      },
+    }
   }
 
   // When using openai provider with a custom base URL (e.g. DeepSeek),
@@ -462,12 +504,16 @@ whether missing confirmation gating increases unsafe execution risk.`,
   }
 
   // Apply task-level action constraints.  When a task YAML sets
-  // run_shell=false the bash tool is removed, preventing the agent from
-  // circumventing planning/diagnosis tasks by executing shell commands.
+  // run_shell=false the bash tool is removed for non-ABI groups (G1, G2)
+  // only.  ABI groups (G3, A1, A3, A4) always keep bash because the ABI
+  // CLI itself enforces safety constraints (dry-run enforcement,
+  // permission gating, provenance tracking) — removing bash would
+  // prevent the agent from calling the CLI at all.
   if (allowedActions) {
-    if (allowedActions.run_shell === false) {
+    const isAbiGroup = ABI_GROUPS.has(groupId)
+    if (allowedActions.run_shell === false && !isAbiGroup) {
       delete tools.bash
-      console.log("  Task constraint: bash DISABLED (run_shell=false)")
+      console.log("  Task constraint: bash DISABLED (run_shell=false, non-ABI group)")
     }
     if (allowedActions.write_files === false) {
       delete tools.write
@@ -651,8 +697,13 @@ async function createServer(options: {
 
     proc.stderr?.on("data", (chunk: Buffer) => {
       // stderr may contain non-error diagnostic output
+      const text = chunk.toString()
       if (!resolved) {
-        output += chunk.toString()
+        output += text
+      }
+      // After server is ready, log stderr lines (they often contain API errors)
+      if (resolved && text.trim()) {
+        console.error(`  [server:stderr] ${text.trim()}`)
       }
     })
 
@@ -813,20 +864,32 @@ async function main() {
       console.log(`  Reasoning: ENABLED (thinking budget ~${thinkingBudget} tokens, timeout +${Math.round(extraMs/1000)}s)`)
     }
 
-    await client.session.promptAsync({
-      id: sessionId,
-      directory: WORKSPACE_DIR,
-      model: modelObj,
-      agent: "build",
-      parts: [
-        {
-          type: "text",
-          text: fullPrompt,
-        } as any,
-      ],
-      system: agentConfig.systemPrompt,
-      tools: agentConfig.tools,
-    })
+    let promptError: string | null = null
+    try {
+      await client.session.promptAsync({
+        id: sessionId,
+        directory: WORKSPACE_DIR,
+        model: modelObj,
+        agent: "build",
+        parts: [
+          {
+            type: "text",
+            text: fullPrompt,
+          } as any,
+        ],
+        system: agentConfig.systemPrompt,
+        tools: agentConfig.tools,
+      })
+      console.log("  promptAsync completed OK")
+    } catch (err: any) {
+      promptError = err.message || String(err)
+      console.error(`  promptAsync FAILED: ${promptError}`)
+      if (err.cause) console.error(`    cause: ${err.cause}`)
+      if (err.response) {
+        try { console.error(`    response status: ${err.response.status}`) } catch {}
+        try { console.error(`    response data: ${JSON.stringify(err.response.data || err.response.body).slice(0, 500)}`) } catch {}
+      }
+    }
 
     // ── Wait for agent to complete ─────────────────────────────────────────
     // Completion detection strategies:

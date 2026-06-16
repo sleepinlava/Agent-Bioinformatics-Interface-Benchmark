@@ -7,7 +7,7 @@ bench/.env
 bench/workspaces/
 bench/traces/
 bench/results/
-docs/experiments/
+docs/experiments/*/
 
 # Python
 __pycache__/

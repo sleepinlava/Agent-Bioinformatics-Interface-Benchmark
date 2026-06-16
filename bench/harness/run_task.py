@@ -41,6 +41,37 @@ from bench.harness.diagnosis import format_diagnosis_markdown as _format_diagnos
 from bench.harness.diagnosis import summarize_workspace_data as _summarize_workspace_data
 
 
+def _load_dotenv(path: Path) -> None:
+    """Load key=value pairs from *path* into ``os.environ``.
+
+    Mirrors ``run_agent.ts:loadDotEnv()`` so the Python harness sees the
+    same configuration as the TypeScript harness (provider, model,
+    reasoning flags, etc.).
+    """
+    if not path.is_file():
+        return
+    try:
+        with open(path) as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                eq = line.find("=")
+                if eq <= 0:
+                    continue
+                key = line[:eq].strip()
+                value = line[eq + 1:].strip().strip("'").strip('"')
+                if key not in os.environ:          # never override existing env
+                    os.environ[key] = value
+    except OSError:
+        pass
+
+
+# Load bench/.env at import time so provider / model / reasoning flags
+# are visible to every function in this module.
+_load_dotenv(PROJECT_ROOT / "bench" / ".env")
+
+
 def run_task(
     group_id: str,
     task_id: str,
@@ -51,9 +82,11 @@ def run_task(
     fixture_set: str = "public",
     outdir: Path = None,
     dry_run_scoring_only: bool = False,
-    use_real_agent: bool = False,
+    agent_mode: str = "simulated",
 ):
-    """Run a single task end-to-end."""
+    """Run a single task end-to-end.
+
+    agent_mode: 'simulated' (no LLM), 'opencode' (via OpenCode harness), or 'direct' (Python agent loop)."""
     task_yaml = _task_yaml_path(task_id)
     if task_yaml is None:
         print(f"ERROR: No task YAML found for {task_id}")
@@ -129,19 +162,19 @@ def run_task(
             return result.returncode
         print(result.stdout.strip())
 
-        # Step 3: Launch agent (simulated by default; use --agent-mode opencode for real)
+        # Step 3: Launch agent (simulated by default; use --agent-mode opencode or direct for real LLM)
         print("\n[3/5] Launching agent...")
         agent_result = _launch_agent_opencode(
             group_id, task_id, workspace_dir, trace_dir, context_path,
             replicate=replicate,
             experiment_set=experiment_set,
             fixture_set=fixture_set,
-            use_real_agent=use_real_agent,
+            agent_mode=agent_mode,
         )
 
         # Step 4: Collect traces
         print("\n[4/5] Collecting traces...")
-        agent_log_source = trace_dir / ".agent_log" if use_real_agent else workspace_dir / ".agent_log"
+        agent_log_source = trace_dir / ".agent_log" if agent_mode != "simulated" else workspace_dir / ".agent_log"
         trace_result = subprocess.run([
             sys.executable,
             str(PROJECT_ROOT / "bench" / "harness" / "collect_trace.py"),
@@ -169,7 +202,7 @@ def run_task(
         meta["experiment_set"] = experiment_set
         meta["fixture_set"] = fixture_set
         meta["fixture_name"] = fixture_name
-        meta["agent_mode"] = "opencode" if use_real_agent else "simulated"
+        meta["agent_mode"] = agent_mode
         meta["agent_exit_code"] = agent_result
         with open(metadata_path, "w") as f:
             json.dump(meta, f, indent=2)
@@ -178,7 +211,8 @@ def run_task(
         # Copy artifacts from workspace to results
         print("\n[4.5/5] Copying artifacts...")
         outdir.mkdir(parents=True, exist_ok=True)
-        for artifact_dir in ["execution_plan.json", "artifact_manifest.json", "provenance", "tables", "report",
+        for artifact_dir in ["execution_plan.json", "artifact_manifest.json", "final_answer.json",
+                              "provenance", "tables", "report",
                               "config.yaml", "sample_sheet.tsv"]:
             src = workspace_dir / artifact_dir
             dst = outdir / artifact_dir
@@ -277,6 +311,98 @@ def _expected_answer_path(fixture_name: str) -> Path | None:
     return path if path.is_file() else None
 
 
+def _is_reasoning_model() -> bool:
+    """Detect whether the configured model supports reasoning/thinking.
+
+    Mirrors ``run_agent.ts:isReasoningModel()`` so the Python-side
+    subprocess timeout stays in sync with the TypeScript harness's
+    ``effectiveTimeoutMs`` computation.
+    """
+    import re
+
+    # Explicit env override takes precedence
+    env_reasoning = os.environ.get("ABI_BENCH_REASONING", "")
+    if env_reasoning == "true":
+        return True
+    if env_reasoning == "false":
+        return False
+
+    model = os.environ.get("ABI_BENCH_MODEL", "").lower()
+    provider = os.environ.get("ABI_BENCH_PROVIDER", "").lower()
+
+    if not model:
+        return False
+
+    # Anthropic models that support extended thinking (Claude 4/5 Opus/Sonnet)
+    if provider == "anthropic" and re.search(r"claude.*(?:opus|sonnet).*(?:4|5)", model):
+        return True
+
+    # OpenAI reasoning models (o1, o3 series)
+    if provider == "openai" and re.match(r"^o[13]", model):
+        return True
+
+    # Google Gemini thinking models
+    if provider == "google" and re.search(r"gemini.*(?:thinking|pro)", model):
+        return True
+
+    # DeepSeek: R1/reasoner, V4/V3 Pro series
+    if provider in ("deepseek", "openai-compatible") and re.search(r"r1|reasoner|v4|v3(?!-chat)", model):
+        return True
+
+    # Qwen / DashScope: QwQ series, Qwen3 thinking variants
+    if provider in ("qwen", "dashscope", "openai-compatible") and re.search(
+        r"qwq|qwen.*thinking|qwen.*reason|qwen3", model, re.IGNORECASE
+    ):
+        return True
+
+    # GLM / Zhipu: thinking/reasoning variants
+    if provider in ("glm", "zhipu", "openai-compatible") and re.search(
+        r"glm.*thinking|chatglm.*thinking|glm.*reason|glm-4", model, re.IGNORECASE
+    ):
+        return True
+
+    # Kimi / Moonshot: K1.5, K2 reasoning models
+    if provider in ("kimi", "moonshot", "openai-compatible") and re.search(
+        r"kimi.*k[12]|kimi.*thinking|moonshot.*reason|kimi.*reason", model, re.IGNORECASE
+    ):
+        return True
+
+    # MiMo: thinking/reasoning variants
+    if provider in ("mimo", "openai-compatible") and re.search(
+        r"mimo.*think|mimo.*reason|mimo.*pro", model, re.IGNORECASE
+    ):
+        return True
+
+    # Provider-level defaults: these providers are primarily reasoning-model
+    # providers.  Default to True unless the model name signals a plain chat variant.
+    reasoning_default_providers = {"qwen", "dashscope", "glm", "zhipu", "kimi", "moonshot", "mimo"}
+    if provider in reasoning_default_providers:
+        if not re.search(r"(?:-instruct|-chat-no|vanilla|standard)(?:\b|$)", model, re.IGNORECASE):
+            return True
+
+    return False
+
+
+def _get_reasoning_timeout_extra_seconds() -> float:
+    """Extra subprocess timeout (seconds) for reasoning models.
+
+    Uses the same formula as ``run_agent.ts``:
+
+        extra_ms = thinking_budget * 0.1 * 1000
+
+    where *0.1* converts tokens → seconds (assuming ≈10 tok/s thinking
+    speed), and *1000* converts seconds → ms.  We return seconds directly
+    so it can be added to ``subprocess.run(timeout=...)``.
+
+    Returns 0 when the model is not a reasoning model.
+    """
+    if not _is_reasoning_model():
+        return 0.0
+    thinking_budget = int(os.environ.get("ABI_BENCH_THINKING_BUDGET", "16000"))
+    # thinking_budget * 0.1  = estimated thinking time in seconds
+    return thinking_budget * 0.1
+
+
 def _launch_agent_opencode(
     group_id: str,
     task_id: str,
@@ -286,32 +412,53 @@ def _launch_agent_opencode(
     replicate: int = 1,
     experiment_set: str = "dev",
     fixture_set: str = "public",
-    use_real_agent: bool = True,
+    agent_mode: str = "opencode",
 ) -> int:
     """
-    Launch the agent using OpenCode harness.
+    Launch the agent for this task.
 
-    Calls `bun run bench/harness/run_agent.ts` which:
-    1. Starts an OpenCode server
-    2. Creates a session with the task prompt
-    3. Waits for agent completion
-    4. Collects traces
-
-    Uses the simulated agent only when use_real_agent is False. In real
-    opencode mode, launch failures are recorded as failed traces instead of
-    falling back to simulated output.
+    agent_mode:
+      - 'simulated': Produces expected artifacts directly (no LLM).
+      - 'opencode':  Uses OpenCode harness (TypeScript, Bun).
+      - 'direct':    Uses Python agent loop with direct DeepSeek API calls.
     """
-    if not use_real_agent:
-        print("  Using simulated agent (use_real_agent=False)")
+    if agent_mode == "simulated":
+        print("  Using simulated agent (agent_mode=simulated)")
         return _launch_agent(
-            group_id,
-            task_id,
-            workspace_dir,
-            trace_dir,
-            context_path,
+            group_id, task_id, workspace_dir, trace_dir, context_path,
             replicate=replicate,
             experiment_set=experiment_set,
             fixture_set=fixture_set,
+        )
+
+    # Load task YAML to get the prompt
+    task_files = list(PROJECT_ROOT.glob(f"bench/tasks/{task_id}_*.yaml"))
+    if not task_files:
+        msg = f"No task YAML found for {task_id}; cannot run agent."
+        print(f"  ERROR: {msg}")
+        _write_agent_failure(trace_dir, task_id, msg)
+        return 1
+
+    with open(task_files[0]) as f:
+        task_def = yaml.safe_load(f)
+    task_prompt = task_def.get("prompt", "").strip()
+    timeout_minutes = task_def.get("timeout_minutes", 20)
+    max_agent_steps = task_def.get("max_agent_steps", 50)
+
+    if agent_mode == "direct":
+        print("  Direct agent mode (Python, DeepSeek API)")
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        from bench.harness.direct_agent import run_agent
+        return run_agent(
+            workspace=workspace_dir,
+            trace_dir=trace_dir,
+            group_id=group_id,
+            task_id=task_id,
+            task_prompt=task_prompt,
+            max_steps=max_agent_steps,
+            max_tokens=int(os.environ.get("ABI_BENCH_MAX_TOKENS", "8000")),
+            timeout_minutes=timeout_minutes,
+            task_type=task_def.get("task_type", ""),
         )
 
     # Check for bun availability
@@ -383,9 +530,17 @@ def _launch_agent_opencode(
     if allowed_actions:
         cmd.extend(["--allowed-actions", json.dumps(allowed_actions)])
 
+    # Match the TypeScript harness's effectiveTimeoutMs for reasoning models
+    # so the subprocess isn't killed before the agent harness itself times out.
+    reasoning_extra_s = _get_reasoning_timeout_extra_seconds()
+    effective_timeout_s = timeout_minutes * 60 + 180 + reasoning_extra_s
+
     print(f"  OpenCode agent harness: bun run run_agent.ts")
     print(f"  Group: {group_id}, Task: {task_id}")
-    print(f"  Timeout: {timeout_minutes} min")
+    if reasoning_extra_s > 0:
+        print(f"  Timeout: {timeout_minutes} min + {reasoning_extra_s / 60:.0f} min reasoning = {effective_timeout_s / 60:.0f} min effective")
+    else:
+        print(f"  Timeout: {timeout_minutes} min")
 
     try:
         result = subprocess.run(
@@ -394,7 +549,7 @@ def _launch_agent_opencode(
             env=env,
             capture_output=True,
             text=True,
-            timeout=timeout_minutes * 60 + 180,  # 3-min buffer for server startup + trace collection
+            timeout=effective_timeout_s,
         )
         # Print agent output
         if result.stdout:
@@ -415,11 +570,12 @@ def _launch_agent_opencode(
         return result.returncode
 
     except subprocess.TimeoutExpired:
-        print(f"  Agent timed out after {timeout_minutes} minutes")
+        effective_label = f"{effective_timeout_s / 60:.0f} min" if reasoning_extra_s > 0 else f"{timeout_minutes} min"
+        print(f"  Agent timed out after {effective_label}")
         # Write timeout marker
         (trace_dir / ".agent_log").mkdir(parents=True, exist_ok=True)
         with open(trace_dir / ".agent_log" / "final_answer.md", "w") as f:
-            f.write(f"# Timeout\n\nAgent run exceeded {timeout_minutes} minute timeout.")
+            f.write(f"# Timeout\n\nAgent run exceeded {effective_label} timeout.")
         return 124  # Standard timeout exit code
     except Exception as e:
         print(f"  ERROR launching agent: {e}")
@@ -1042,8 +1198,8 @@ def main():
     )
     parser.add_argument("--outdir", type=Path, help="Output directory for results")
     parser.add_argument("--dry-run-scoring-only", action="store_true", help="Only score, skip agent run")
-    parser.add_argument("--agent-mode", type=str, choices=["simulated", "opencode"], default="simulated",
-                        help="Agent execution mode: simulated (default) or opencode (real LLM)")
+    parser.add_argument("--agent-mode", type=str, choices=["simulated", "opencode", "direct"], default="simulated",
+                        help="Agent execution mode: simulated (default), opencode (via OpenCode), or direct (Python + DeepSeek API)")
     args = parser.parse_args()
     return run_task(
         group_id=args.group,
@@ -1055,7 +1211,7 @@ def main():
         fixture_set=args.fixture_set,
         outdir=args.outdir,
         dry_run_scoring_only=args.dry_run_scoring_only,
-        use_real_agent=(getattr(args, 'agent_mode', 'simulated') == 'opencode'),
+        agent_mode=args.agent_mode,
     )
 
 
