@@ -115,6 +115,15 @@ def compute_group_stats(group_scores: list[dict]) -> dict:
         s.get("metrics", {}).get("agent_steps", 0)
         for s in group_scores
     ]
+    thinking_tokens = [
+        s.get("metrics", {}).get("thinking_tokens", 0)
+        for s in group_scores
+        if s.get("metrics", {}).get("thinking_tokens", 0) > 0
+    ]
+    reasoning_used_count = sum(
+        1 for s in group_scores
+        if s.get("metrics", {}).get("reasoning_used", False)
+    )
 
     return {
         "total_score_mean": round(statistics.mean(normalized), 2) if normalized else None,
@@ -127,6 +136,8 @@ def compute_group_stats(group_scores: list[dict]) -> dict:
         "artifact_completeness_mean": round(statistics.mean(completeness), 3) if completeness else None,
         "median_agent_steps": int(statistics.median(agent_steps)) if agent_steps else None,
         "score_count": len(group_scores),
+        "reasoning_used_count": reasoning_used_count,
+        "avg_thinking_tokens": round(statistics.mean(thinking_tokens), 0) if thinking_tokens else 0,
     }
 
 
@@ -166,6 +177,8 @@ def compute_per_task_scores(scores: list[dict]) -> list[dict]:
                 "max_score": ts["max_score"],
                 "passed": ts["passed"],
                 "failure_codes": ";".join(ts.get("failure_codes", [])),
+                "reasoning_used": ts.get("metrics", {}).get("reasoning_used", False),
+                "thinking_tokens": ts.get("metrics", {}).get("thinking_tokens", 0),
             })
     return rows
 
@@ -355,6 +368,7 @@ def generate_leaderboard_tsv(summary: dict, output_path: Path):
         "group_id", "total_score_mean", "total_score_std", "task_success_rate",
         "successful_dryrun_rate", "diagnostic_accuracy", "unsafe_execution_rate",
         "artifact_completeness", "median_agent_steps",
+        "reasoning_used_count", "avg_thinking_tokens",
     ]
     with open(output_path, "w") as f:
         f.write("\t".join(headers) + "\n")
@@ -372,6 +386,8 @@ def generate_leaderboard_tsv(summary: dict, output_path: Path):
                 str(gs.get("unsafe_execution_rate", "NA")),
                 str(gs.get("artifact_completeness_mean", "NA")),
                 str(gs.get("median_agent_steps", "NA")),
+                str(gs.get("reasoning_used_count", 0)),
+                str(gs.get("avg_thinking_tokens", 0)),
             ]
             f.write("\t".join(row) + "\n")
 
@@ -380,7 +396,7 @@ def generate_per_task_tsv(per_task: list[dict], output_path: Path):
     """Write per_task_scores.tsv."""
     if not per_task:
         return
-    headers = ["experiment_set", "fixture_set", "group_id", "task_id", "replicate", "score", "max_score", "passed", "failure_codes"]
+    headers = ["experiment_set", "fixture_set", "group_id", "task_id", "replicate", "score", "max_score", "passed", "failure_codes", "reasoning_used", "thinking_tokens"]
     with open(output_path, "w") as f:
         f.write("\t".join(headers) + "\n")
         for row in per_task:
@@ -394,6 +410,8 @@ def generate_per_task_tsv(per_task: list[dict], output_path: Path):
                 str(row["max_score"]),
                 str(row["passed"]).lower(),
                 row["failure_codes"],
+                str(row.get("reasoning_used", False)).lower(),
+                str(row.get("thinking_tokens", 0)),
             ]) + "\n")
 
 

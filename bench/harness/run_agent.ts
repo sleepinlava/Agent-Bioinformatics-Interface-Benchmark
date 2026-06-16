@@ -59,6 +59,32 @@ const ABI_GROUPS = new Set(["G3", "A1", "A3", "A4"])
 
 // ── Provider Configuration ───────────────────────────────────────────────────
 
+/**
+ * Detect whether a model supports reasoning/thinking capabilities.
+ *
+ * Order of precedence:
+ * 1. ABI_BENCH_REASONING env var (explicit override)
+ * 2. Auto-detection by model name and provider
+ */
+function isReasoningModel(modelId: string, provider: string): boolean {
+  // Explicit env override takes precedence
+  const envReasoning = process.env.ABI_BENCH_REASONING
+  if (envReasoning === "true") return true
+  if (envReasoning === "false") return false
+
+  // Auto-detect by model name patterns
+  const model = modelId.toLowerCase()
+  // Anthropic models that support extended thinking (Claude 4/5 Opus/Sonnet)
+  if (provider === "anthropic" && /claude.*(?:opus|sonnet).*(?:4|5)/.test(model)) return true
+  // OpenAI reasoning models (o1, o3 series)
+  if (provider === "openai" && /^o[13]/.test(model)) return true
+  // DeepSeek reasoning models (R1, reasoner variants)
+  if ((provider === "deepseek" || provider === "openai-compatible") && /r1|reasoner/.test(model)) return true
+  // Google Gemini thinking models
+  if (provider === "google" && /gemini.*(?:thinking|pro)/.test(model)) return true
+  return false
+}
+
 function loadDotEnv(path: string): Record<string, string> {
   const result: Record<string, string> = {}
   try {
@@ -120,33 +146,54 @@ function buildProviderConfig(): Record<string, unknown> {
   const apiKey = args["api-key"] || process.env.ABI_BENCH_API_KEY || ""
   const apiBase = args["api-base"] || process.env.ABI_BENCH_API_BASE || process.env.OPENAI_BASE_URL || "https://api.deepseek.com"
   const model = args["model"] || process.env.ABI_BENCH_MODEL || ""
+  const modelName = model.includes("/") ? model.split("/").pop()! : model
+  const useReasoning = isReasoningModel(modelName, provider)
+
+  // Build model abilities with reasoning flag
+  function modelAbilities(): Record<string, boolean> {
+    return {
+      chat: true,
+      image: false,
+      file: false,
+      tool: true,
+      reasoning: useReasoning,
+      streaming: !useReasoning, // some reasoning models disable streaming
+    }
+  }
+
+  // Build provider options with reasoning-specific parameters
+  function providerOptions(): Record<string, unknown> {
+    const opts: Record<string, unknown> = {}
+    if (apiKey) opts.apiKey = apiKey
+    if (apiBase) opts.baseURL = apiBase
+
+    // Anthropic extended thinking
+    if (useReasoning && provider === "anthropic") {
+      const thinkingBudget = parseInt(process.env.ABI_BENCH_THINKING_BUDGET || "16000")
+      opts.thinking = { type: "enabled", budgetTokens: thinkingBudget }
+    }
+    // OpenAI reasoning effort
+    if (useReasoning && (provider === "openai" || (provider === "openai-compatible" && !apiBase?.includes("deepseek")))) {
+      const effort = process.env.ABI_BENCH_REASONING_EFFORT || "medium"
+      opts.reasoningEffort = effort
+    }
+    return opts
+  }
 
   // When using openai provider with a custom base URL (e.g. DeepSeek),
   // register DeepSeek models so OpenCode's model validation passes
   if (provider === "openai" && apiBase && apiBase.includes("deepseek")) {
-    // Extract model name (strip provider prefix, e.g. "openai/deepseek-chat" → "deepseek-chat")
-    const modelName = model.includes("/") ? model.split("/").pop()! : model
     return {
       provider: {
         openai: {
           id: "openai",
-          options: {
-            apiKey: apiKey || "",
-            baseURL: apiBase,
-          },
+          options: providerOptions(),
           models: {
             [modelName]: {
               id: modelName,
               name: modelName,
               context: { input: 128000, output: 8000 },
-              abilities: {
-                chat: true,
-                image: false,
-                file: false,
-                tool: true,
-                reasoning: false,
-                streaming: true,
-              },
+              abilities: modelAbilities(),
             },
           },
         },
@@ -154,30 +201,70 @@ function buildProviderConfig(): Record<string, unknown> {
     }
   }
 
-  // Standard OpenAI/Anthropic/Google providers auto-detected by env vars
-  if (["anthropic", "google"].includes(provider)) return {}
+  // Anthropic / Google: build explicit config when reasoning is needed,
+  // otherwise let OpenCode auto-detect from env vars
+  if (provider === "anthropic") {
+    if (useReasoning) {
+      return {
+        provider: {
+          anthropic: {
+            id: "anthropic",
+            options: providerOptions(),
+            ...(modelName ? {
+              models: {
+                [modelName]: {
+                  id: modelName,
+                  name: modelName,
+                  context: { input: 200000, output: 16000 },
+                  abilities: modelAbilities(),
+                },
+              },
+            } : {}),
+          },
+        },
+      }
+    }
+    return {}
+  }
+
+  if (provider === "google") {
+    if (useReasoning) {
+      return {
+        provider: {
+          google: {
+            id: "google",
+            options: providerOptions(),
+            ...(modelName ? {
+              models: {
+                [modelName]: {
+                  id: modelName,
+                  name: modelName,
+                  context: { input: 128000, output: 8000 },
+                  abilities: modelAbilities(),
+                },
+              },
+            } : {}),
+          },
+        },
+      }
+    }
+    return {}
+  }
 
   // openai-compatible / deepseek as standalone provider
   if (provider === "deepseek" || provider === "openai-compatible") {
-    const modelName = model.includes("/") ? model.split("/").pop()! : model
     return {
       provider: {
         [provider === "deepseek" ? "openai-compatible" : provider]: {
           id: "openai-compatible",
-          options: {
-            apiKey: apiKey || "",
-            baseURL: apiBase,
-          },
+          options: providerOptions(),
           ...(modelName ? {
             models: {
               [modelName]: {
                 id: modelName,
                 name: modelName,
                 context: { input: 128000, output: 8000 },
-                abilities: {
-                  chat: true, image: false, file: false,
-                  tool: true, reasoning: false, streaming: true,
-                },
+                abilities: modelAbilities(),
               },
             },
           } : {}),
@@ -587,6 +674,17 @@ async function main() {
     console.log(`  Prompt length: ${fullPrompt.length} chars`)
     console.log(`  Model: ${modelStr} → providerID=${modelObj?.providerID}, modelID=${modelObj?.modelID}`)
 
+    // Reasoning model: extend timeout and log
+    const useReasoning = isReasoningModel(modelObj?.modelID || modelStr, providerName)
+    let effectiveTimeoutMs = TIMEOUT_MS
+    if (useReasoning) {
+      const thinkingBudget = parseInt(process.env.ABI_BENCH_THINKING_BUDGET || "16000")
+      // Add 10% of thinking budget in seconds (rough conversion: tokens → time)
+      const extraMs = Math.round(thinkingBudget * 0.1 * 1000)
+      effectiveTimeoutMs = TIMEOUT_MS + extraMs
+      console.log(`  Reasoning: ENABLED (thinking budget ~${thinkingBudget} tokens, timeout +${Math.round(extraMs/1000)}s)`)
+    }
+
     await client.session.promptAsync({
       id: sessionId,
       directory: WORKSPACE_DIR,
@@ -607,8 +705,10 @@ async function main() {
     // 1. Check if the agent wrote final_answer.md (trace dir or workspace)
     // 2. Monitor workspace for new/modified artifact files — when file
     //    modification times stabilize across consecutive polls, agent is done.
+    // 3. Message-based confirmation: accelerates Strategy 2 when the agent
+    //    has produced assistant messages (reduces required stable polls).
     console.log("  Waiting for agent to complete...")
-    const deadline = Date.now() + TIMEOUT_MS
+    const deadline = Date.now() + effectiveTimeoutMs
     const faTracePath = join(TRACE_DIR, ".agent_log", "final_answer.md")
     const wsFaPath = join(WORKSPACE_DIR, "final_answer.md")
     let isDone = false
@@ -616,14 +716,28 @@ async function main() {
     const seenMessageIds = new Set<string>()
     let stablePolls = 0
     let hasAssistantMsg = false
+    let stepCount = 0
 
     // Snapshot previous poll's file state for consecutive comparison.
     // Each entry: { mtime: number, size: number }.
     let prevFileState = new Map<string, { mtime: number; size: number }>()
     let hadWorkspaceActivity = false
 
-    while (!isDone && Date.now() < deadline) {
-      await sleep(5000)
+    // Read max_agent_steps from agent_context.json (written by export_agent_context.py)
+    let maxAgentSteps = 50
+    try {
+      const ctxPath = join(WORKSPACE_DIR, "agent_context.json")
+      if (existsSync(ctxPath)) {
+        const ctx = JSON.parse(readFileSync(ctxPath, "utf-8"))
+        if (ctx.max_agent_steps && typeof ctx.max_agent_steps === "number") {
+          maxAgentSteps = ctx.max_agent_steps
+          console.log(`  max_agent_steps=${maxAgentSteps} (from agent_context.json)`)
+        }
+      }
+    } catch { /* use default 50 */ }
+
+    while (!isDone && Date.now() < deadline && stepCount < maxAgentSteps) {
+      await sleep(3000)  // 3-second poll interval
       pollCount++
 
       // Strategy 1: check for final_answer.md
@@ -659,9 +773,12 @@ async function main() {
         const filesChanged = _filesChangedBetweenPolls(prevFileState, currentFileState)
         if (!filesChanged && hadWorkspaceActivity) {
           stablePolls++
-          if (stablePolls >= 3) {  // stable for 15 seconds across 3 polls
+          // When the agent has produced assistant messages, we can be more
+          // aggressive: 2 stable polls (6s) instead of 3 (9s).
+          const requiredStable = hasAssistantMsg ? 2 : 3
+          if (stablePolls >= requiredStable) {
             isDone = true
-            console.log(`  Agent done — workspace stable for ${stablePolls} consecutive polls`)
+            console.log(`  Agent done — workspace stable for ${stablePolls} consecutive polls (required=${requiredStable})`)
           }
         } else {
           stablePolls = 0
@@ -670,7 +787,8 @@ async function main() {
       }
       prevFileState = currentFileState
 
-      // Strategy 3: message-based fallback
+      // Strategy 3: message-based polling (counts steps & sets hasAssistantMsg).
+      // Does NOT independently terminate — only accelerates Strategy 2.
       try {
         const messagesResp = await client.session.messages({
           id: sessionId,
@@ -687,22 +805,36 @@ async function main() {
             newMsgs++
             const role = m.info?.role || m.info?.type || ""
             if (role === "assistant") hasAssistantMsg = true
+            // Count tool-call messages as agent steps
+            if (role === "tool" || role === "function" || role === "tool_call") {
+              stepCount++
+            }
           }
         }
-        if (hasAssistantMsg && newMsgs > 0) {
-          isDone = true
-          console.log(`  Agent done — has assistant msgs + ${newMsgs} new messages`)
+
+        // Estimate step count from message volume if explicit tool messages
+        // aren't available (some providers use a flat message stream).
+        if (stepCount === 0 && hasAssistantMsg) {
+          stepCount = Math.floor(seenMessageIds.size / 2)  // rough: user↔assistant pairs
+        }
+
+        if (newMsgs > 0 && pollCount % 3 === 0) {
+          console.log(`  ... poll #${pollCount}: ${seenMessageIds.size} msgs, ${stepCount} steps, files=${currentFileState.size}, stable=${stablePolls}`)
         }
       } catch { /* continue */ }
 
-      if (pollCount % 6 === 0 && !isDone) {
-        const elapsed = ((Date.now() - (deadline - TIMEOUT_MS)) / 60000).toFixed(1)
-        console.log(`  ... still waiting (${elapsed} min, files=${currentFileState.size}, msgs=${seenMessageIds.size}, stable=${stablePolls}/3)`)
+      if (pollCount % 10 === 0 && !isDone) {
+        const elapsed = ((Date.now() - (deadline - effectiveTimeoutMs)) / 60000).toFixed(1)
+        console.log(`  ... still waiting (${elapsed} min, files=${currentFileState.size}, msgs=${seenMessageIds.size}, steps=${stepCount}/${maxAgentSteps}, stable=${stablePolls})`)
       }
     }
 
     if (!isDone) {
-      console.log(`  Timeout reached after ${TIMEOUT_MS / 60000} minutes`)
+      if (stepCount >= maxAgentSteps) {
+        console.log(`  Step limit reached (${stepCount}/${maxAgentSteps} steps)`)
+      } else {
+        console.log(`  Timeout reached after ${Math.round(effectiveTimeoutMs / 60000)} minutes (${stepCount} steps taken)`)
+      }
     }
 
     // Collect messages as traces
@@ -744,6 +876,45 @@ async function main() {
           finalAnswer += (part as any).text || ""
         }
       }
+    }
+
+    // Extract reasoning/thinking blocks from all messages
+    const reasoningEntries: any[] = []
+    let totalThinkingTokens = 0
+    for (const msg of allMessages) {
+      for (const part of msg.parts || []) {
+        const partType = (part as any).type || ""
+        // OpenCode/anthropic: type === "thinking"
+        // OpenAI: type === "reasoning"
+        // DeepSeek R1: may include "reasoning_content" in text parts
+        if (partType === "thinking" || partType === "reasoning" ||
+            (partType === "text" && (part as any).reasoning_content)) {
+          const thinkingText = (part as any).text || (part as any).reasoning_content || ""
+          const tokensEstimate = Math.round(thinkingText.length / 3.5) // rough token estimate
+          totalThinkingTokens += tokensEstimate
+          reasoningEntries.push({
+            message_id: msg.info?.id || "",
+            timestamp: msg.info?.created || new Date().toISOString(),
+            role: msg.info?.role || "unknown",
+            thinking_tokens_estimate: tokensEstimate,
+            text_preview: thinkingText.slice(0, 500),
+            full_length: thinkingText.length,
+          })
+        }
+        // Also check for token usage info in message metadata
+        const usage = (msg as any).usage || (msg.info as any)?.usage || (part as any).usage
+        if (usage) {
+          if (usage.thinking_tokens || usage.reasoning_tokens) {
+            totalThinkingTokens = Math.max(totalThinkingTokens,
+              usage.thinking_tokens || usage.reasoning_tokens || 0)
+          }
+        }
+      }
+    }
+    if (reasoningEntries.length > 0) {
+      const reasoningPath = join(TRACE_DIR, ".agent_log", "reasoning_trace.jsonl")
+      writeFileSync(reasoningPath, reasoningEntries.map(e => JSON.stringify(e)).join("\n") + "\n")
+      console.log(`  reasoning_trace.jsonl: ${reasoningEntries.length} entries, ~${totalThinkingTokens} thinking tokens`)
     }
 
     writeFileSync(tracePath, traceEntries.map(e => JSON.stringify(e)).join("\n") + "\n")
@@ -805,6 +976,15 @@ async function main() {
       session_id: sessionId,
       message_count: allMessages.length,
       tool_call_count: toolCalls.length,
+      ...(useReasoning ? {
+        reasoning_used: true,
+        thinking_budget: parseInt(process.env.ABI_BENCH_THINKING_BUDGET || "0") || undefined,
+        reasoning_effort: process.env.ABI_BENCH_REASONING_EFFORT || undefined,
+        total_thinking_tokens: totalThinkingTokens,
+        reasoning_entries: reasoningEntries.length,
+      } : {
+        reasoning_used: false,
+      }),
     }, null, 2))
 
     console.log("  Trace collection complete.")

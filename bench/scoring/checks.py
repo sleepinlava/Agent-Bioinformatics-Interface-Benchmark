@@ -142,7 +142,7 @@ def check_artifact_manifest_valid(run_dir: Path, trace_dir: Path = None) -> bool
         return False
     if data.get("group_id") not in {"G1", "G2", "G3", "A1", "A3", "A4"}:
         return False
-    if data.get("experiment_set", "dev") not in {"dev", "main", "ablation", "full"}:
+    if data.get("experiment_set", "dev") not in {"dev", "main", "ablation", "full", "paper"}:
         return False
     if data.get("fixture_set", "public") not in {"public", "hidden"}:
         return False
@@ -480,10 +480,19 @@ def check_final_answer_contains(
     return all(term.lower() in text for term in required_terms)
 
 
-def check_final_answer_contains_sample_id(trace_dir: Path) -> bool:
-    """Check that final answer identifies the affected sample_id."""
+def check_final_answer_contains_sample_id(
+    trace_dir: Path, expected_answer: dict = None
+) -> bool:
+    """Check that final answer identifies the affected sample_id.
+
+    When ``expected_answer`` is provided, its ``sample_id`` field is used
+    as the expected value.  Otherwise the public-fixture default
+    (SAMPLE_002 / CASE_017) is checked.
+    """
     text = _read_final_answer(trace_dir).lower()
-    return "sample_002" in text
+    if expected_answer and expected_answer.get("sample_id"):
+        return str(expected_answer["sample_id"]).lower() in text
+    return "sample_002" in text or "case_017" in text
 
 
 def check_final_answer_contains_field(trace_dir: Path) -> bool:
@@ -505,16 +514,33 @@ def check_final_answer_contains_fix(trace_dir: Path) -> bool:
     return any(term in text for term in fix_terms)
 
 
-def check_final_answer_contains_resource_name(trace_dir: Path) -> bool:
-    """Check that final answer identifies the resource name."""
+def check_final_answer_contains_resource_name(
+    trace_dir: Path, expected_answer: dict = None
+) -> bool:
+    """Check that final answer identifies the resource name.
+
+    When ``expected_answer`` is provided, its ``resource`` field is used
+    as the expected value.  Otherwise the public-fixture default
+    (genomad_db / mobileog_db) is checked.
+    """
     text = _read_final_answer(trace_dir).lower()
-    return "genomad_db" in text or "genomad" in text or "database" in text
+    if expected_answer and expected_answer.get("resource"):
+        return str(expected_answer["resource"]).lower() in text
+    return "genomad_db" in text or "genomad" in text or "mobileog_db" in text or "database" in text
 
 
-def check_final_answer_contains_config_key(trace_dir: Path) -> bool:
-    """Check that final answer identifies the config key."""
+def check_final_answer_contains_config_key(
+    trace_dir: Path, expected_answer: dict = None
+) -> bool:
+    """Check that final answer identifies the config key.
+
+    When ``expected_answer`` is provided, its ``config_key`` field is used
+    as the expected value.  Otherwise the public-fixture default is checked.
+    """
     text = _read_final_answer(trace_dir).lower()
-    return "genomad_db" in text or "config" in text
+    if expected_answer and expected_answer.get("config_key"):
+        return str(expected_answer["config_key"]).lower() in text
+    return "genomad_db" in text or "mobileog_db" in text or "config" in text
 
 
 def check_no_large_download(trace_dir: Path) -> bool:

@@ -388,21 +388,21 @@ rubric:
       points: 2
       function: check_final_answer_contains
       args:
-        required_terms: ["plasflow", "tool"]
+        required_terms: ["plasflow", "mob_suite", "tool"]
 
     identifies_env_name:
       description: "Agent identifies the environment name"
       points: 1
       function: check_final_answer_contains
       args:
-        required_terms: ["env", "plasflow"]
+        required_terms: ["env", "plasflow_env", "mob_suite_env"]
 
     identifies_executable:
       description: "Agent identifies the missing executable"
       points: 1
       function: check_final_answer_contains
       args:
-        required_terms: ["PlasFlow", "executable"]
+        required_terms: ["PlasFlow.py", "mob_recon", "executable"]
 
     gives_env_fix:
       description: "Agent suggests environment fix"

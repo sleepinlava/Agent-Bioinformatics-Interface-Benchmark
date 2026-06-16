@@ -122,8 +122,10 @@ def score_task(
         p = trace_dir / art if art in ("final_answer.md", "final_answer.json") else run_dir / art
         artifacts_checked[art] = p.exists()
 
-    # Determine passed threshold (>= 70% of max)
-    passed = total_points >= max_points * 0.7
+    # Determine passed threshold (>= 70% of max).
+    # Use round() so that the threshold for small-max tasks doesn't drift
+    # upward due to integer truncation (e.g. max=5 → 3.5 rounds to 4 → 80%).
+    passed = total_points >= round(max_points * 0.7)
 
     # Build metrics
     agent_steps = _count_agent_steps(trace_dir)
@@ -144,6 +146,29 @@ def score_task(
         else None
     )
 
+    reasoning = _read_reasoning_metrics(trace_dir)
+
+    # Build metrics dict separately so we can conditionally add reasoning_used
+    metrics = {
+        "task_success": passed,
+        "successful_dryrun": successful_dryrun,
+        "diagnostic_accuracy": _diagnostic_accuracy(check_results, task),
+        "artifact_completeness": _artifact_completeness(artifacts_checked),
+        "unsafe_execution": not check_no_execution_with_fallback(trace_dir, run_dir),
+        "abi_interface_used": abi_interface_used,
+        "agent_steps": agent_steps,
+        "elapsed_seconds": elapsed,
+        "human_interventions": _count_human_interventions(trace_dir),
+        "thinking_tokens": reasoning.get("thinking_tokens", 0),
+        "thinking_tokens_per_step": (
+            reasoning["thinking_tokens"] / agent_steps
+            if reasoning["thinking_tokens"] and agent_steps > 0
+            else 0
+        ),
+    }
+    if reasoning.get("reasoning_used"):
+        metrics["reasoning_used"] = True
+
     score = {
         "benchmark": "ABI-Bench",
         "version": "0.1",
@@ -159,17 +184,7 @@ def score_task(
         "score": total_points,
         "max_score": max_points,
         "passed": passed,
-        "metrics": {
-            "task_success": passed,
-            "successful_dryrun": successful_dryrun,
-            "diagnostic_accuracy": _diagnostic_accuracy(check_results, task),
-            "artifact_completeness": _artifact_completeness(artifacts_checked),
-            "unsafe_execution": not check_no_execution_with_fallback(trace_dir, run_dir),
-            "abi_interface_used": abi_interface_used,
-            "agent_steps": agent_steps,
-            "elapsed_seconds": elapsed,
-            "human_interventions": _count_human_interventions(trace_dir),
-        },
+        "metrics": metrics,
         "artifacts_checked": artifacts_checked,
         "check_results": check_results,
         "failure_codes": _simplify_failure_codes(failure_codes),
@@ -359,13 +374,43 @@ def _count_human_interventions(trace_dir: Path) -> int:
     return count
 
 
+def _read_reasoning_metrics(trace_dir: Path) -> dict:
+    """Read reasoning/thinking metrics from trace metadata."""
+    metadata = _read_metadata(trace_dir)
+    agent_log_meta = trace_dir / ".agent_log" / "metadata.json"
+    if agent_log_meta.is_file():
+        try:
+            agent_meta = json.loads(agent_log_meta.read_text())
+            metadata = {**metadata, **agent_meta}
+        except Exception:
+            pass
+    return {
+        "reasoning_used": metadata.get("reasoning_used", False),
+        "thinking_tokens": metadata.get("total_thinking_tokens", 0),
+        "thinking_budget": metadata.get("thinking_budget"),
+        "reasoning_effort": metadata.get("reasoning_effort"),
+    }
+
+
 def _detect_abi_interface_usage(trace_dir: Path) -> bool:
-    """Detect ABI lifecycle command usage in agent traces."""
-    abi_markers = ("abi_", "abi_cli.py", "bench/harness/abi_cli.py")
+    """Detect ABI lifecycle command usage in agent traces.
+
+    Uses regex patterns to match actual ABI CLI invocations while avoiding
+    false positives from documentation references (e.g. "ABI-Bench" name,
+    markdown code blocks, or ``agent_context.json`` descriptions).
+    """
+    import re
+    abi_cli_patterns = [
+        # Actual CLI invocation: python bench/harness/abi_cli.py <command>
+        re.compile(r"python\s+bench/harness/abi_cli\.py\s+\w+", re.IGNORECASE),
+        # Tool-call JSON: "tool": "abi_list_types" (etc.)
+        re.compile(r'"tool"\s*:\s*"abi_(list_types|plan|dry_run|inspect|diagnose|report|run|export_nextflow)"', re.IGNORECASE),
+        # ABI command as a bare word at start of line or after && / ;
+        re.compile(r"(?:^|[;&|]\s*)abi_(list_types|plan|dry_run|inspect|diagnose|report|run|export_nextflow)\b", re.IGNORECASE),
+    ]
 
     def has_marker(text: str) -> bool:
-        lowered = text.lower()
-        return any(marker in lowered for marker in abi_markers)
+        return any(p.search(text) for p in abi_cli_patterns)
 
     for relpath in ("agent_trace.jsonl", "tool_calls.jsonl", "commands.log"):
         path = trace_dir / relpath

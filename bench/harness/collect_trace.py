@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def collect_trace(source_dir: Path, output_dir: Path, task_id: str = None,
                   group_id: str = None, replicate: int = 1,
-                  experiment_set: str = "dev"):
+                  experiment_set: str = "dev", model_id: str = "LLM4"):
     """Collect trace files from agent log directory into structured trace output."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -36,6 +36,7 @@ def collect_trace(source_dir: Path, output_dir: Path, task_id: str = None,
         "file_changes.json",
         "final_answer.md",
         "final_answer.json",
+        "reasoning_trace.jsonl",
     ]
 
     collected = []
@@ -56,7 +57,7 @@ def collect_trace(source_dir: Path, output_dir: Path, task_id: str = None,
         "group_id": group_id or _infer_from_path(output_dir, "G"),
         "experiment_set": experiment_set,
         "replicate": replicate,
-        "model_id": "LLM4",
+        "model_id": model_id,
         "agent_harness": "opencode",
         "commit": _current_commit(),
         "start_time": datetime.now(timezone.utc).isoformat(),
@@ -77,25 +78,29 @@ def _sibling_dir(trace_dir: Path, from_dir: str, to_dir: str) -> Path:
 
     E.g. bench/traces/G3/T03/replicate_01 → bench/workspaces/G3/T03/replicate_01
 
-    Uses the relative path from PROJECT_ROOT to find and replace only the
-    first relevant component, avoiding the fragile ``str.replace()`` that
-    corrupts paths when the search string appears multiple times.
+    Walks the resolved path components relative to PROJECT_ROOT, replacing
+    the *first* occurrence of ``from_dir`` with ``to_dir``.  Only falls back
+    to a string-level replace when the path cannot be resolved against
+    PROJECT_ROOT.
     """
     try:
         rel = trace_dir.resolve().relative_to(PROJECT_ROOT)
     except ValueError:
-        # trace_dir is not under PROJECT_ROOT — fall back to the old heuristic
-        return Path(str(trace_dir).replace(from_dir, to_dir, 1))
-    parts = rel.parts
-    if parts and parts[0] == from_dir:
-        return PROJECT_ROOT / to_dir / Path(*parts[1:])
-    # Walk parts to find the right component to replace
+        # trace_dir is not under PROJECT_ROOT — use string replace on the
+        # LAST occurrence (most likely to be the directory role marker).
+        s = str(trace_dir)
+        # Replace the rightmost occurrence first — more robust than the first.
+        parts = s.rsplit(from_dir, 1)
+        if len(parts) == 2:
+            return Path(parts[0] + to_dir + parts[1])
+        return Path(s.replace(from_dir, to_dir))
+    parts = list(rel.parts)
+    # Replace the first occurrence of from_dir (starting from the left)
     for i, part in enumerate(parts):
         if part == from_dir:
-            new_parts = list(parts)
-            new_parts[i] = to_dir
-            return PROJECT_ROOT / Path(*new_parts)
-    # If 'traces' not found, fall back to the first occurrence
+            parts[i] = to_dir
+            return PROJECT_ROOT / Path(*parts)
+    # from_dir not found — fall back to first-occurrence replace
     return Path(str(trace_dir).replace(from_dir, to_dir, 1))
 
 
@@ -148,6 +153,7 @@ def main():
         default="dev",
         help="Experiment set label for trace metadata",
     )
+    parser.add_argument("--model-id", type=str, default="LLM4", help="Model ID for trace metadata")
     args = parser.parse_args()
 
     collected = collect_trace(
@@ -156,6 +162,7 @@ def main():
         group_id=args.group_id,
         replicate=args.replicate,
         experiment_set=args.experiment_set,
+        model_id=args.model_id,
     )
     return 0 if collected else 1
 

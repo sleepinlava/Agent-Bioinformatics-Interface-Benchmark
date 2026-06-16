@@ -150,6 +150,7 @@ def run_task(
             "--group-id", group_id,
             "--replicate", str(replicate),
             "--experiment-set", experiment_set,
+            "--model-id", model_id,
         ], capture_output=True, text=True)
         if trace_result.returncode != 0:
             print(f"WARNING: Trace collection had issues:\n{trace_result.stderr}")
@@ -386,7 +387,7 @@ def _launch_agent_opencode(
             env=env,
             capture_output=True,
             text=True,
-            timeout=timeout_minutes * 60 + 60,  # extra buffer for server startup
+            timeout=timeout_minutes * 60 + 180,  # 3-min buffer for server startup + trace collection
         )
         # Print agent output
         if result.stdout:
@@ -707,7 +708,14 @@ def _write_artifact_manifest(
         json.dump(manifest, f, indent=2)
 
 
+# ── Helpers reused from scoring (canonical implementations live in checks.py) ──
+
 def _tables_have_headers(tables_dir: Path) -> bool:
+    """Return True if every TSV in *tables_dir* has a tab-separated header.
+
+    Canonical implementation is ``bench.scoring.checks._tables_have_headers``;
+    this duplicate exists to avoid a cross-package import in the harness layer.
+    """
     if not tables_dir.is_dir():
         return False
     table_paths = sorted(tables_dir.glob("*.tsv"))
@@ -715,10 +723,11 @@ def _tables_have_headers(tables_dir: Path) -> bool:
         return False
     for path in table_paths:
         try:
-            first_line = path.read_text().splitlines()[0]
-        except (IndexError, OSError):
+            with open(path) as f:
+                header = f.readline().strip()
+        except OSError:
             return False
-        if not first_line.strip() or "\t" not in first_line:
+        if not header or "\t" not in header:
             return False
     return True
 
@@ -826,10 +835,15 @@ def _derive_diagnosis_from_summary(summary: dict) -> dict:
 
     # 3. Check tools for unavailable-tool metadata.
     for tool_id, tool_meta in summary.get("tools", {}).items():
-        meta_text = str(tool_meta).lower() if not isinstance(tool_meta, str) else tool_meta.lower()
-        if "not installed" in meta_text or tool_id == "plasflow":
-            executable = tool_meta.get("executable", tool_id) if isinstance(tool_meta, dict) else str(tool_meta)
-            env = tool_meta.get("env", "") if isinstance(tool_meta, dict) else ""
+        if isinstance(tool_meta, dict):
+            meta_text = str(tool_meta.get("description", "")).lower()
+            executable = tool_meta.get("executable", tool_id)
+            env = tool_meta.get("env", "")
+        else:
+            meta_text = str(tool_meta).lower()
+            executable = str(tool_meta)
+            env = ""
+        if "not installed" in meta_text or "not available" in meta_text:
             return {
                 "cause": "tool_not_found",
                 "tool_id": tool_id,
