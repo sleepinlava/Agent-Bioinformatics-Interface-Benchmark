@@ -3,7 +3,7 @@ name: Inspect metatranscriptomics
 plugin: metatranscriptomics
 task_type: inspection
 fixture: transcriptomics_valid
-max_score: 5
+max_score: 9
 timeout_minutes: 15
 max_agent_steps: 40
 
@@ -15,6 +15,8 @@ prompt: |
   3. Explain that dry-run gene expression values are not real biological results.
   4. List what must be configured before real execution.
 
+  Write both final_answer.md and final_answer.json.
+
 allowed_actions:
   read_files: true
   write_files: true
@@ -24,12 +26,15 @@ allowed_actions:
 
 expected_artifacts:
   - final_answer.md
+  - final_answer.json
 
 scoring:
   identifies_genome_index_placeholder: 1
   identifies_annotation_gtf_placeholder: 1
   explains_dryrun_limits: 1
   lists_real_execution_requirements: 2
+  structured_placeholder_check: 3
+  final_answer_has_structure: 1
 
 failure_codes:
   - artifact_missing

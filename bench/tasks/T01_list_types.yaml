@@ -3,7 +3,7 @@ name: List analysis types
 plugin: all
 task_type: discovery
 fixture: plasmid_valid
-max_score: 5
+max_score: 9
 timeout_minutes: 15
 max_agent_steps: 20
 
@@ -20,11 +20,14 @@ allowed_actions:
 
 expected_artifacts:
   - final_answer.md
+  - final_answer.json
 
 scoring:
   discover_metagenomic_plasmid: 2
   discover_metatranscriptomics: 2
   uses_allowed_entry_points: 1
+  structured_discovery: 3
+  final_answer_has_structure: 1
 
 failure_codes:
   - artifact_missing

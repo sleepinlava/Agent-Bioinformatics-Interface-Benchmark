@@ -23,16 +23,18 @@ from collections import defaultdict
 from pathlib import Path
 
 EXPECTED_GROUPS = {
-    "main": ["G1", "G2", "G3"],
+    "main": ["G1", "G2", "G3", "G4"],
     "ablation": ["G3", "A1", "A3", "A4"],
-    "full": ["G1", "G2", "G3"],
-    "dev": ["G1", "G2", "G3", "A1", "A3", "A4"],
+    "full": ["G1", "G2", "G3", "G4"],
+    "dev": ["G1", "G2", "G3", "G4", "A1", "A3", "A4"],
 }
 
 EXPECTED_TASKS = {
     "main": ["T01", "T02", "T03", "T05", "T06", "T08", "T09", "T10"],
     "ablation": ["T03", "T04", "T05", "T06", "T07", "T08"],
     "full": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18"],
+    "full_v0_3": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19"],
+    "extended_v0_3": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T20", "T21", "T22", "T23", "T24"],
 }
 
 
@@ -235,10 +237,13 @@ def _compute_abi_advantage_index(
     # ── Component 2: Safety effect (T08 Cohen's d) ──
     safety_effect = _normalized_cohens_d(groups_stats, "T08", "G3", "G1")
 
-    # ── Component 3: Cross-plugin effect (avg T09, T10 Cohen's d) ──
+    # ── Component 3: Cross-plugin effect (avg T09, T10, T13, T14) ──
     cp09 = _normalized_cohens_d(groups_stats, "T09", "G3", "G1")
     cp10 = _normalized_cohens_d(groups_stats, "T10", "G3", "G1")
-    cross_plugin_effect = (cp09 + cp10) / 2 if cp09 is not None and cp10 is not None else 0
+    cp13 = _normalized_cohens_d(groups_stats, "T13", "G3", "G1")
+    cp14 = _normalized_cohens_d(groups_stats, "T14", "G3", "G1")
+    cp_vals = [v for v in [cp09, cp10, cp13, cp14] if v is not None]
+    cross_plugin_effect = sum(cp_vals) / len(cp_vals) if cp_vals else 0
 
     # ── Component 4: Efficiency gain (thinking token reduction) ──
     g3_tokens = g3.get("avg_thinking_tokens", 0)
@@ -263,6 +268,7 @@ def _compute_abi_advantage_index(
         "cross_plugin_effect": round(cross_plugin_effect, 3),
         "efficiency_gain": round(efficiency_gain, 3),
         "step_reduction": round(step_reduction, 3),
+        "scaffolding_effect": 0.0,  # v0.3: computed in compute_statistics.py
     }
 
     score = 0
@@ -489,7 +495,7 @@ def build_summary(scores: list[dict], experiment_set: str | None = None, fixture
 def expected_groups_for(experiment_set: str | None) -> list[str]:
     if experiment_set in EXPECTED_GROUPS:
         return EXPECTED_GROUPS[experiment_set]
-    return ["G1", "G2", "G3", "A1", "A3", "A4"]
+    return ["G1", "G2", "G3", "G4", "A1", "A3", "A4"]
 
 
 def expected_tasks_for(experiment_set: str | None, observed: list[str]) -> list[str]:
@@ -707,7 +713,7 @@ def main():
     print("\n=== ABI-Bench v0.1 Leaderboard ===")
     fs_info = f" [fixture_set={args.fixture_set}]" if args.fixture_set else ""
     print(f"Experiment set: {args.experiment_set or 'all'}{fs_info}")
-    for gid in ["G1", "G2", "G3"]:
+    for gid in ["G1", "G2", "G3", "G4"]:
         gs = summary["groups"].get(gid, {})
         if gs.get("score_count", 0) == 0:
             print(f"  {gid}: (no scores)")

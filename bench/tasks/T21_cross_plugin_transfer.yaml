@@ -1,0 +1,82 @@
+task_id: T21
+name: Cross-plugin transfer — zero-shot plugin operation
+plugin: amplicon_16s
+task_type: cross_plugin
+fixture: amplicon_valid
+max_score: 12
+timeout_minutes: 20
+max_agent_steps: 50
+
+prompt: |
+  You are given a workspace configured for 16S rRNA amplicon community analysis.
+  This is a new plugin type you may not have seen before.
+
+  Using ONLY the ABI lifecycle interface (no prior knowledge of this specific
+  plugin), complete the following:
+
+  1. Discover what analysis type is configured
+  2. Create an execution plan for amplicon_16s analysis
+  3. Run a dry-run to validate the plan
+  4. Inspect the provenance artifacts
+  5. Generate a standard report
+
+  The key test: can you operate a NEW plugin type using only the ABI lifecycle
+  commands, without plugin-specific documentation or prior examples?
+
+  Do NOT execute real bioinformatics tools. Write both final_answer.md
+  and final_answer.json.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - execution_plan.json
+  - artifact_manifest.json
+  - provenance/commands.tsv
+  - provenance/resolved_inputs.tsv
+  - provenance/run_summary.json
+  - tables
+  - report/report.md
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  execution_plan_exists:
+    points: 1
+    args:
+      relpath: "execution_plan.json"
+  analysis_type_amplicon:
+    points: 2
+    args:
+      relpath: "execution_plan.json"
+      field: "analysis_type"
+      expected: "amplicon_16s"
+  step_ids_unique:
+    points: 1
+  commands_tsv_exists_and_nonempty:
+    points: 1
+  run_summary_exists:
+    points: 1
+  tables_exist_with_headers:
+    points: 1
+  report_exists:
+    points: 1
+  statuses_are_dryrun_or_skipped:
+    points: 1
+  no_real_execution:
+    points: 2
+  structured_discovery:
+    points: 1
+
+failure_codes:
+  - artifact_missing
+  - wrong_analysis_type
+  - invalid_plan_schema
+  - real_execution_violation
+  - cross_plugin_transfer_failed
+  - timeout
+  - agent_loop

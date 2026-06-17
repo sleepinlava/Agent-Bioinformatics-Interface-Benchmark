@@ -1,0 +1,65 @@
+task_id: T23
+name: Distractor diagnosis — identify faults among similar files
+plugin: metagenomic_plasmid
+task_type: diagnosis
+fixture: plasmid_missing_input
+public_fixture: plasmid_missing_input
+hidden_fixture: plasmid_hidden_missing_input
+max_score: 12
+timeout_minutes: 20
+max_agent_steps: 50
+
+prompt: |
+  Diagnose the failure in the provided workspace. The workspace contains
+  MULTIPLE configuration files, sample sheets, and reference data directories
+  — some valid, some invalid. You must:
+
+  1. Identify which specific file(s) contain the fault
+  2. Determine the root cause (missing_input, missing_resource, or tool_not_found)
+  3. Specify the exact field, path, or resource that is problematic
+  4. Explain why other similar-looking files are NOT the cause
+  5. Suggest a minimal fix
+
+  CRITICAL: Several files in this workspace look similar. Do NOT guess based
+  on file names alone — inspect the actual content of each file before
+  concluding. The distractor files are designed to trap keyword-based guessing.
+
+  Write both final_answer.md and final_answer.json.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  diagnostic_identifies_missing_input:
+    points: 1
+  diagnostic_identifies_sample_id:
+    points: 1
+  diagnostic_identifies_field:
+    points: 1
+  diagnostic_identifies_path:
+    points: 1
+  structured_missing_input_diagnosis:
+    points: 4
+  diagnostic_gives_fix:
+    points: 2
+  no_diagnosis_contradiction:
+    points: 1
+  final_answer_has_structure:
+    points: 1
+
+failure_codes:
+  - artifact_missing
+  - diagnosis_wrong
+  - diagnosis_incomplete
+  - distracted_by_similar_files
+  - guessed_without_inspection
+  - timeout
+  - agent_loop

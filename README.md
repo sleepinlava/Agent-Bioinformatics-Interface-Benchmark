@@ -1,4 +1,4 @@
-# ABI-Bench v0.1
+# ABI-Bench v0.3
 
 > [中文版 (Chinese Version)](README.zh.md)
 
@@ -12,603 +12,179 @@
 
 **ABI-Bench** (Agent-Bioinformatics Interface Benchmark) evaluates whether
 a structured **ABI control layer** improves LLM agent operation of
-bioinformatics workflows. It is **not** a benchmark of which LLM is
-strongest, nor which bioinformatics pipeline produces the best biological
-results.
+bioinformatics workflows. v0.3 focuses on the **scaffolding effect**:
+does ABI lower the model capability threshold required for reliable
+bioinformatics workflow operation?
 
-ABI-Bench answers a single core question:
+ABI-Bench answers three core questions:
 
-> Under the same LLM, same agent harness, same repository, same tasks,
-> and same fixtures, does an **ABI control layer** enable agents to more
-> reliably plan, dry-run, inspect, diagnose, recover, and report on
-> bioinformatics workflows compared to **README + Shell** or **Plain
-> Tool Calling**?
+> 1. Does an **ABI control layer** enable agents to more reliably plan,
+>    dry-run, inspect, diagnose, and report on bioinformatics workflows
+>    compared to unstructured baselines (README + Shell, Plain Tool Calling)?
 
----
+> 2. Does ABI help **weaker models more** than stronger models, acting as a
+>    domain-specific scaffold that lowers the capability barrier?
 
-## 2. Motivation
-
-### 2.1 Why ABI is Needed
-
-LLM agents face unique challenges when operating bioinformatics workflows:
-
-1. **Missing lifecycle**: Bioinformatics has a clear "discover → plan →
-   dry-run → inspect → diagnose → report" lifecycle, but plain shell or
-   tool-calling interfaces provide no such semantic layer. Agents may
-   skip planning and execute directly, or fail to systematically diagnose
-   errors.
-
-2. **Missing provenance**: Reproducibility requires complete provenance —
-   input paths, tool versions, resource databases, command sequences,
-   execution status. Without structured provenance artifacts, agents
-   cannot effectively inspect results or diagnose failures.
-
-3. **Result interpretation difficulty**: Bioinformatics pipelines produce
-   large tables (gene abundance, expression matrices). Agents must
-   understand standard table structures to interpret results correctly,
-   rather than treating empty tables or intermediate outputs as final
-   biological findings.
-
-4. **Blurred safety boundaries**: Bioinformatics tools involve significant
-   compute and database downloads. Agents need explicit "plan → dry-run →
-   confirm → execute" permission boundaries to avoid unauthorized
-   large-scale execution.
-
-5. **Cross-domain reusability**: Bioinformatics encompasses many analysis
-   types (metagenomic plasmid, metatranscriptomics, amplicon sequencing,
-   etc.). The same control layer should work across types without
-   redesigning the agent interface for each.
-
-ABI-Bench **strictly measures the contribution of the ABI control layer
-itself** by fixing all other variables (model, agent harness, repository,
-fixtures) and varying only the interface layer available to the agent.
-
-### 2.2 Methodological Foundations
-
-ABI-Bench absorbs best practices from multiple established benchmarks:
-
-| Source | Core Principle | ABI-Bench Application |
-|---|---|---|
-| **GAIA** | Real-world tasks requiring tools and multi-step reasoning | Real repositories, real CLI, real fixtures; agents produce real artifacts |
-| **SWE-bench** | Fixed repository state, automated pass/fail | Reset to fixed commit per task, isolated workspace, script-based scoring |
-| **AgentBench** | Multi-turn reasoning, decisions, tool calls, failure types | `agent_trace.jsonl`, `tool_calls.jsonl`, step counts, failure taxonomy |
-| **StableToolBench** | Eliminate external API/tool drift for reproducibility | Dry-run primary evaluation, no large database downloads, no live APIs |
-| **BioCoder** | Domain-specific bioinformatics tasks | Sample sheets, FASTQ paths, assemblies, databases, tool registries |
-| **LAB-Bench** | Practical biology research capabilities | Workflow planning, database/resource config, table interpretation, overclaim avoidance |
-| **BixBench** | Real data analysis, multi-step trajectories, result interpretation | Intermediate artifacts required; tests whether agent knows next steps |
+> 3. Can the same ABI lifecycle **transfer across multiple workflow plugins**
+>    (metagenomic_plasmid, metatranscriptomics, amplicon_16s)?
 
 ---
 
-## 3. Hypothesis System
+## 2. Key Claims (v0.3)
 
-### 3.1 Primary Hypothesis
+### 2.1 Main Claim: ABI Improves Agent Operability
 
-**H1: An ABI control layer significantly improves LLM agent operability of
-bioinformatics workflows.**
+Across multiple LLMs (Strong/Medium/Weak) and three workflow plugins, G3
+(ABI Control Layer) consistently outperforms G1 (README + Shell) and G2
+(Plain Tool Calling). The effect is validated via sequential
+randomized-block experiments with bootstrap confidence intervals.
 
-### 3.2 Secondary Hypotheses
+### 2.2 Scaffolding Claim: ABI Helps Weak Models More
 
-| Hypothesis | Claim | Tested By |
-|---|---|---|
-| **H2** | ABI advantage comes from lifecycle-level control, not just more tools | G3 vs G2 |
-| **H3** | Provenance artifacts improve diagnostic and recovery ability | A1 ablation |
-| **H4** | Standard tables improve result structure understanding | A2 ablation (v0.2) |
-| **H5** | Permission model reduces unauthorized real execution risk | A4 ablation |
-| **H6** | Same ABI control layer works across analysis types | T09/T10 cross-plugin |
+The **Scaffolding Gain** — defined as (G3−G1)_weak − (G3−G1)_strong —
+quantifies how much more weak models benefit from ABI compared to strong
+models. A positive Scaffolding Gain indicates that ABI's primary value is
+as a domain scaffold that reduces the model reasoning burden, rather than
+as a capability multiplier for already-strong models.
 
----
+### 2.3 Cross-Plugin Claim: ABI Lifecycle is Portable
 
-## 4. Experimental Design
+The same ABI lifecycle (list-types → plan → dry-run → inspect → report)
+works across metagenomic_plasmid, metatranscriptomics, and amplicon_16s
+plugins without plugin-specific modifications.
 
-### 4.1 Three Main Groups
+### 2.4 G4 Control: Lifecycle API > Equivalent Documentation
 
-| Group | Name | Agent Information | Purpose |
-|---|---|---|---|
-| **G1** | README + Shell Baseline | README, docs, CLI help, shell, file I/O | Upper bound of unstructured doc + shell |
-| **G2** | Plain Tool Calling Baseline | Generic tool functions, CLI wrappers, file I/O | Is tool exposure alone sufficient? |
-| **G3** | ABI Control Layer | Full ABI lifecycle, JSON envelope, provenance, standard tables, permission model | **Complete ABI contribution** |
-
-**Critical design principle**: All three groups use the **same LLM**, **same
-agent harness**, **same repository commit**, and **same task
-fixtures**. The only variable is the interface layer available to the agent.
-ABI-Bench supports two agent execution modes: `direct` (Python native, recommended)
-and `simulated` (no LLM, CI/testing).
-
-### 4.2 Ablation Groups
-
-| Group | Name | Removed | Primary Impact |
-|---|---|---|---|
-| **A0** | ABI-full | Nothing (complete ABI) | Full capability |
-| **A1** | ABI-no-provenance | `commands.tsv`, `resolved_inputs.tsv`, `run_summary.json` | Inspection, diagnosis, recovery |
-| **A3** | ABI-no-diagnostic-hints | Structured `error_code` / `diagnostic_hints` | Fault localization |
-| **A4** | ABI-no-permission-model | `confirmation_required` gating | Execution safety |
-
-Ablation answers: *"Which specific components (provenance, diagnostic hints,
-permission model) contribute how much to ABI's overall advantage?"*
-
-### 4.3 Fixed Variables
-
-| Variable | Fixed Value |
-|---|---|
-| Agent harness | Python direct agent (`direct_agent.py`) |
-| LLM | Same model version for all groups |
-| Temperature | 0 (or lowest available) |
-| Max agent steps | 50 |
-| Timeout | 20 minutes per task |
-| Workspace | Isolated per task/group/replicate |
-| Git commit | Fixed benchmark commit |
-| Network | Off (v0.1) |
-| Real bioinformatics execution | Prohibited in v0.1 main scoring |
-| Primary execution mode | dry-run / inspect / report |
+G4 receives the same information volume as G3's ABI lifecycle but as
+static documentation without the lifecycle API. G3 > G4 demonstrates
+that the structured lifecycle interface (CLI + JSON envelopes + standard
+artifact paths) provides value beyond simply having more documentation.
 
 ---
 
-## 5. Eight-Dimensional Capability Model
+## 3. Group Architecture
 
-ABI-Bench evaluates 8 core agent capabilities through 12 tasks:
-
-| Capability | What is Evaluated | Tasks |
-|---|---|---|
-| **Discoverability** | Can the agent discover available analysis types? | T01 |
-| **Plannability** | Can the agent construct valid execution plans? | T02, T09 |
-| **Dry-runnability** | Can the agent complete dry-runs with full artifacts? | T03, T10 |
-| **Diagnosability** | Can the agent locate missing input / resource / tool? | T05, T06, T07 |
-| **Inspectability** | Can the agent read provenance and suggest next steps? | T04, T11 |
-| **Safety** | Does the agent respect execution confirmation boundaries? | T08 |
-| **Interpretability** | Can the agent interpret standard tables without overclaiming? | T12 |
-| **Portability** | Does the same ABI work across two bioinformatics analysis types? | T09, T10, T11 |
+| Group | Name | Key Difference |
+|-------|------|---------------|
+| **G1** | README + Shell | Documentation + bash only |
+| **G2** | Plain Tool Calling | Generic tools, no lifecycle |
+| **G3** | ABI Control Layer | Full ABI CLI + lifecycle API |
+| **G4** | Info-Matched Docs | Same docs as G3, no lifecycle API |
+| **A1** | No Provenance | G3 minus provenance (Appendix) |
+| **A3** | No Diagnostic Hints | G3 minus error codes (Appendix) |
+| **A4** | No Permission Model | G3 minus confirmation gate (Appendix) |
 
 ---
 
-## 6. Task Design
+## 4. Quick Start
 
-### 6.1 Task Overview
+### Prerequisites
 
-| Task | Name | Plugin | Type | Points |
-|---|---|---|---|---|
-| T01 | List analysis types | both | discovery | 5 |
-| T02 | Plan metagenomic plasmid | metagenomic_plasmid | planning | 10 |
-| T03 | Dry-run metagenomic plasmid | metagenomic_plasmid | dry-run | 12 |
-| T04 | Inspect plasmid dry-run | metagenomic_plasmid | inspection | 8 |
-| T05 | Diagnose missing input | metagenomic_plasmid | diagnosis | 10 |
-| T06 | Diagnose missing resource | metagenomic_plasmid | diagnosis | 10 |
-| T07 | Diagnose tool-not-found | metagenomic_plasmid | diagnosis | 8 |
-| T08 | Permission-gated run | metagenomic_plasmid | safety | 10 |
-| T09 | Plan metatranscriptomics | metatranscriptomics | portability | 8 |
-| T10 | Dry-run metatranscriptomics | metatranscriptomics | portability | 10 |
-| T11 | Inspect metatranscriptomics | metatranscriptomics | inspection | 5 |
-| T12 | Interpret standard tables | both | interpretation | 4 |
+- Python ≥ 3.10
+- `pip install pyyaml openai`
 
-**Total: 100 points**
-
-### 6.2 Task Lifecycle Logic
-
-Tasks follow the agent lifecycle "discover → plan → dry-run → inspect → diagnose → report":
-
-```
-T01 (discovery)
-  └─→ T02 / T09 (planning)
-        └─→ T03 / T10 (dry-run)
-              ├─→ T04 / T11 (inspect)
-              ├─→ T12 (interpret tables)
-              └─→ T05 / T06 / T07 (diagnose failures)
-                    └─→ T08 (safety gate for real execution)
-```
-
-### 6.3 Three-Tier Fault Injection for Diagnosis Tasks
-
-The three diagnosis tasks (T05/T06/T07) model the most common real-world
-bioinformatics failure modes:
-
-- **T05 missing input**: A sample's FASTQ path in the sample sheet is incorrect
-- **T06 missing resource**: A database reference in config (e.g., geNomad DB)
-  points to a non-existent path
-- **T07 tool not found**: A pipeline tool is not available in the environment
-
-Recognition difficulty increases: missing input is file-level (directly
-checkable), missing resource is config-level (requires understanding
-config→resource mapping), tool not found is environment-level (requires
-understanding tool registry and env mapping).
-
-### 6.4 Cross-Plugin Design
-
-T09/T10/T11 use a completely different analysis type (`metatranscriptomics`)
-from T02/T03/T04 (`metagenomic_plasmid`), while using the same ABI
-lifecycle interface. This directly tests **H6**: cross-analysis-type
-reusability.
-
----
-
-## 7. Scoring System
-
-### 7.1 Design Principles
-
-1. **Artifact-based, not subjective**: Each check verifies concrete file
-   existence, field correctness, or content validity — never human judgment.
-2. **Binary checks, transparent and reproducible**: Every scoring item is
-   pass/fail with no ambiguous partial credit.
-3. **Centralized definition, task-referenced**: All checks are defined in
-   `scoring/rubric.yaml` and referenced by key in task YAMLs.
-4. **Structured diagnosis scoring**: Diagnosis tasks (T05/T06/T07) require a
-   `final_answer.json` sidecar with structured fields (`cause`, `sample_id`,
-   `field`, `path`, `resource`, `tool_id`, `executable`, `env`, `fix`).
-   Keyword-only markdown answers without the JSON sidecar cannot earn full marks.
-5. **Fixture-aware scoring**: Tasks support `public_fixture` and `hidden_fixture`
-   keys in task YAMLs, with fixture-specific expected answers stored outside the
-   agent workspace. The same scoring checks work across both fixture sets,
-   preventing answer leakage into prompts. (On the CLI, these correspond to
-   `--fixture-set public` and `--fixture-set hidden`.)
-
-### 7.2 Primary Metrics
-
-| Metric | Definition |
-|---|---|
-| **Total Score** | Sum of per-task scores, normalized to 100 |
-| **Task Success Rate** | Proportion of tasks with score ≥ 70% of max |
-| **Successful Dry-run Rate** | Successful dry-runs / dry-run tasks |
-| **Diagnostic Accuracy** | Correct diagnoses / diagnosis tasks |
-| **Unsafe Execution Rate** | Unauthorized real executions / execution-related tasks |
-| **Artifact Completeness** | Artifacts produced / required artifacts |
-| **Median Agent Steps** | Median agent steps per completed task |
-
-### 7.3 Failure Taxonomy
-
-| Failure Code | Meaning |
-|---|---|
-| `artifact_missing` | Required artifact is absent |
-| `wrong_analysis_type` | Incorrect analysis_type |
-| `invalid_plan_schema` | Invalid execution_plan.json structure |
-| `invalid_command` | Agent generated an unexecutable command |
-| `invalid_status` | Invalid step status in commands.tsv |
-| `real_execution_violation` | Unauthorized real tool execution |
-| `confirm_execution_violation` | Agent set confirm_execution=true without permission |
-| `diagnosis_wrong` | Incorrect diagnosis |
-| `diagnosis_incomplete` | Diagnosis missing sample/field/path/resource detail |
-| `overclaim_result` | Dry-run results presented as real biological findings |
-| `workspace_violation` | Wrote outside authorized directories |
-| `fixture_modified` | Modified original fixture files |
-| `timeout` | Task exceeded time limit |
-| `agent_loop` | Ineffective repeated actions |
-
-### 7.4 Claim Support Criteria
-
-ABI-Bench v0.1 supports the primary claim only when **all** of the following are met:
-
-1. G3 total score ≥ 80
-2. G3 − G1 total score ≥ 20
-3. G3 − G2 total score ≥ 12
-4. G3 diagnostic accuracy ≥ 0.75
-5. G3 unsafe execution rate = 0
-6. G3 completes successful dry-runs on both plugins
-
-Before evaluating claim support, run the automated claim preflight to verify
-result completeness and consistency:
+### Run a Single Task
 
 ```bash
-python bench/scoring/claim_preflight.py \
-  --results bench/results \
-  --experiment-set main --fixture-set hidden \
-  --min-replicates 3 \
-  --output bench/results/preflight.json
-```
-
-The preflight checks that all required groups/tasks/replicates are present,
-metadata fields are consistent across all scores, and no unexpected groups
-or fixture sets are mixed into the aggregation. **Note**: The preflight
-validates data integrity only — it does not evaluate the six quantitative
-thresholds above. After the preflight passes, verify the thresholds manually
-against the aggregated scores, or run `compute_statistics.py` for bootstrap
-confidence intervals and effect sizes.
-
----
-
-## 8. Directory Structure
-
-```text
-bench/
-├── BENCHMARK_SPEC.yaml              # Global spec: environment, groups, tasks, metrics, success criteria
-├── .env.example                     # Provider configuration template
-│
-├── agent_profiles/                  # Agent permission profiles
-│   ├── G1_readme_shell.yaml         #   G1: documentation + shell only
-│   ├── G2_plain_tool_calling.yaml   #   G2: generic tool calling, no lifecycle
-│   ├── G3_abi_control_layer.yaml    #   G3: full ABI lifecycle
-│   ├── A1_no_provenance.yaml        #   Ablation: no provenance
-│   ├── A3_no_diagnostic_hints.yaml  #   Ablation: no diagnostic hints
-│   └── A4_no_permission_model.yaml  #   Ablation: no permission model
-│
-├── tasks/                           # 12 task definitions (T01–T12)
-│   ├── T01_list_types.yaml
-│   ├── T02_plan_plasmid.yaml
-│   ├── T03_dryrun_plasmid.yaml
-│   └── ...
-│
-├── fixtures/                        # Isolated test fixtures (public)
-│   ├── plasmid_valid/               #   Valid plasmid analysis input
-│   ├── plasmid_missing_input/       #   Contains missing input sample
-│   ├── plasmid_missing_resource/    #   Contains missing database reference
-│   ├── plasmid_tool_missing/        #   Contains unavailable tool
-│   └── transcriptomics_valid/       #   Valid transcriptomics input
-│
-├── fixtures_hidden/                 # Hidden fixtures (private, not in prompts)
-│   ├── plasmid_hidden_missing_input/
-│   ├── plasmid_hidden_missing_resource/
-│   └── plasmid_hidden_tool_missing/
-│
-├── expected_answers/                # Fixture-local expected answer JSONs
-│   ├── plasmid_missing_input.json
-│   ├── plasmid_missing_resource.json
-│   ├── plasmid_tool_missing.json
-│   ├── plasmid_hidden_missing_input.json
-│   ├── plasmid_hidden_missing_resource.json
-│   └── plasmid_hidden_tool_missing.json
-│
-├── harness/                         # Execution infrastructure
-│   ├── run_task.py                  #   Single task runner (supports 3 agent modes)
-│   ├── run_group.py                 #   Group runner (supports --parallel)
-│   ├── direct_agent.py              #   **Direct Python agent loop (recommended)**
-
-│   ├── abi_cli.py                   #   ABI lifecycle CLI (list-types/plan/dry-run/run)
-│   ├── reset_workspace.py           #   Workspace reset from fixture
-│   ├── collect_trace.py             #   Trace collection
-│   └── export_agent_context.py      #   Agent context export
-│
-├── scoring/                         # Automated scoring
-│   ├── rubric.yaml                  #   Centralized scoring rules (33+ checks)
-│   ├── checks.py                    #   Check function library
-│   ├── score_run.py                 #   Single run scorer
-│   ├── aggregate_scores.py          #   Cross-run aggregation
-│   ├── claim_preflight.py           #   Claim preflight consistency check
-│   ├── compute_statistics.py        #   Bootstrap CI, effect size, taxonomy
-│   └── make_tables.py               #   Paper table generation
-│
-├── workspaces/                      # Per-run isolated working directories
-├── traces/                          # Agent interaction traces
-├── results/                         # Scoring outputs
-│   ├── leaderboard.tsv
-│   ├── summary.json
-│   └── per_task_scores.tsv
-│
-└── docs/                            # Documentation
-    ├── methods.md                   #   Methodology
-    ├── failure_cases.md             #   Failure case analysis
-    └── artifact_manifest.schema.json #  Artifact schema
-```
-
----
-
-## 9. Setup & Dependencies
-
-### 9.1 Prerequisites
-
-| Dependency | Purpose | Install |
-|---|---|---|
-| **Python ≥ 3.10** | Harness execution, scoring | System package manager |
-| **PyYAML** | Parse task/group YAML configs | `pip install pyyaml` |
-| **openai** | LLM API client (direct mode) | `pip install openai` |
-
-
-### 9.2 Agent Execution Modes
-
-ABI-Bench supports two agent modes:
-
-| Mode | Flag | Requires | Use case |
-|------|------|----------|----------|
-| **direct** | `--agent-mode direct` | `pip install openai` + API key | **Recommended** — production experiments |
-| **simulated** | `--agent-mode simulated` (default) | Nothing | CI, infrastructure validation |
-
-### 9.3 Direct Mode (Recommended)
-
-Uses a Python-native agent loop (`bench/harness/direct_agent.py`) that calls the
-LLM API directly via the `openai` SDK. No OpenCode, Bun, or Node.js required.
-
-**Configuration via bench/.env:**
-```bash
-cp bench/.env.example bench/.env
-# Edit bench/.env — uncomment one provider and fill in your API key
-vim bench/.env
-```
-
-**Example `.env` for DeepSeek:**
-```
-ABI_BENCH_PROVIDER=deepseek
-ABI_BENCH_API_KEY=sk-...
-ABI_BENCH_API_BASE=https://api.deepseek.com
-ABI_BENCH_MODEL=deepseek-v4-pro
-ABI_BENCH_MAX_TOKENS=8000
-```
-
-**Running with direct mode:**
-```bash
-# Single task
 ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py \
-  --group G3 --task T03 --replicate 1 \
-  --agent-mode direct \
-  --experiment-set main --fixture-set public
+  --group G3 --task T01 --replicate 1 \
+  --agent-mode direct --experiment-set dev --fixture-set public
+```
 
-# Full group with parallel execution
+### Run a Full Group
+
+```bash
 ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
-  --group G3 --tasks mvp --replicates 3 \
+  --group G3 --tasks full_v0_3 --replicates 3 \
   --agent-mode direct --parallel --workers 4 \
   --experiment-set main --fixture-set public
 ```
 
-### 9.4 Simulated Mode (No LLM / API Required)
+### Multi-Model Experiment
 
 ```bash
-python bench/harness/run_task.py --group G3 --task T03 --agent-mode simulated
+python bench/harness/run_multi_model.py \
+  --tier all --groups G1,G2,G3,G4 \
+  --tasks full_v0_3 --replicates 3 \
+  --experiment-set paper --fixture-set public \
+  --workers 4 --seed 42
 ```
 
-The simulated agent produces expected artifacts directly without calling an LLM.
-Useful for:
-- Validating harness / scoring infrastructure
-- CI and rapid regression testing
-- Group-aware ablation simulation (A1/A3/A4 produce differentiated outputs)
-
-### 9.5 Supported Providers
-
-| Provider | Required Env Var | Configuration |
-|----------|-----------------|---------------|
-| Anthropic (Claude) | `ANTHROPIC_API_KEY` | Auto-detected |
-| OpenAI | `OPENAI_API_KEY` | Auto-detected |
-| DeepSeek | `ABI_BENCH_PROVIDER=deepseek` + key + base | bench/.env |
-| Google Gemini | `GOOGLE_GENERATIVE_AI_API_KEY` | Auto-detected |
-| Custom OpenAI-compatible | `ABI_BENCH_PROVIDER=openai-compatible` | bench/.env |
-
-All API keys are passed via environment variables and are never written to disk
-or tracked by git. The `bench/.env` file is in `.gitignore`.
-
-### 9.6 Single Task Run Examples
+### Score and Analyze
 
 ```bash
-# Direct mode (recommended — DeepSeek v4-pro)
-ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py \
-  --group G3 --task T03 --replicate 1 \
-  --agent-mode direct \
-  --experiment-set main --fixture-set public
-
-# Simulated mode (default, no API key)
-python bench/harness/run_task.py \
-  --group G3 --task T03 --replicate 1 \
-  --experiment-set dev --fixture-set public
-```
-
-> **Fixture set notes**: `--fixture-set hidden` is only meaningful for diagnosis
-> tasks (T05/T06/T07) where expected answers must be hidden from the agent to
-> prevent leakage. For all other tasks, `hidden` falls back to the public fixture
-> automatically. `--fixture-set public` (the default) works for all tasks and is
-> sufficient for development, CI, and simulated mode.
->
-> **Flag reference**:
-> | Flag | Valid values | Default (harness) | Default (analysis scripts) |
-> |---|---|---|---|
-> | `--experiment-set` | `dev`, `main`, `ablation`, `full` | `dev` | `main` |
-> | `--fixture-set` | `public`, `hidden` | `public` | (none — aggregates all) |
->
-> ⚠️ **Default mismatch**: `run_task.py` and `run_group.py` default
-> `--experiment-set` to `dev`, but `claim_preflight.py` and
-> `compute_statistics.py` default to `main`. Always pass `--experiment-set`
-> explicitly to avoid silent mismatches between the harness and analysis tools.
-
-Before each task run, the harness automatically:
-1. **Workspace reset**: Copies a clean fixture to `workspaces/{group}/{task}/replicate_{n}/`
-2. **Agent profile injection**: Loads the group-specific tool permissions and context
-3. **Agent execution**: Runs the agent in the isolated workspace
-4. **Trace collection**: Saves `agent_trace.jsonl`, `tool_calls.jsonl`, `commands.log`
-5. **Scoring**: Generates `score.json`
-
-### 9.7 Full Benchmark Run
-
-```bash
-# Main experiment — three groups (direct mode, 3 replicates, parallel)
-for group in G1 G2 G3; do
-  ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
-    --group $group --tasks mvp --replicates 3 \
-    --agent-mode direct --parallel --workers 4 \
-    --experiment-set main --fixture-set public \
-    --outdir bench/results/$group
-done
-
-# Ablation experiments
-for group in A1 A3 A4; do
-  python bench/harness/run_group.py \
-    --group $group --tasks ablation --replicates 1 \
-    --experiment-set ablation --fixture-set public \
-    --outdir bench/results/$group
-done
-
-# Aggregate results (per fixture set, per experiment set)
+# Aggregate all scores
 python bench/scoring/aggregate_scores.py \
-  --results bench/results \
-  --experiment-set main --fixture-set hidden \
+  --results bench/results --experiment-set main \
   --output bench/results/leaderboard.tsv \
-  --summary bench/results/summary.json \
-  --per-task bench/results/per_task_scores.tsv
+  --summary bench/results/summary.json
 
-# Claim preflight check (must pass before primary_claim_supported=true)
-python bench/scoring/claim_preflight.py \
-  --results bench/results \
-  --experiment-set main --fixture-set hidden \
-  --min-replicates 3 \
-  --output bench/results/preflight.json
-
-# Statistical analysis (bootstrap CIs, effect sizes, failure taxonomy)
+# Statistical analysis with scaffolding metrics
 python bench/scoring/compute_statistics.py \
-  --results bench/results \
-  --experiment-set main --fixture-set hidden \
+  --results bench/results --experiment-set main \
   --output bench/results/statistics.json
 ```
 
-**Important**: Run aggregation twice — once with `--fixture-set public` and once
-with `--fixture-set hidden`. If you omit `--fixture-set` and both fixture sets
-are present, they will be aggregated together and the completeness report will
-show `fixture_set: mixed` with `complete: false`, which blocks
-`primary_claim_supported`.
+---
+
+## 5. Task Modules
+
+| Module | Tasks | Description |
+|--------|-------|-------------|
+| Discovery | T01 | List available analysis types |
+| Planning | T02, T09, T13, T15, T17 | Create execution plans across plugins |
+| Dry-run | T03, T10, T14, T16, T18 | Validate plans without real execution |
+| Inspection | T04, T11 | Read provenance, identify placeholders |
+| Diagnosis | T05, T06, T07 | Single-fault diagnosis |
+| Complex Diagnosis | T22, T23 | Multi-fault and distractor diagnosis |
+| Safety | T08, T24 | Permission boundary and stress test |
+| Interpretation | T12, T19 | Table interpretation, overclaim guard |
+| Job Control | T20 | Submit, monitor, cancel, retrieve |
+| Cross-plugin | T21 | Zero-shot new plugin operation |
 
 ---
 
-## 10. Reproducibility
+## 6. Repository Structure
 
-ABI-Bench is designed for reproducibility from the ground up:
-
-1. **Version pinning**: Entire benchmark bound to a fixed git commit; all
-   groups use identical repository state.
-2. **Isolated workspaces**: Each task/group/replicate uses an independent
-   workspace. Agents can only write to designated areas — no modification
-   of fixtures, scoring, or task definitions.
-3. **Dry-run primary**: v0.1 uses dry-run as the primary evaluation mode,
-   avoiding irreproducibility from real tool version differences.
-4. **No network dependency**: v0.1 network is off; all fixtures are
-   self-contained in the repository.
-5. **Complete traces**: Every run saves the full agent interaction record —
-   messages, tool calls, file changes — making any result auditable.
-6. **Automated scoring**: Scoring is script-based with no human judgment.
-   Every check is deterministic and repeatable.
-
----
-
-## 11. v0.1 Scope Boundaries
-
-### 11.1 What v0.1 Does
-
-- Strict comparison of three main groups (G1/G2/G3)
-- At least 8 MVP tasks × 3 replicates per group
-- Automated artifact-based scoring
-- Complete trace preservation
-- Failure taxonomy analysis
-- Cross-plugin dry-run verification on two plugins
-
-### 11.2 What v0.1 Does NOT Do (Explicitly)
-
-1. ❌ Does not evaluate which LLM is strongest
-2. ❌ Does not evaluate which agent framework is strongest
-3. ❌ Does not evaluate which bioinformatics pipeline produces best biological results
-4. ❌ Does not perform large-scale real bioinformatics execution
-5. ❌ Does not claim ABI replaces Nextflow / Galaxy / CWL / Snakemake / nf-core
-6. ❌ Does not present dry-run results as real biological findings
-7. ❌ Does not attribute natural language capability to ABI alone
-8. ❌ Does not prove innovation by tool count alone
-
----
-
-## 12. Citation
-
-If you use ABI-Bench, please cite:
-
-```bibtex
-@misc{abi-bench-v0.1,
-  title        = {ABI-Bench v0.1: Agent-Bioinformatics Interface Benchmark},
-  author       = {},
-  year         = {2025},
-  note         = {Version 0.1},
-  url          = {},
-}
+```
+bench/
+  harness/          # Agent loop, ABI CLI, workspace reset, trace collection
+    direct_agent.py   # LLM API agent loop (OpenAI SDK)
+    abi_cli.py        # ABI lifecycle CLI
+    run_task.py       # Single task runner
+    run_group.py      # Group runner (parallel)
+    run_sequential.py # Sequential randomized-block runner
+    run_multi_model.py  # v0.3: Multi-model experiment runner
+    path_guard.py     # Filesystem access control
+  scoring/          # Scoring framework
+    score_run.py      # Single run scorer
+    checks.py         # Check function implementations
+    rubric.yaml       # Centralized check definitions
+    aggregate_scores.py  # Score aggregation
+    compute_statistics.py  # Bootstrap CIs, effect sizes, scaffolding analysis
+    claim_preflight.py  # Pre-submission completeness check
+  tasks/            # Task YAML definitions (T01–T24)
+  agent_profiles/   # Group profiles (G1–G4, A1, A3, A4)
+  fixtures/         # Public workspace fixtures
+  fixtures_hidden/  # Hidden fixtures (diagnosis anti-leakage)
+  expected_answers/ # Fixture-local expected answers for structured checks
+  BENCHMARK_SPEC.yaml  # v0.3 benchmark specification
 ```
 
+For detailed architecture, see [CLAUDE.md](CLAUDE.md).
+
 ---
 
-## 13. Complete Specification
+## 7. Citing
 
-This document is the overview and design rationale. For the complete execution
-specification, task YAML templates, detailed scoring rubrics, and statistical
-analysis plan, see `Plan.md` in the repository root.
+If you use ABI-Bench in your research, please cite:
+
+```bibtex
+@software{abi_bench_v0_3,
+  title = {ABI-Bench: Agent-Bioinformatics Interface Benchmark v0.3},
+  author = {ABI-Bench Contributors},
+  year = {2026},
+  note = {Evaluates structured ABI control layer for LLM agent
+          bioinformatics workflow operation across model capability tiers},
+}
+```

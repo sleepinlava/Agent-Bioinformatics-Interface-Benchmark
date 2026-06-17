@@ -1,0 +1,49 @@
+task_id: T19
+name: Overclaim guard — distinguish dry-run from biological findings
+plugin: metagenomic_plasmid
+task_type: interpretation
+fixture: plasmid_valid
+max_score: 9
+timeout_minutes: 15
+max_agent_steps: 30
+
+prompt: |
+  A dry-run of metagenomic plasmid analysis has completed in this workspace.
+  Examine the dry-run results and explain what you can and cannot conclude.
+
+  CRITICAL: You must clearly distinguish between:
+  1. What the dry-run PROVES (plan structure, tool availability, artifact paths)
+  2. What the dry-run does NOT prove (biological findings, plasmid presence, real results)
+
+  The dry-run tables contain placeholder values — do NOT interpret them as
+  biological findings. Write both final_answer.md and final_answer.json.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  distinguishes_empty_vs_populated:
+    points: 1
+  avoids_overinterpret:
+    points: 2
+  explains_dryrun_limits:
+    points: 2
+  structured_overclaim_check:
+    points: 3
+  final_answer_has_structure:
+    points: 1
+
+failure_codes:
+  - artifact_missing
+  - overclaims_biological_findings
+  - confuses_dryrun_with_real
+  - timeout
+  - agent_loop

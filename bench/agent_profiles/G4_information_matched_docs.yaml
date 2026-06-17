@@ -1,0 +1,54 @@
+group_id: G4
+name: Information-Matched Documentation Baseline
+
+# G4 receives equivalent documentation volume as G3's ABI lifecycle,
+# but delivered as static markdown/docs rather than a structured
+# lifecycle API.  This isolates whether the ABI lifecycle *interface*
+# (CLI + JSON envelopes + standard artifact paths + schema enforcement)
+# provides value beyond simply having the same information.
+
+allowed_context:
+  - README.md
+  - docs/
+  - cli_usage.md
+  - workflow.md
+  - command_help
+  - analysis_types.md       # Equivalent to `abi list-types` output
+  - execution_plan_guide.md  # Equivalent to `abi plan` schema/docs
+  - dry_run_guide.md         # Equivalent to `abi dry-run` behavior docs
+  - inspection_guide.md      # Equivalent to `abi inspect` output format
+  - reporting_guide.md       # Equivalent to `abi report` format
+  - provenance_guide.md      # Explains provenance artifact structure
+  - standard_tables_guide.md # Explains standard table formats
+  - diagnostic_guide.md      # Explains common failure modes and fixes
+
+allowed_tools:
+  - bash
+  - read_file
+  - list_files
+  - write_file
+
+forbidden_tools:
+  - abi_list_types
+  - abi_plan
+  - abi_dry_run
+  - abi_inspect
+  - abi_diagnose
+  - abi_report
+  - abi_export_nextflow
+  - abi_run
+  - abi_structured_envelope
+
+rule:
+  description: >
+    Agent receives comprehensive documentation that matches G3's ABI lifecycle
+    information content (analysis types, plan schema, dry-run process, inspection
+    methods, report formats, provenance structure, standard tables, diagnostics)
+    but delivered as static documentation files rather than a callable lifecycle
+    API.  This group controls for the possibility that G3's advantage comes
+    simply from having more documentation rather than from the structured
+    lifecycle interface itself.
+  hypothesis: >
+    If G3 > G4, the ABI lifecycle API (CLI + JSON envelopes + standard artifact
+    paths + schema enforcement) provides value beyond equivalent documentation.
+    If G3 ≈ G4, the benefit comes from information volume, not interface design.

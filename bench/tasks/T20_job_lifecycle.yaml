@@ -1,0 +1,72 @@
+task_id: T20
+name: Job lifecycle — submit, monitor, cancel, retrieve artifacts
+plugin: metagenomic_plasmid
+task_type: job_control
+fixture: plasmid_valid
+max_score: 10
+timeout_minutes: 20
+max_agent_steps: 40
+
+prompt: |
+  Demonstrate the ABI job lifecycle for a long-running bioinformatics analysis:
+
+  1. Submit a metagenomic plasmid analysis job (dry-run mode)
+  2. Check the job status
+  3. If running, attempt to cancel it gracefully
+  4. Retrieve any artifacts produced before cancellation
+  5. Report the job lifecycle events in a structured format
+
+  Document each lifecycle phase clearly. Do NOT execute real bioinformatics tools.
+  Write both final_answer.md and final_answer.json.
+
+  The final_answer.json must contain:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "job_control",
+    "job_id": "<assigned job ID>",
+    "phases": {
+      "submitted": true,
+      "status_checked": true,
+      "cancelled": true,
+      "artifacts_retrieved": true
+    },
+    "final_status": "<completed|cancelled|failed>",
+    "artifacts_available": ["<list of artifact paths>"]
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  execution_plan_exists:
+    points: 1
+    args:
+      relpath: "execution_plan.json"
+  final_answer_has_structure:
+    points: 1
+  no_real_execution:
+    points: 2
+  # Structured job lifecycle check
+  job_lifecycle_complete:
+    points: 3
+  # Cancellation properly handled
+  job_cancelled_cleanly:
+    points: 2
+  # Artifacts documented
+  artifacts_documented:
+    points: 1
+
+failure_codes:
+  - artifact_missing
+  - real_execution_violation
+  - job_lifecycle_incomplete
+  - timeout
+  - agent_loop

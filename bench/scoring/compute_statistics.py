@@ -258,6 +258,15 @@ def compute_statistics(
         group_cis, effect_sizes, paired_delta_ci, observed_tasks
     )
 
+    # ── v0.3: Multi-model scaffolding analysis ─────────────────────────
+    scaffolding_result = _compute_scaffolding_analysis(scores)
+    result["scaffolding_analysis"] = scaffolding_result
+
+    # Inject scaffolding gain into group_cis for ABI Advantage Index
+    if scaffolding_result.get("available") and scaffolding_result.get("scaffolding_gain") is not None:
+        for gid in group_cis:
+            group_cis[gid]["_scaffolding_gain"] = scaffolding_result["scaffolding_gain"]
+
     return result
 
 
@@ -348,6 +357,194 @@ def _build_failure_taxonomy(scores: list[dict]) -> dict:
     taxonomy["by_category"] = dict(taxonomy["by_category"])
 
     return taxonomy
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# v0.3 Scaffolding Analysis
+# ═══════════════════════════════════════════════════════════════════════
+
+MODEL_TIER_MAP = {
+    "gpt-4o": "strong",
+    "claude-sonnet-4-6": "strong",
+    "deepseek-v4-pro": "strong",
+    "gpt-4o-mini": "medium",
+    "qwen2.5-72b": "medium",
+    "qwen2.5-7b": "weak",
+    "llama-3.1-8b": "weak",
+}
+
+
+def _compute_scaffolding_analysis(scores: list[dict]) -> dict:
+    """Compute scaffolding effect: does ABI help weak models more?
+
+    Returns:
+        scaffolding_gain: (G3−G1)_weak − (G3−G1)_strong
+        by_tier: per-tier G3/G2/G1 normalized scores
+        by_model: per-model G3/G2/G1 normalized scores
+        interaction: tier × group interaction evidence
+        weak_abi_vs_strong_no_abi: ratio comparison
+    """
+    # ── Detect if multi-model data is present ──
+    model_ids = set(s.get("model_id", "") for s in scores if s.get("model_id"))
+    if len(model_ids) <= 1:
+        return {"available": False, "reason": "Single model data — scaffolding analysis requires multiple models"}
+
+    # ── Resolve model tiers ──
+    model_tiers = {}
+    for mid in model_ids:
+        tier = MODEL_TIER_MAP.get(mid, "unknown")
+        model_tiers[mid] = tier
+
+    tiers_present = set(model_tiers.values())
+    if len(tiers_present) < 2:
+        return {"available": False, "reason": f"All models in single tier: {tiers_present}"}
+
+    # ── Per-model, per-group normalized scores (for tier aggregation) ──
+    by_tier_group = defaultdict(lambda: defaultdict(list))
+    for s in scores:
+        mid = s.get("model_id", "")
+        tier = model_tiers.get(mid, "unknown")
+        gid = s.get("group_id", "unknown")
+        normalized = s.get("score", 0) / max(s.get("max_score", 1), 1)
+        by_tier_group[tier][gid].append(normalized)
+
+    # ── Compute tier-level deltas ──
+    tier_deltas = {}
+    for tier in ("strong", "medium", "weak"):
+        g1_vals = by_tier_group.get(tier, {}).get("G1", [])
+        g3_vals = by_tier_group.get(tier, {}).get("G3", [])
+        g2_vals = by_tier_group.get(tier, {}).get("G2", [])
+        g4_vals = by_tier_group.get(tier, {}).get("G4", [])
+
+        tier_deltas[tier] = {
+            "n_scores": len(g1_vals) + len(g3_vals),
+            "G1_mean": round(statistics.mean(g1_vals), 3) if g1_vals else None,
+            "G2_mean": round(statistics.mean(g2_vals), 3) if g2_vals else None,
+            "G3_mean": round(statistics.mean(g3_vals), 3) if g3_vals else None,
+            "G4_mean": round(statistics.mean(g4_vals), 3) if g4_vals else None,
+            "G3_minus_G1": round(statistics.mean(g3_vals) - statistics.mean(g1_vals), 3) if g3_vals and g1_vals else None,
+            "G3_minus_G2": round(statistics.mean(g3_vals) - statistics.mean(g2_vals), 3) if g3_vals and g2_vals else None,
+            "G3_minus_G4": round(statistics.mean(g3_vals) - statistics.mean(g4_vals), 3) if g3_vals and g4_vals else None,
+        }
+
+    # ── Scaffolding Gain ──
+    weak_gain = tier_deltas.get("weak", {}).get("G3_minus_G1")
+    strong_gain = tier_deltas.get("strong", {}).get("G3_minus_G1")
+    if weak_gain is not None and strong_gain is not None:
+        scaffolding_gain = round(weak_gain - strong_gain, 3)
+    else:
+        scaffolding_gain = None
+
+    # ── Interaction evidence (simple ANOVA-style comparison) ──
+    # Bootstrap test: is the weak-tier gain significantly larger than strong-tier?
+    # Use pre-computed by_tier_group values to avoid redundant iteration.
+    weak_g3 = by_tier_group.get("weak", {}).get("G3", [])
+    strong_g3 = by_tier_group.get("strong", {}).get("G3", [])
+    weak_g1 = by_tier_group.get("weak", {}).get("G1", [])
+    strong_g1 = by_tier_group.get("strong", {}).get("G1", [])
+    if weak_g3 and strong_g3 and weak_g1 and strong_g1:
+        interaction_p = _bootstrap_interaction_test(
+            [weak_g3, strong_g3],
+            [weak_g1, strong_g1],
+        )
+    else:
+        interaction_p = None
+
+    # ── Weak+ABI vs Strong−ABI ratio ──
+    weak_g3_vals = by_tier_group.get("weak", {}).get("G3", [])
+    strong_g1_vals = by_tier_group.get("strong", {}).get("G1", [])
+    if weak_g3_vals and strong_g1_vals:
+        weak_abi_mean = statistics.mean(weak_g3_vals)
+        strong_no_abi_mean = statistics.mean(strong_g1_vals)
+        ratio = round(weak_abi_mean / strong_no_abi_mean, 3) if strong_no_abi_mean > 0 else None
+    else:
+        ratio = None
+
+    # ── Per-model detail ──
+    per_model = {}
+    for mid in sorted(model_ids):
+        tier = model_tiers.get(mid, "unknown")
+        g1 = [s.get("score", 0) / max(s.get("max_score", 1), 1)
+              for s in scores if s.get("model_id") == mid and s.get("group_id") == "G1"]
+        g3 = [s.get("score", 0) / max(s.get("max_score", 1), 1)
+              for s in scores if s.get("model_id") == mid and s.get("group_id") == "G3"]
+        per_model[mid] = {
+            "tier": tier,
+            "G1_mean": round(statistics.mean(g1), 3) if g1 else None,
+            "G3_mean": round(statistics.mean(g3), 3) if g3 else None,
+            "G3_minus_G1": round(statistics.mean(g3) - statistics.mean(g1), 3) if g3 and g1 else None,
+            "n": len(g1) + len(g3),
+        }
+
+    # ── Determine which models show G3 > G1 ──
+    models_g3_beats_g1 = sum(
+        1 for mid, data in per_model.items()
+        if data["G3_minus_G1"] is not None and data["G3_minus_G1"] > 0
+    )
+
+    return {
+        "available": True,
+        "models_detected": len(model_ids),
+        "tiers_detected": sorted(tiers_present),
+        "model_tiers": model_tiers,
+        "scaffolding_gain": scaffolding_gain,
+        "scaffolding_gain_interpretation": (
+            "ABI helps weak models more than strong models"
+            if scaffolding_gain is not None and scaffolding_gain > 0
+            else "No scaffolding effect detected"
+        ),
+        "interaction_p_value": interaction_p,
+        "interaction_significant": interaction_p is not None and interaction_p < 0.05,
+        "weak_abi_vs_strong_no_abi_ratio": ratio,
+        "weak_abi_reaches_80pct_of_strong_no_abi": ratio is not None and ratio >= 0.80,
+        "tier_deltas": tier_deltas,
+        "per_model": per_model,
+        "models_g3_beats_g1": models_g3_beats_g1,
+        "total_models": len(model_ids),
+    }
+
+
+def _bootstrap_interaction_test(
+    group_a_tiers: list[list[float]],  # e.g., [weak_G3, strong_G3]
+    group_b_tiers: list[list[float]],  # e.g., [weak_G1, strong_G1]
+    n_bootstrap: int = 5000,
+    seed: int = 42,
+) -> float | None:
+    """Bootstrap test for Group × Tier interaction.
+
+    H0: (G3−G1)_weak − (G3−G1)_strong = 0 (no interaction)
+    Returns approximate p-value.
+    """
+    if not all(group_a_tiers) or not all(group_b_tiers):
+        return None
+
+    rng = random.Random(seed)
+
+    # Observed interaction
+    weak_diff = statistics.mean(group_a_tiers[0]) - statistics.mean(group_b_tiers[0])
+    strong_diff = statistics.mean(group_a_tiers[1]) - statistics.mean(group_b_tiers[1])
+    observed = weak_diff - strong_diff
+
+    # Bootstrap null distribution (shuffle tier labels)
+    all_a = group_a_tiers[0] + group_a_tiers[1]
+    all_b = group_b_tiers[0] + group_b_tiers[1]
+    n_weak = len(group_a_tiers[0])
+
+    null_diffs = []
+    for _ in range(n_bootstrap):
+        rng.shuffle(all_a)
+        rng.shuffle(all_b)
+        weak_a = all_a[:n_weak]
+        strong_a = all_a[n_weak:]
+        weak_b = all_b[:n_weak]
+        strong_b = all_b[n_weak:]
+        null_weak_diff = statistics.mean(weak_a) - statistics.mean(weak_b)
+        null_strong_diff = statistics.mean(strong_a) - statistics.mean(strong_b)
+        null_diffs.append(null_weak_diff - null_strong_diff)
+
+    # Two-sided p-value
+    extreme = sum(1 for d in null_diffs if abs(d) >= abs(observed))
+    return round(extreme / n_bootstrap, 4)
 
 
 def _build_paper_tables(group_cis, effect_sizes, taxonomy) -> dict:
@@ -527,6 +724,25 @@ def _build_claim_statistics(
         stats["mean_effect_size"] = round(statistics.mean(all_d), 3)
         stats["median_effect_size"] = round(statistics.median(all_d), 3)
 
+    # ── v0.3: Scaffolding criteria check ──
+    scaffolding_criteria = criteria_config.get("scaffolding_criteria", {})
+    if scaffolding_criteria:
+        stats["scaffolding_criteria"] = {
+            "min_models_g3_beats_g1": scaffolding_criteria.get("min_models_g3_beats_g1", 5),
+            "weak_tier_min_gain": scaffolding_criteria.get("weak_tier_min_gain", 15),
+            "interaction_p_threshold": scaffolding_criteria.get("interaction_p_threshold", 0.05),
+            "weak_abi_vs_strong_no_abi_ratio": scaffolding_criteria.get("weak_abi_vs_strong_no_abi_ratio", 0.80),
+        }
+
+    # ── v0.3: G4 criteria check ──
+    g4_criteria = criteria_config.get("g4_criteria", {})
+    if g4_criteria:
+        g4_ci = group_cis.get("G4", {})
+        if g3_ci.get("mean") is not None and g4_ci.get("mean") is not None:
+            g3_vs_g4_delta = round(g3_ci["mean"] - g4_ci["mean"], 2)
+            stats["G3_vs_G4_delta"] = g3_vs_g4_delta
+            stats["G3_beats_G4"] = g3_vs_g4_delta >= g4_criteria.get("G3_minus_G4_min_delta", 3)
+
     return stats
 
 
@@ -559,10 +775,13 @@ def _compute_abi_advantage_index(
     d_t08 = _get_d("T08")
     safety = min(abs(d_t08 or 0), 3) / 3
 
-    # ── Component 3: Cross-plugin effect (avg T09, T10) ──
+    # ── Component 3: Cross-plugin effect (avg T09, T10, T13, T14) ──
     d_t09 = _get_d("T09")
     d_t10 = _get_d("T10")
-    cross_plugin = (min(abs(d_t09 or 0), 3) / 3 + min(abs(d_t10 or 0), 3) / 3) / 2
+    d_t13 = _get_d("T13")
+    d_t14 = _get_d("T14")
+    cp_vals = [min(abs(d or 0), 3) / 3 for d in [d_t09, d_t10, d_t13, d_t14] if d is not None]
+    cross_plugin = sum(cp_vals) / len(cp_vals) if cp_vals else 0
 
     # ── Component 4: Efficiency gain (thinking token reduction) ──
     g3_tokens = g3_ci.get("avg_thinking_tokens", 0) if isinstance(g3_ci, dict) else 0
@@ -579,12 +798,19 @@ def _compute_abi_advantage_index(
     g1_steps = g1_ci.get("median_agent_steps", 0) if isinstance(g1_ci, dict) else 0
     step_red = max(0, (g1_steps - g3_steps) / g1_steps) if g1_steps > 0 else 0
 
+    # ── Component 6: Scaffolding effect (v0.3) ──
+    scaffolding = 0.0
+    scaffolding_data = group_cis.get("_scaffolding_gain")
+    if scaffolding_data is not None and isinstance(scaffolding_data, (int, float)):
+        scaffolding = min(max(scaffolding_data / 30.0, 0), 1.0)
+
     components = {
         "discovery_effect": round(discovery, 3),
         "safety_effect": round(safety, 3),
         "cross_plugin_effect": round(cross_plugin, 3),
         "efficiency_gain": round(efficiency, 3),
         "step_reduction": round(step_red, 3),
+        "scaffolding_effect": round(scaffolding, 3),
     }
 
     score = sum(weights.get(k, 0) * v for k, v in components.items())

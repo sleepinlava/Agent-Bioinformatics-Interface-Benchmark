@@ -39,6 +39,7 @@ from bench.harness.path_guard import PathGuard
 # ── Group classification ───────────────────────────────────────────────────────
 
 ABI_GROUPS = {"G3", "A1", "A3", "A4"}
+G4_GROUP = "G4"  # v0.3: info-matched docs, not ABI but gets enhanced docs
 
 # Canonical list of ABI lifecycle subcommands (hyphenated form, as used by abi_cli.py).
 # Used by the bash tool description and the command-level guard regex.
@@ -352,6 +353,40 @@ workspace state. Structured error_code fields will be absent from tool output.
 - You may only read and write files within your workspace directory.
 - Attempting to access benchmark-internal files is blocked and will produce an error.""",
 
+    # ── v0.3: G4 Information-Matched Docs ──────────────────────────────────
+    "G4": """You are an agent operating in a bioinformatics benchmark workspace.
+Your available tools are shell (bash), file read, file write, and file listing.
+You have access to comprehensive documentation covering all aspects of
+bioinformatics workflow operation in this environment.
+
+## Documentation Available to You
+The workspace contains detailed guides that describe:
+- Available analysis types (metagenomic_plasmid, metatranscriptomics, amplicon_16s)
+- How to structure execution plans (step IDs, tool IDs, analysis_type fields)
+- Dry-run validation procedures and expected artifact paths
+- Provenance artifact formats (commands.tsv, resolved_inputs.tsv, etc.)
+- Standard table formats for each plugin
+- Report generation guidelines
+- Common failure modes and diagnostic procedures
+
+## Your Task
+Use the documentation to plan, validate, and report on bioinformatics workflows.
+You may run shell commands, read config.yaml and sample_sheet.tsv, write files,
+and inspect results.  You are FORBIDDEN from using ABI lifecycle commands,
+ABI CLI paths, or calling abi_cli.py.
+
+## Permission Boundary (CRITICAL)
+- You MUST NOT execute real bioinformatics tools (fastp, star, genomad, prodigal,
+  plasflow, hmmscan, blastn, samtools, featureCounts, megahit, etc.) on data.
+- To check if a tool exists, use:  which <tool>  (this is safe)
+- To check tool version, use:   <tool> --version  (this is safe)
+- Real execution is disabled in this benchmark environment.
+
+## File Access Restrictions
+- You may only read and write files within your workspace directory.
+- Attempting to access benchmark-internal files (scoring code, expected answers,
+  task definitions, or agent profiles) is blocked and will produce an error.""",
+
     "A4": """You are an ABI-enabled bioinformatics agent. Use the ABI lifecycle:
 1. Plan: Create execution plans
 2. Run: Execute tools directly (no permission gate needed)
@@ -376,13 +411,6 @@ You may execute tools directly. Document what you executed and why.
 ## File Access Restrictions
 - You may only read and write files within your workspace directory.
 - Attempting to access benchmark-internal files is blocked and will produce an error.""",
-}
-- To check tool version, use:   <tool> --version  (this is safe)
-- To check tool help, use:      <tool> --help  (this is safe)
-- ABI CLI commands (plan, dry-run, inspect, diagnose, report) are always safe.
-- Real execution requires external confirmation. The benchmark's ABI CLI will
-  return "confirmation_required" if you try to run real tools.
-- Always distinguish between dry-run and real execution in your final answer.""",
 }
 
 # Ablation groups now have their own tailored prompts (defined above).

@@ -33,6 +33,23 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+def _resolve_tasks_for_count(task_spec: str) -> list[str]:
+    """Resolve task spec to a task list for counting only (avoids importing run_group)."""
+    spec = task_spec.strip()
+    if spec == "mvp":
+        return ["T01", "T02", "T03", "T05", "T06", "T08", "T09", "T10"]
+    elif spec == "full":
+        return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12"]
+    elif spec == "full_v0_3":
+        return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19"]
+    elif spec == "extended_v0_3":
+        return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T20", "T21", "T22", "T23", "T24"]
+    elif spec == "ablation":
+        return ["T03", "T04", "T05", "T06", "T07", "T08"]
+    else:
+        return [t.strip() for t in spec.split(",") if t.strip()]
+
+
 def run_group(
     group_id: str,
     tasks: str,
@@ -91,7 +108,7 @@ def main():
     )
     parser.add_argument("--groups", default="G1,G2,G3,A1,A3,A4",
                         help="Comma-separated group IDs")
-    parser.add_argument("--tasks", default="full")
+    parser.add_argument("--tasks", default="full_v0_3")
     parser.add_argument("--replicates", type=int, default=15)
     parser.add_argument("--agent-mode", default="direct")
     parser.add_argument("--experiment-set", default="paper")
@@ -123,10 +140,9 @@ def main():
         print(f"Execution order (random seed={args.seed}): {' → '.join(ordered)}")
 
     # ── Metadata header ──
-    total_tasks = len(ordered) * args.replicates * len(
-        ["T01","T02","T03","T04","T05","T06","T07","T08","T09","T10","T11","T12"]
-    )
-    print(f"\nSequential run: {len(ordered)} groups × {args.tasks} tasks × "
+    task_list = _resolve_tasks_for_count(args.tasks)
+    total_tasks = len(args.groups.split(",")) * args.replicates * len(task_list)
+    print(f"\nSequential run: {len(ordered)} groups × {len(task_list)} tasks × "
           f"{args.replicates} reps ≈ {total_tasks} total runs")
     print(f"Estimated wall time: {len(ordered)} × ~15min ≈ "
           f"{len(ordered) * 15} minutes\n")

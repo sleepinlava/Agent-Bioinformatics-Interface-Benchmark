@@ -1,32 +1,61 @@
 benchmark:
   name: ABI-Bench
-  version: "0.1"
+  version: "0.3"
   benchmark_type: agent_bioinformatics_interface
   primary_claim: >
-    ABI improves LLM agent operation of bioinformatics workflows
-    through lifecycle control, provenance, standard tables, diagnostics,
-    and permission-gated execution.
+    ABI is a structured control layer that improves LLM agent operability
+    of bioinformatics workflows across model capability tiers. The improvement
+    is strongest for weaker models (scaffolding effect), and the same ABI
+    lifecycle transfers across multiple workflow plugins. Real-execution
+    case studies demonstrate that ABI-driven pipelines produce outputs
+    consistent with human expert baselines.
+
+  secondary_claim: >
+    ABI component-level contributions (provenance, diagnostic hints,
+    permission model) are documented in Appendix. Strong LLMs compensate
+    for removed components through chain-of-thought reasoning, making
+    component-level ablation inconclusive — a finding reported transparently.
 
 environment:
   agent_harness: direct
-  model_id: LLM4
+  model_id: multi           # v0.3: multi-model experiment
   temperature: 0
   max_agent_steps: 50
   task_timeout_minutes: 20
   network: false
   real_tool_execution_default: false
 
+# ═══════════════════════════════════════════════════════════════════════
+# v0.3 Model Tier System
+# ═══════════════════════════════════════════════════════════════════════
+model_tiers:
+  strong:
+    description: "Frontier models with strong reasoning capabilities"
+    models:
+      - gpt-4o
+      - claude-sonnet-4-6
+      - deepseek-v4-pro
+  medium:
+    description: "Mid-tier models with adequate reasoning"
+    models:
+      - gpt-4o-mini
+      - qwen2.5-72b
+  weak:
+    description: "Smaller models where scaffolding effect is most pronounced"
+    models:
+      - qwen2.5-7b
+      - llama-3.1-8b
+
 plugins:
   - metagenomic_plasmid
   - metatranscriptomics
-  - rnaseq_expression
   - amplicon_16s
-  - wgs_bacteria
 
 main_groups:
   - G1
   - G2
   - G3
+  - G4        # v0.3: information-matched docs (no lifecycle API)
 
 ablation_groups:
   - A1
@@ -34,7 +63,7 @@ ablation_groups:
   - A4
 
 # ═══════════════════════════════════════════════════════════════════════
-# Ablation experiment status (2026-06-17)
+# Ablation experiment status (2026-06-17, carried forward)
 #
 # Real LLM experiments revealed that strong reasoning models compensate
 # for removed ABI components through chain-of-thought reasoning,
@@ -44,7 +73,7 @@ ablation_groups:
 # ~98% of the removed functionality.
 #
 # Decision: Ablation downgraded from primary evidence to Appendix.
-# See: abi/docs/ablation_decision.md
+# v0.3: Ablation groups retained in Appendix only; not in main experiment.
 # ═══════════════════════════════════════════════════════════════════════
 ablation_status:
   simulated: "confirmed design validity"
@@ -54,7 +83,47 @@ ablation_status:
 
 # Note: A2 (no-standard-tables) was removed during v0.1 scoping because
 # standard tables are already covered by the G1/G2 baseline comparison.
-# The gap in numbering is intentional and documented here for paper clarity.
+# The gap in numbering is intentional and documented for paper clarity.
+
+# ═══════════════════════════════════════════════════════════════════════
+# v0.3 Task Architecture
+#
+# Tasks are organized into lifecycle modules:
+#   Discovery → Planning → Dry-run → Inspection → Diagnosis → Safety → Interpretation
+#
+# New in v0.3:
+#   T13-T15: amplicon_16s plugin tasks (plan, dry-run, inspect)
+#   T16-T17: Complex diagnosis (multi-error, distractor)
+#   T18:     Safety boundary stress test
+#   T19:     Overclaim guard (interpretation quality)
+#   T20:     Job lifecycle (submit/status/cancel/artifacts)
+#   T21:     Cross-plugin transfer (zero-shot on new plugin)
+# ═══════════════════════════════════════════════════════════════════════
+
+main_tasks_v0_3:
+  - T01    # Discovery: list analysis types
+  - T02    # Planning: metagenomic_plasmid
+  - T03    # Dry-run: metagenomic_plasmid
+  - T04    # Inspection: metagenomic_plasmid
+  - T05    # Diagnosis: missing_input
+  - T06    # Diagnosis: missing_resource
+  - T07    # Diagnosis: tool_not_found
+  - T08    # Safety: permission-gated run
+  - T09    # Planning: metatranscriptomics
+  - T10    # Dry-run: metatranscriptomics
+  - T11    # Inspection: metatranscriptomics
+  - T12    # Interpretation: standard tables
+  - T13    # Planning: amplicon_16s (NEW)
+  - T14    # Dry-run: amplicon_16s (NEW)
+  - T15    # Inspection: amplicon_16s (NEW)
+  - T16    # Complex diagnosis: multi-error (NEW)
+  - T17    # Complex diagnosis: distractor (NEW)
+  - T18    # Safety boundary stress test (NEW)
+  - T19    # Overclaim guard (NEW)
+
+extended_tasks_v0_3:
+  - T20    # Job lifecycle (NEW, optional)
+  - T21    # Cross-plugin transfer (NEW, optional)
 
 mvp_tasks:
   - T01
@@ -87,11 +156,44 @@ full_v0_1_tasks:
   - T17
   - T18
 
+full_v0_3_tasks:
+  - T01
+  - T02
+  - T03
+  - T04
+  - T05
+  - T06
+  - T07
+  - T08
+  - T09
+  - T10
+  - T11
+  - T12
+  - T13
+  - T14
+  - T15
+  - T16
+  - T17
+  - T18
+  - T19
+
+ablation_tasks:
+  - T03
+  - T04
+  - T05
+  - T06
+  - T07
+  - T08
+
 replicates:
   dev: 1
   mvp: 3
   paper: 15   # n=15 provides 94% power for CI > 5 (see docs/development/threshold_recalibration.md)
+  multi_model: 3  # v0.3: 3 replicates per model × group combination
 
+# ═══════════════════════════════════════════════════════════════════════
+# v0.3 Primary Metrics
+# ═══════════════════════════════════════════════════════════════════════
 primary_metrics:
   - total_score
   - task_success_rate
@@ -101,7 +203,19 @@ primary_metrics:
   - artifact_completeness_score
   - human_intervention_count
   - median_agent_steps
+  # v0.3 additions:
+  - scaffolding_gain          # (G3−G1)_weak − (G3−G1)_strong
+  - cross_plugin_portability  # fraction of plugins with successful dry-run
+  - overclaim_rate            # T19: fraction of runs claiming biological findings from dry-run
 
+# ═══════════════════════════════════════════════════════════════════════
+# v0.3 Success Criteria
+#
+# Three-tier claim structure:
+#   1. Main claim: G3 > G1/G2 (ABI operability improvement)
+#   2. Scaffolding claim: Weak models benefit more from ABI
+#   3. Cross-plugin claim: Same ABI lifecycle works across plugins
+# ═══════════════════════════════════════════════════════════════════════
 success_criteria:
   # ═══════════════════════════════════════════════════════════════════════
   # Pre-registered thresholds (Plan.md §18.4, 2026-06-01)
@@ -160,17 +274,81 @@ success_criteria:
     ablation:     # 6 tasks: T03–T08
       G3_minus_G1_min_delta: 8
       G3_minus_G2_min_delta: 6
+    v0_3_full:    # v0.3: 19 main tasks
+      G3_minus_G1_min_delta: 5
+      G3_minus_G2_min_delta: 5
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # v0.3: Scaffolding Effect Criteria
+  #
+  # The scaffolding claim is that ABI helps weak models more than strong
+  # models.  This is measured via:
+  #
+  #   Scaffolding Gain = (G3 − G1)_weak − (G3 − G1)_strong
+  #
+  # Interpretation:
+  #   If Weak models gain +25 points with ABI and Strong models gain +5,
+  #   Scaffolding Gain = +20 → ABI lowers the capability barrier.
+  # ═══════════════════════════════════════════════════════════════════════
+  scaffolding_criteria:
+    # At least 5/6 models must show G3 > G1
+    min_models_g3_beats_g1: 5
+    # Weak-tier average G3−G1 must be ≥ 15 points
+    weak_tier_min_gain: 15
+    # Group × ModelTier interaction must be significant (bootstrap p < 0.05)
+    interaction_p_threshold: 0.05
+    # At least 1 weak model + ABI must reach ≥ 80% of a strong model without ABI
+    weak_abi_vs_strong_no_abi_ratio: 0.80
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # v0.3: Cross-Plugin Portability Criteria
+  # ═══════════════════════════════════════════════════════════════════════
+  cross_plugin_criteria:
+    # All 3 plugins must have successful dry-run by G3
+    min_plugins_dryrun_success: 3
+    # Per-plugin plan score must be ≥ 70% of max
+    min_plugin_plan_score_ratio: 0.70
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # v0.3: G4 Information-Matched Docs Criteria
+  #
+  # G4 receives equivalent documentation volume as G3's ABI lifecycle,
+  # but as static documentation without the lifecycle API. If G3 > G4,
+  # it demonstrates that the lifecycle API itself (not just more docs)
+  # drives the improvement.
+  # ═══════════════════════════════════════════════════════════════════════
+  g4_criteria:
+    G3_minus_G4_min_delta: 3    # G3 should beat information-matched docs by ≥ 3 points
 
   # ── ABI Advantage Index (composite) ──
   # Combines multiple dimensions into a single 0–1 score.
   # Threshold: index ≥ 0.5 indicates meaningful ABI advantage.
+  # v0.3: Added cross_plugin_breadth component.
   abi_advantage_index:
     min_score: 0.5
     weights:
-      discovery_effect: 0.30     # T01 Cohen's d (normalized to [0,1])
+      discovery_effect: 0.25     # T01 Cohen's d (normalized to [0,1])
       safety_effect: 0.20        # T08 Cohen's d (normalized)
-      cross_plugin_effect: 0.20  # avg(T09, T10) Cohen's d (normalized)
+      cross_plugin_effect: 0.20  # avg(T09, T10, T13, T14) Cohen's d (normalized)
       efficiency_gain: 0.15      # thinking_token_ratio: (G1_tokens − G3_tokens) / G1_tokens
-      step_reduction: 0.15       # agent_step_ratio: (G1_steps − G3_steps) / G1_steps
+      step_reduction: 0.10       # agent_step_ratio: (G1_steps − G3_steps) / G1_steps
+      scaffolding_effect: 0.10   # v0.3: normalized Scaffolding Gain
     # Cohen's d is clipped to [0, 3] then normalized to [0, 1] by dividing by 3.
     # Token/step ratios are naturally in [0, 1] (negative values clipped to 0).
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # v0.3: Real Execution Demo Criteria (Case Study, not main scoring)
+  # ═══════════════════════════════════════════════════════════════════════
+  demo_criteria:
+    demo_a:
+      description: "metatranscriptomics real execution"
+      metric: "Pearson correlation with human baseline"
+      threshold: 0.95
+    demo_b:
+      description: "metagenomic_plasmid 6-8 tool real execution"
+      metric: "Table overlap with human baseline"
+      threshold: 0.90
+    demo_d:
+      description: "Weak model + ABI vs strong model + ABI vs human"
+      metric: "Weak+ABI / Human overlap ratio"
+      threshold: 0.85

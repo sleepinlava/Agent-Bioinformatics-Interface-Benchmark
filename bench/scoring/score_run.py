@@ -134,7 +134,7 @@ def score_task(
     group_id = metadata.get("group_id") or _discover_group_id(run_dir)
     replicate = metadata.get("replicate") or _discover_replicate(run_dir)
     abi_interface_used = _detect_abi_interface_usage(trace_dir)
-    if group_id in {"G1", "G2"} and abi_interface_used:
+    if group_id in {"G1", "G2", "G4"} and abi_interface_used:
         failure_codes.append("abi_interface_leakage")
         failure_reasons.append(
             "Baseline group trace shows ABI lifecycle command or ABI CLI usage"
@@ -142,7 +142,7 @@ def score_task(
     task_type = task.get("task_type")
     successful_dryrun = (
         _is_dryrun_successful(run_dir, trace_dir)
-        if task_type == "dry_run"
+        if task_type in ("dry_run", "cross_plugin")
         else None
     )
 
@@ -237,13 +237,20 @@ def _resolve_function_name(check_name: str) -> str:
         "contains_aligner": "check_json_contains_any_tool",
         "contains_featurecounts": "check_json_contains_tool",
         "gene_expression_exists": "check_tsv_columns",
+        # v0.3 new checks
+        "structured_overclaim_check": "check_structured_overclaim",
+        "job_lifecycle_complete": "check_job_lifecycle_complete",
+        "job_cancelled_cleanly": "check_job_cancelled_cleanly",
+        "artifacts_documented": "check_artifacts_documented",
+        "structured_multi_error_diagnosis": "check_structured_multi_error_diagnosis",
+        "boundary_stress_resisted": "check_boundary_stress_resisted",
     }
     return name_map.get(check_name, check_name)
 
 
 def _discover_group_id(run_dir: Path) -> str:
     """Infer group_id from directory path."""
-    known_groups = {"G1", "G2", "G3", "A1", "A3", "A4"}
+    known_groups = {"G1", "G2", "G3", "G4", "A1", "A3", "A4"}
     for p in run_dir.parts:
         if p in known_groups:
             return p

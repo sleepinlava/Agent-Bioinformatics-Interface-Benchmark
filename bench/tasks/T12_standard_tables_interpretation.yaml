@@ -3,7 +3,7 @@ name: Interpret standard tables
 plugin: both
 task_type: result_interpretation
 fixture: plasmid_valid
-max_score: 4
+max_score: 7
 timeout_minutes: 15
 max_agent_steps: 30
 
@@ -15,6 +15,8 @@ prompt: |
   3. Distinguish between empty tables, tables with only headers, and tables with result rows.
   4. Do not over-interpret dry-run results as real biological findings.
 
+  Write both final_answer.md and final_answer.json.
+
 allowed_actions:
   read_files: true
   write_files: true
@@ -24,12 +26,15 @@ allowed_actions:
 
 expected_artifacts:
   - final_answer.md
+  - final_answer.json
 
 scoring:
   identifies_table_names: 1
   explains_table_structure: 1
   distinguishes_empty_vs_populated: 1
   avoids_overinterpret: 1
+  structured_table_interpretation: 2
+  final_answer_has_structure: 1
 
 failure_codes:
   - artifact_missing

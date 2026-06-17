@@ -3,7 +3,7 @@ name: Inspect plasmid dry-run
 plugin: metagenomic_plasmid
 task_type: inspection
 fixture: plasmid_valid
-max_score: 8
+max_score: 14
 timeout_minutes: 15
 max_agent_steps: 40
 
@@ -14,6 +14,8 @@ prompt: |
   2. Identify any placeholder values or missing resources.
   3. Recommend the next safe step.
 
+  Write both final_answer.md and final_answer.json.
+
 allowed_actions:
   read_files: true
   write_files: true
@@ -23,12 +25,16 @@ allowed_actions:
 
 expected_artifacts:
   - final_answer.md
+  - final_answer.json
 
 scoring:
   reads_provenance_correctly: 2
   counts_statuses_correctly: 2
   identifies_placeholders: 2
   gives_safe_next_step: 2
+  structured_inspection: 4
+  final_answer_has_structure: 1
+  artifact_freshness_verified: 1
 
 failure_codes:
   - artifact_missing
