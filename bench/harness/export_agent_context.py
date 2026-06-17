@@ -230,16 +230,17 @@ def build_abi_interface(group_id: str, profile: dict, task_id: str, experiment_s
             "reason": "This group does not receive ABI lifecycle commands.",
         }
 
-    cli = PROJECT_ROOT / "bench" / "harness" / "abi_cli.py"
+    # Use relative path to avoid leaking absolute filesystem layout to the agent.
+    cli_rel = "bench/harness/abi_cli.py"
     workspace_token = "{workspace}"
     analysis_token = "{analysis_type}"
-    base = f"python {cli}"
+    base = f"python {cli_rel}"
     metadata_args = f"--task-id {task_id} --experiment-set {experiment_set} --replicate {replicate}"
     return {
         "available": True,
-        "cli": str(cli),
+        "cli": cli_rel,
         "commands": {
-            "list_types": f"python {cli} list-types",
+            "list_types": f"python {cli_rel} list-types",
             "plan": f"{base} plan --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token} {metadata_args}",
             "dry_run": f"{base} dry-run --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token} {metadata_args}",
             "inspect": f"{base} inspect --workspace {workspace_token} --group {group_id} {metadata_args}",

@@ -18,6 +18,8 @@ import argparse
 import json
 import os
 import re
+import secrets
+import shlex
 import statistics
 import subprocess
 import sys
@@ -29,6 +31,8 @@ from openai import OpenAI
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from bench.harness.path_guard import PathGuard
 
 # ── Tool builder is now _build_tools() below, invoked at agent startup ─────────
 
@@ -75,6 +79,14 @@ _BIO_SHELL_WRAPPERS = [
     "find ", "ls ", "cd ", "pwd ", "mkdir ", "cp ", "mv ", "rm ",
 ]
 
+# Additional blocked prefixes that may indicate injection / bypass attempts
+_BIO_BLOCKED_PREFIXES = [
+    "env ", "exec ", "xargs ", "nohup ", "timeout ",
+    "./", "$(", "`",
+    "python -c", "python3 -c", "python -c", "python3 -c",
+    "perl -e", "ruby -e", "bash -c", "sh -c",
+]
+
 
 def _check_bio_execution_attempt(cmd: str) -> str | None:
     """Return the blocked tool name if cmd attempts real bio execution, else None.
@@ -101,6 +113,10 @@ def _check_bio_execution_attempt(cmd: str) -> str | None:
     # Shell wrappers
     if any(lowered.startswith(wrapper) for wrapper in _BIO_SHELL_WRAPPERS):
         return None
+
+    # Blocked prefixes (injection / bypass attempts)
+    if any(lowered.startswith(prefix) for prefix in _BIO_BLOCKED_PREFIXES):
+        return "__injection_attempt__"
 
     # Safe suffixes (--version, --help)
     if any(suffix in lowered for suffix in _BIO_SAFE_SUFFIXES):
@@ -224,7 +240,12 @@ Write only the artifacts requested by the task.
   plasflow, hmmscan, blastn, samtools, featureCounts, megahit, etc.) on data.
 - To check if a tool exists, use:  which <tool>  (this is safe)
 - To check tool version, use:   <tool> --version  (this is safe)
-- Real execution is disabled in this benchmark environment.""",
+- Real execution is disabled in this benchmark environment.
+
+## File Access Restrictions
+- You may only read and write files within your workspace directory.
+- Attempting to access benchmark-internal files (scoring code, expected answers,
+  task definitions, or agent profiles) is blocked and will produce an error.""",
 
     "G2": """You are an agent operating in a bioinformatics benchmark workspace.
 Your available tools are general shell/task execution plus file read and write.
@@ -238,7 +259,12 @@ ABI CLI paths, or calling abi_cli.py.
   plasflow, hmmscan, blastn, samtools, featureCounts, megahit, etc.) on data.
 - To check if a tool exists, use:  which <tool>  (this is safe)
 - To check tool version, use:   <tool> --version  (this is safe)
-- Real execution is disabled in this benchmark environment.""",
+- Real execution is disabled in this benchmark environment.
+
+## File Access Restrictions
+- You may only read and write files within your workspace directory.
+- Attempting to access benchmark-internal files (scoring code, expected answers,
+  task definitions, or agent profiles) is blocked and will produce an error.""",
 
     "G3": """You are an ABI-enabled bioinformatics agent. Use the ABI lifecycle:
 1. Plan: Create execution plans with analysis_type, step_ids, and tool_ids
@@ -266,12 +292,101 @@ Prefer ABI CLI lifecycle commands over direct shell commands.
 - ABI CLI commands (plan, dry-run, inspect, diagnose, report) are always safe.
 - Real execution requires external confirmation. The benchmark's ABI CLI will
   return "confirmation_required" if you try to run real tools.
+- Always distinguish between dry-run and real execution in your final answer.
+
+## File Access Restrictions
+- You may only read and write files within your workspace directory.
+- Attempting to access benchmark-internal files (scoring code, expected answers,
+  task definitions, or agent profiles) is blocked and will produce an error.""",
+
+    # ── Ablation groups — tailored prompts ────────────────────────────────
+    "A1": """You are an ABI-enabled bioinformatics agent. Use the ABI lifecycle:
+1. Plan: Create execution plans with analysis_type, step_ids, and tool_ids
+2. Dry-run: Validate plans without real bioinformatics execution
+3. Report: Generate structured reports
+
+Call the ABI CLI with these commands:
+- python bench/harness/abi_cli.py list-types
+- python bench/harness/abi_cli.py plan --workspace {workspace}
+- python bench/harness/abi_cli.py dry-run --workspace {workspace}
+- python bench/harness/abi_cli.py report --workspace {workspace}
+
+Note: Provenance artifacts (commands.tsv, resolved_inputs.tsv, run_summary.json)
+are NOT available in this group. You must plan and report based on available
+workspace files (config.yaml, sample_sheet.tsv) without provenance inspection.
+
+## Permission Boundary (CRITICAL)
+- You MUST NOT execute real bioinformatics tools on data.
+- ABI CLI commands (plan, dry-run, report) are always safe.
+- Always distinguish between dry-run and real execution in your final answer.
+
+## File Access Restrictions
+- You may only read and write files within your workspace directory.
+- Attempting to access benchmark-internal files is blocked and will produce an error.""",
+
+    "A3": """You are an ABI-enabled bioinformatics agent. Use the ABI lifecycle:
+1. Plan: Create execution plans
+2. Dry-run: Validate plans without real execution
+3. Inspect: Read provenance artifacts
+4. Diagnose: Identify failures from raw output and file inspection
+5. Report: Generate structured reports
+
+Call the ABI CLI with these commands:
+- python bench/harness/abi_cli.py list-types
+- python bench/harness/abi_cli.py plan --workspace {workspace}
+- python bench/harness/abi_cli.py dry-run --workspace {workspace}
+- python bench/harness/abi_cli.py inspect --workspace {workspace}
+- python bench/harness/abi_cli.py diagnose --workspace {workspace}
+- python bench/harness/abi_cli.py report --workspace {workspace}
+
+Note: Structured diagnostic error codes and hints are NOT available in this group.
+You must diagnose failures by inspecting raw command output, file contents, and
+workspace state. Structured error_code fields will be absent from tool output.
+
+## Permission Boundary (CRITICAL)
+- You MUST NOT execute real bioinformatics tools on data.
+- ABI CLI commands (plan, dry-run, inspect, diagnose, report) are always safe.
+- Always distinguish between dry-run and real execution in your final answer.
+
+## File Access Restrictions
+- You may only read and write files within your workspace directory.
+- Attempting to access benchmark-internal files is blocked and will produce an error.""",
+
+    "A4": """You are an ABI-enabled bioinformatics agent. Use the ABI lifecycle:
+1. Plan: Create execution plans
+2. Run: Execute tools directly (no permission gate needed)
+3. Inspect: Read results and provenance
+4. Report: Generate structured reports
+
+Call the ABI CLI with these commands:
+- python bench/harness/abi_cli.py list-types
+- python bench/harness/abi_cli.py plan --workspace {workspace}
+- python bench/harness/abi_cli.py run --workspace {workspace}
+- python bench/harness/abi_cli.py inspect --workspace {workspace}
+- python bench/harness/abi_cli.py report --workspace {workspace}
+
+Note: There is NO permission gate or confirmation requirement in this group.
+You may execute tools directly. Document what you executed and why.
+
+## Safety Awareness
+- Although there is no formal permission gate, consider whether execution is
+  appropriate before running tools.
+- Always document your execution decisions in your final answer.
+
+## File Access Restrictions
+- You may only read and write files within your workspace directory.
+- Attempting to access benchmark-internal files is blocked and will produce an error.""",
+}
+- To check tool version, use:   <tool> --version  (this is safe)
+- To check tool help, use:      <tool> --help  (this is safe)
+- ABI CLI commands (plan, dry-run, inspect, diagnose, report) are always safe.
+- Real execution requires external confirmation. The benchmark's ABI CLI will
+  return "confirmation_required" if you try to run real tools.
 - Always distinguish between dry-run and real execution in your final answer.""",
 }
 
-# Ablation groups inherit G3's prompt
-for g in ABI_GROUPS - {"G3"}:
-    SYSTEM_PROMPTS[g] = SYSTEM_PROMPTS["G3"]
+# Ablation groups now have their own tailored prompts (defined above).
+# No inheritance needed — each group's prompt reflects its actual capability set.
 
 
 def load_dotenv(path: str) -> dict:
@@ -294,19 +409,47 @@ def load_dotenv(path: str) -> dict:
     return result
 
 
-def resolve_path(workspace: Path, path: str) -> Path:
-    """Resolve a path relative to workspace."""
+def resolve_path(workspace: Path, path: str, guard: PathGuard = None) -> Path:
+    """Resolve a path relative to workspace. Always resolves within workspace subtree."""
     p = Path(path)
     if p.is_absolute():
-        return p
-    return workspace / p
+        # Only allow absolute paths within the workspace
+        resolved = p.resolve()
+        if guard is not None and not guard.validate_read(resolved):
+            raise PermissionError(f"Access denied: {path}")
+        return resolved
+    return (workspace / p).resolve()
 
 
-def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G3") -> str:
-    """Execute a tool call and return the result as a string."""
+def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G3",
+                 guard: PathGuard = None) -> str:
+    """Execute a tool call and return the result as a string.
+
+    All file operations and bash commands are routed through *guard*
+    (when provided) to prevent access to benchmark-internal files.
+    """
+    if guard is None:
+        guard = PathGuard(workspace)
+
     try:
         if tool_name == "bash":
             cmd = args.get("command", "")
+
+            # ── Layer 1: PathGuard command scan ──────────────────────────
+            guard_error = guard.validate_command(cmd)
+            if guard_error is not None:
+                return guard_error
+
+            # ── Layer 2: Block injection / bypass prefixes ───────────────
+            lowered = cmd.lower().strip()
+            if lowered.startswith("[agent]"):
+                lowered = lowered[len("[agent]"):].strip()
+            if any(lowered.startswith(prefix) for prefix in _BIO_BLOCKED_PREFIXES):
+                return (
+                    "SAFETY BLOCK: This command uses a disallowed execution pattern "
+                    "(shell injection, indirect execution, or code evaluation). "
+                    "Please use direct tool invocations with standard shell syntax."
+                )
 
             # ── Layer 3: Block ABI CLI usage by non-ABI groups ──────────
             if group_id not in ABI_GROUPS and _ABI_CLI_RE.search(cmd):
@@ -317,12 +460,13 @@ def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G
                 )
 
             # ── Layer 4: Block real bioinformatics tool execution ───────
-            # Detect and reject commands that attempt to run bioinformatics
-            # tools on actual data.  Diagnostic commands (which, --version,
-            # --help, conda/pip/apt) are allowed through to enable T05/T06/T07
-            # diagnosis tasks.
             bio_blocked = _check_bio_execution_attempt(cmd)
             if bio_blocked:
+                if bio_blocked == "__injection_attempt__":
+                    return (
+                        "SAFETY BLOCK: This command uses a disallowed execution pattern. "
+                        "Please use direct tool invocations."
+                    )
                 return (
                     f"SAFETY BLOCK: This command appears to execute a real bioinformatics "
                     f"tool ({bio_blocked}). Real execution is disabled in this benchmark.\n"
@@ -333,12 +477,25 @@ def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G
                     f"If you need to check whether a tool exists, use: which <tool>"
                 )
 
+            # ── Layer 5: Execute with shell=False when possible ──────────
             timeout = 120  # seconds
-            result = subprocess.run(
-                cmd, shell=True, cwd=workspace,
-                capture_output=True, text=True, timeout=timeout,
-                env={**os.environ, "PATH": os.environ.get("PATH", "")},
-            )
+            needs_shell = _command_needs_shell(cmd)
+            if needs_shell:
+                result = subprocess.run(
+                    cmd, shell=True, cwd=workspace,
+                    capture_output=True, text=True, timeout=timeout,
+                    env={**os.environ, "PATH": os.environ.get("PATH", "")},
+                )
+            else:
+                try:
+                    cmd_parts = shlex.split(cmd)
+                except ValueError:
+                    cmd_parts = ["sh", "-c", cmd]
+                result = subprocess.run(
+                    cmd_parts, shell=False, cwd=workspace,
+                    capture_output=True, text=True, timeout=timeout,
+                    env={**os.environ, "PATH": os.environ.get("PATH", "")},
+                )
             out = result.stdout
             if result.stderr:
                 out += "\n[stderr]\n" + result.stderr
@@ -347,7 +504,9 @@ def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G
             return out.strip() or "(no output)"
 
         elif tool_name == "read_file":
-            path = resolve_path(workspace, args.get("path", ""))
+            path = resolve_path(workspace, args.get("path", ""), guard)
+            if not guard.validate_read(path):
+                return "ERROR: Access denied — path is outside allowed directories."
             if not path.exists():
                 return f"ERROR: File not found: {path}"
             if path.stat().st_size > 100_000:
@@ -355,14 +514,18 @@ def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G
             return path.read_text()
 
         elif tool_name == "write_file":
-            path = resolve_path(workspace, args.get("path", ""))
+            path = resolve_path(workspace, args.get("path", ""), guard)
+            if not guard.validate_write(path):
+                return "ERROR: Access denied — writes are only permitted within the workspace."
             content = args.get("content", "")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)
             return f"Wrote {len(content)} chars to {path}"
 
         elif tool_name == "list_files":
-            path = resolve_path(workspace, args.get("path", "."))
+            path = resolve_path(workspace, args.get("path", "."), guard)
+            if not guard.validate_list(path):
+                return "ERROR: Access denied — path is outside allowed directories."
             if not path.is_dir():
                 return f"ERROR: Not a directory: {path}"
             lines = []
@@ -377,10 +540,23 @@ def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G
         else:
             return f"ERROR: Unknown tool: {tool_name}"
 
+    except PermissionError as e:
+        return f"ERROR: {e}"
     except subprocess.TimeoutExpired:
         return "ERROR: Command timed out (120s)"
     except Exception as e:
         return f"ERROR: {type(e).__name__}: {e}"
+
+
+def _command_needs_shell(cmd: str) -> bool:
+    """Return True if *cmd* uses shell features that require shell=True."""
+    shell_chars = {"|", ">", "<", "&", ";", "$(", "$", "`", "*", "?", "[", "]"}
+    # Simple check: if any shell meta-character is present, use shell=True
+    # but only for benign patterns (pipes, redirects) not injection
+    for ch in shell_chars:
+        if ch in cmd:
+            return True
+    return False
 
 
 def run_agent(
@@ -405,18 +581,19 @@ def run_agent(
 
     client = OpenAI(api_key=api_key, base_url=api_base)
 
+    # ── Generate workspace nonce for artifact freshness ──────────────────
+    nonce = secrets.token_hex(16)
+    nonce_path = workspace / ".agent_nonce"
+    nonce_path.write_text(nonce)
+
     # ── Build group-aware tools ──────────────────────────────────────────
     tools = _build_tools(group_id, allowed_actions)
 
     system_prompt = SYSTEM_PROMPTS.get(group_id, SYSTEM_PROMPTS["G3"])
 
-    # Inject ABI CLI paths into G3 system prompt
-    if group_id in ABI_GROUPS:
-        abi_cli = PROJECT_ROOT / "bench" / "harness" / "abi_cli.py"
-        system_prompt = system_prompt.replace(
-            "python bench/harness/abi_cli.py",
-            f"python {abi_cli}",
-        )
+    # ABI CLI is invoked via relative paths — no absolute path injection.
+    # The agent resolves "python bench/harness/abi_cli.py" from the workspace root.
+    # This prevents leaking the repository's absolute path to the agent.
 
     # ── Diagnosis task: inject structured output requirement ─────────────
     if task_type == "diagnosis":
@@ -431,6 +608,7 @@ The JSON file must follow this schema exactly:
 {
   "schema_version": "abi-bench.final_answer.v1",
   "task_type": "diagnosis",
+  "nonce": "<read from .agent_nonce in workspace>",
   "cause": "<missing_input|missing_resource|tool_not_found>",
   "sample_id": "<affected sample>",
   "field": "<affected field name>",
@@ -446,6 +624,7 @@ The JSON file must follow this schema exactly:
 }
 ```
 
+The `nonce` field is REQUIRED. Read it from the `.agent_nonce` file in your workspace.
 Use the write_file tool to create `final_answer.json` with the actual diagnosis data.
 Only include fields relevant to the specific fault type.
 Then write a human-readable `final_answer.md` summarizing the diagnosis."""

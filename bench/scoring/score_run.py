@@ -476,6 +476,16 @@ def main():
     args = parser.parse_args()
 
     task = load_task(args.task)
+
+    # Diagnosis tasks REQUIRE an expected answer — refuse to score without one.
+    if task.get("task_type") == "diagnosis" and args.expected_answer is None:
+        print(
+            "ERROR: Diagnosis tasks require --expected-answer to prevent answer leakage.\n"
+            "The scorer has no hardcoded defaults. Please provide the fixture-local\n"
+            f"expected answer JSON (e.g. bench/expected_answers/{task.get('public_fixture', task.get('fixture', '<name>'))}.json)."
+        )
+        return 1
+
     expected_answer = _load_expected_answer(args.expected_answer)
     score = score_task(
         task,

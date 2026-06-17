@@ -546,3 +546,24 @@ rubric:
       description: "final_answer.json contains structured table interpretation"
       points: 2
       function: check_structured_table_interpretation
+
+    # ── Structural quality checks ─────────────────────────────────────
+    final_answer_has_structure:
+      description: "final_answer.md has section headings and minimum length"
+      points: 1
+      function: check_final_answer_has_structure
+      args:
+        min_headings: 2
+        min_length: 100
+
+    # ── Contradiction detection ────────────────────────────────────────
+    no_diagnosis_contradiction:
+      description: "Agent diagnosis is internally consistent"
+      points: 1
+      function: check_no_diagnosis_contradiction
+
+    # ── Artifact freshness ─────────────────────────────────────────────
+    artifact_freshness_verified:
+      description: "final_answer.json nonce matches workspace nonce"
+      points: 1
+      function: check_artifact_freshness

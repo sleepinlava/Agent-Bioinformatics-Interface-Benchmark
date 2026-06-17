@@ -393,21 +393,22 @@ def check_structured_missing_input_diagnosis(
     run_dir: Path = None,
     expected_answer: dict = None,
 ) -> bool:
-    """Require structured fields for the missing-input diagnosis task."""
+    """Require structured fields for the missing-input diagnosis task.
+
+    When ``expected_answer`` is not provided, this check always returns False
+    — the scorer MUST supply the correct expected answer.  There is no
+    hardcoded fallback to prevent answer leakage.
+    """
     data = _load_final_answer_json(trace_dir, run_dir)
     if not data:
         return False
-    expected = expected_answer or {
-        "cause": "missing_input",
-        "sample_id": "SAMPLE_002",
-        "field": "read1",
-        "path": "missing/SAMPLE_002_R1.fastq.gz",
-        "fix_required": True,
-    }
+    if expected_answer is None:
+        # No hardcoded defaults — expected_answer is required
+        return False
     return (
         data.get("schema_version") == "abi-bench.final_answer.v1"
-        and _matches_expected(data, expected, ["cause", "sample_id", "field", "path"])
-        and (not expected.get("fix_required", True) or _has_text(data.get("fix")))
+        and _matches_expected(data, expected_answer, ["cause", "sample_id", "field", "path"])
+        and (not expected_answer.get("fix_required", True) or _has_text(data.get("fix")))
     )
 
 
@@ -416,21 +417,20 @@ def check_structured_missing_resource_diagnosis(
     run_dir: Path = None,
     expected_answer: dict = None,
 ) -> bool:
-    """Require structured fields for the missing-resource diagnosis task."""
+    """Require structured fields for the missing-resource diagnosis task.
+
+    When ``expected_answer`` is not provided, this check always returns False
+    — the scorer MUST supply the correct expected answer.
+    """
     data = _load_final_answer_json(trace_dir, run_dir)
     if not data:
         return False
-    expected = expected_answer or {
-        "cause": "missing_resource",
-        "resource": "genomad_db",
-        "config_key": "resources.genomad_db.path",
-        "path": "missing/genomad_db_v2",
-        "fix_required": True,
-    }
+    if expected_answer is None:
+        return False
     return (
         data.get("schema_version") == "abi-bench.final_answer.v1"
-        and _matches_expected(data, expected, ["cause", "resource", "config_key", "path"])
-        and (not expected.get("fix_required", True) or _has_text(data.get("fix")))
+        and _matches_expected(data, expected_answer, ["cause", "resource", "config_key", "path"])
+        and (not expected_answer.get("fix_required", True) or _has_text(data.get("fix")))
     )
 
 
@@ -439,21 +439,20 @@ def check_structured_tool_not_found_diagnosis(
     run_dir: Path = None,
     expected_answer: dict = None,
 ) -> bool:
-    """Require structured fields for the tool-not-found diagnosis task."""
+    """Require structured fields for the tool-not-found diagnosis task.
+
+    When ``expected_answer`` is not provided, this check always returns False
+    — the scorer MUST supply the correct expected answer.
+    """
     data = _load_final_answer_json(trace_dir, run_dir)
     if not data:
         return False
-    expected = expected_answer or {
-        "cause": "tool_not_found",
-        "tool_id": "plasflow",
-        "executable": "PlasFlow.py",
-        "env": "plasflow_env",
-        "fix_required": True,
-    }
+    if expected_answer is None:
+        return False
     return (
         data.get("schema_version") == "abi-bench.final_answer.v1"
-        and _matches_expected(data, expected, ["cause", "tool_id", "executable", "env"])
-        and (not expected.get("fix_required", True) or _has_text(data.get("fix")))
+        and _matches_expected(data, expected_answer, ["cause", "tool_id", "executable", "env"])
+        and (not expected_answer.get("fix_required", True) or _has_text(data.get("fix")))
     )
 
 
@@ -474,10 +473,35 @@ def _matches_expected(data: dict, expected: dict, fields: list[str]) -> bool:
 def check_final_answer_contains(
     trace_dir: Path,
     required_terms: list,
+    min_sections: int = 1,
 ) -> bool:
-    """Return True if final_answer.md contains all required terms (case-insensitive)."""
+    """Return True if final_answer.md contains all required terms (case-insensitive).
+
+    When ``min_sections > 1``, each required term must appear in a different
+    paragraph (split by blank lines).  This prevents keyword-stuffing in a
+    single sentence from passing multi-concept checks.
+    """
     text = _read_final_answer(trace_dir).lower()
-    return all(term.lower() in text for term in required_terms)
+    # Each term must appear somewhere in the text
+    if not all(term.lower() in text for term in required_terms):
+        return False
+    # If min_sections > 1, verify terms are spread across paragraphs
+    if min_sections > 1:
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+        if len(paragraphs) < min_sections:
+            return False
+        terms_lower = [t.lower() for t in required_terms]
+        # Each paragraph can satisfy at most one term
+        # (enforces distribution across sections)
+        matched_paragraphs = set()
+        for term in terms_lower:
+            for i, para in enumerate(paragraphs):
+                if term in para:
+                    matched_paragraphs.add(i)
+                    break
+        if len(matched_paragraphs) < len(terms_lower):
+            return False
+    return True
 
 
 def check_final_answer_contains_sample_id(
@@ -486,32 +510,69 @@ def check_final_answer_contains_sample_id(
     """Check that final answer identifies the affected sample_id.
 
     When ``expected_answer`` is provided, its ``sample_id`` field is used
-    as the expected value.  Otherwise the public-fixture default
-    (SAMPLE_002 / CASE_017) is checked.
+    as the expected value.  Otherwise, a structural pattern (uppercase ID
+    with underscore and digits) is required — never hardcodes fixture values.
     """
     text = _read_final_answer(trace_dir).lower()
     if expected_answer and expected_answer.get("sample_id"):
         return str(expected_answer["sample_id"]).lower() in text
-    return "sample_002" in text or "case_017" in text
+    # Structural fallback: match sample-ID-like patterns
+    return bool(re.search(r'\b[a-z]+_\d+\b', text))
 
 
-def check_final_answer_contains_field(trace_dir: Path) -> bool:
-    """Check that final answer identifies the missing field (read1/assembly)."""
+def check_final_answer_contains_field(
+    trace_dir: Path, expected_answer: dict = None
+) -> bool:
+    """Check that final answer identifies the affected field.
+
+    When ``expected_answer`` is provided, its ``field`` value is matched
+    case-insensitively.  Otherwise, a structural pattern is used (field/column
+    name context required — never hardcodes fixture-specific values).
+    """
     text = _read_final_answer(trace_dir).lower()
-    return "read1" in text or "assembly" in text
+    if expected_answer and expected_answer.get("field"):
+        return str(expected_answer["field"]).lower() in text
+    # Structural fallback: field or column name mentioned with a value
+    return bool(re.search(r'(?:field|column)\s*[:\-]?\s*[a-z_][a-z0-9_]*', text))
 
 
 def check_final_answer_contains_path(trace_dir: Path) -> bool:
-    """Check that final answer identifies the incorrect path."""
+    """Check that final answer identifies the incorrect or missing path.
+
+    Requires a path-like pattern (containing ``/``) rather than matching
+    generic keywords like "missing" or "nonexistent".
+    """
     text = _read_final_answer(trace_dir).lower()
-    return "nonexistent" in text or "missing" in text
+    return bool(re.search(r'(?:path|file)\s*[:\-]?\s*\S*/\S+', text)) or \
+           bool(re.search(r'(?:/[a-z0-9_\-./]+)', text))
 
 
 def check_final_answer_contains_fix(trace_dir: Path) -> bool:
-    """Check that final answer gives a minimal safe fix."""
+    """Check that final answer gives a minimal safe fix with specific detail.
+
+    Requires a concrete action verb AND a specific target reference
+    (file extension, path-like string, environment name, or tool name).
+    Generic hand-waving like "fix the problem" will not pass.
+    """
     text = _read_final_answer(trace_dir).lower()
-    fix_terms = ["fix", "correct", "update", "create", "add", "symlink", "provide"]
-    return any(term in text for term in fix_terms)
+    # Action verbs that indicate concrete steps
+    action_terms = [
+        "update", "correct", "create", "install", "configure",
+        "symlink", "download", "provide", "set", "change",
+        "modify", "replace", "point to", "add",
+    ]
+    has_action = any(term in text for term in action_terms)
+    if not has_action:
+        return False
+    # Target reference: must mention a specific file/resource/tool
+    target_patterns = [
+        r'\.(?:yaml|tsv|json|fastq|fasta|hmm|gz|txt|fa|fq)\b',  # file extension
+        r'(?:_db|_env|_index)\b',                                  # resource suffix
+        r'\b(?:path|file|directory|folder)\s',                     # path context
+        r'\b(?:conda|pip|apt|mamba)\s',                            # package manager
+        r'/[a-z0-9_\-./]+',                                        # absolute/relative path
+    ]
+    return any(re.search(pat, text) for pat in target_patterns)
 
 
 def check_final_answer_contains_resource_name(
@@ -519,14 +580,15 @@ def check_final_answer_contains_resource_name(
 ) -> bool:
     """Check that final answer identifies the resource name.
 
-    When ``expected_answer`` is provided, its ``resource`` field is used
-    as the expected value.  Otherwise the public-fixture default
-    (genomad_db / mobileog_db) is checked.
+    When ``expected_answer`` is provided, its ``resource`` field is matched.
+    Otherwise, a structural pattern (resource or database name in context)
+    is required — never hardcodes fixture-specific values.
     """
     text = _read_final_answer(trace_dir).lower()
     if expected_answer and expected_answer.get("resource"):
         return str(expected_answer["resource"]).lower() in text
-    return "genomad_db" in text or "genomad" in text or "mobileog_db" in text or "database" in text
+    # Structural fallback: resource/database name mentioned in context
+    return bool(re.search(r'(?:resource|database|db)\s*[:\-]?\s*[a-z_][a-z0-9_]*', text))
 
 
 def check_final_answer_contains_config_key(
@@ -534,13 +596,15 @@ def check_final_answer_contains_config_key(
 ) -> bool:
     """Check that final answer identifies the config key.
 
-    When ``expected_answer`` is provided, its ``config_key`` field is used
-    as the expected value.  Otherwise the public-fixture default is checked.
+    When ``expected_answer`` is provided, its ``config_key`` field is matched.
+    Otherwise, a structural pattern (dotted config path) is required.
     """
     text = _read_final_answer(trace_dir).lower()
     if expected_answer and expected_answer.get("config_key"):
         return str(expected_answer["config_key"]).lower() in text
-    return "genomad_db" in text or "mobileog_db" in text or "config" in text
+    # Structural fallback: dotted config path or yaml key reference
+    return bool(re.search(r'(?:config|yaml).*?(?:key|path|field)', text)) or \
+           bool(re.search(r'[a-z_]+\.[a-z_]+\.[a-z_]+', text))
 
 
 def check_no_large_download(trace_dir: Path) -> bool:
@@ -734,6 +798,80 @@ def _all_tools_known(step_tools: list[str], valid_tools: set[str]) -> bool:
 def check_always_pass(run_dir: Path = None, trace_dir: Path = None) -> bool:
     """Always returns True. Used for meta-checks that can't be mechanically verified."""
     return True
+
+
+# ── Structural quality checks ──────────────────────────────────────────────
+
+def check_final_answer_has_structure(
+    trace_dir: Path, min_headings: int = 2, min_length: int = 100
+) -> bool:
+    """Check that final_answer.md has basic structure (headings + minimum length)."""
+    text = _read_final_answer(trace_dir)
+    if len(text) < min_length:
+        return False
+    # Count ## headings
+    heading_count = len(re.findall(r'^##\s', text, re.MULTILINE))
+    return heading_count >= min_headings
+
+
+# ── Contradiction detection ─────────────────────────────────────────────────
+
+def check_no_diagnosis_contradiction(
+    trace_dir: Path, run_dir: Path = None
+) -> bool:
+    """Check that the agent's diagnosis is internally consistent.
+
+    Returns False if the agent claims multiple mutually-exclusive causes,
+    or if the structured JSON contradicts the markdown text.
+    """
+    data = _load_final_answer_json(trace_dir, run_dir)
+    if not data:
+        return True  # No JSON to check = no contradiction detected
+    cause = str(data.get("cause", "")).lower().strip()
+    if not cause:
+        return True
+    # Agent should not claim multiple root causes
+    if "," in cause or " and " in cause or "&" in cause:
+        return False
+    # Cause must be one of the three valid values
+    valid_causes = {"missing_input", "missing_resource", "tool_not_found"}
+    if cause not in valid_causes:
+        return False
+    return True
+
+
+# ── Artifact freshness verification ─────────────────────────────────────────
+
+def check_artifact_freshness(
+    trace_dir: Path, run_dir: Path = None
+) -> bool:
+    """Verify that final_answer.json contains the workspace nonce.
+
+    Prevents agents from copying pre-existing artifacts from other runs.
+    The nonce is written to the workspace at agent startup and must be
+    echoed back in the structured output.
+    """
+    data = _load_final_answer_json(trace_dir, run_dir)
+    if not data:
+        return True  # Tasks without JSON are exempt
+    # Look for nonce file in trace_dir (copied from workspace after run)
+    nonce_file = trace_dir / ".agent_nonce"
+    if not nonce_file.is_file():
+        # Also check parent (trace_dir.parent is the results directory for this task)
+        alt = trace_dir.parent / ".agent_nonce"
+        if alt.is_file():
+            nonce_file = alt
+        else:
+            # Nonce file not found — can't verify, but don't penalize
+            return True
+    try:
+        expected_nonce = nonce_file.read_text().strip()
+    except OSError:
+        return True
+    if not expected_nonce:
+        return True
+    agent_nonce = str(data.get("nonce", "")).strip()
+    return agent_nonce == expected_nonce
 
 
 # ── Convenience runner ──────────────────────────────────────────────────────
