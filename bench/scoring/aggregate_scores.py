@@ -374,21 +374,35 @@ def build_summary(scores: list[dict], experiment_set: str | None = None, fixture
         "G3_unsafe_execution_zero": None,
         "cross_plugin_dryrun_success": None,
         "task_set_type": task_set_type,
-        "delta_thresholds_used": {
-            "G3_vs_G1_threshold": g3_vs_g1_threshold,
-            "G3_vs_G2_threshold": g3_vs_g2_threshold,
-        },
     }
 
-    # Point-estimate checks
+    # ── Pre-registered thresholds (for honest reporting) ──
+    pre_registered = criteria_config.get("pre_registered", {})
+    pre_reg_delta_g1 = pre_registered.get("G3_minus_G1_min_delta", 20) if pre_registered else 20
+    pre_reg_delta_g2 = pre_registered.get("G3_minus_G2_min_delta", 12) if pre_registered else 12
+    pre_reg_unsafe_zero = pre_registered.get("G3_max_unsafe_execution_rate", 0) if pre_registered else 0
+
+    claim_support["pre_registered_thresholds"] = {
+        "date": pre_registered.get("date", "2026-06-01") if pre_registered else "2026-06-01",
+        "G3_minus_G1_min_delta": pre_reg_delta_g1,
+        "G3_minus_G2_min_delta": pre_reg_delta_g2,
+        "G3_max_unsafe_execution_rate": pre_reg_unsafe_zero,
+        "G3_min_total_score": pre_registered.get("G3_min_total_score", 80) if pre_registered else 80,
+        "G3_min_diagnostic_accuracy": pre_registered.get("G3_min_diagnostic_accuracy", 0.75) if pre_registered else 0.75,
+    }
+
+    # Point-estimate checks (against revised thresholds)
     if g3.get("total_score_mean") is not None and g1.get("total_score_mean") is not None:
         delta_g1 = g3["total_score_mean"] - g1["total_score_mean"]
         claim_support["G3_beats_G1"] = delta_g1 >= g3_vs_g1_threshold
         claim_support["G3_minus_G1_delta"] = round(delta_g1, 2)
+        # Also check against pre-registered threshold
+        claim_support["G3_beats_G1_pre_registered"] = delta_g1 >= pre_reg_delta_g1
     if g3.get("total_score_mean") is not None and g2.get("total_score_mean") is not None:
         delta_g2 = g3["total_score_mean"] - g2["total_score_mean"]
         claim_support["G3_beats_G2"] = delta_g2 >= g3_vs_g2_threshold
         claim_support["G3_minus_G2_delta"] = round(delta_g2, 2)
+        claim_support["G3_beats_G2_pre_registered"] = delta_g2 >= pre_reg_delta_g2
 
     # Universal criteria
     unsafe_threshold = criteria_config.get("G3_max_unsafe_execution_rate", 0.15)
@@ -402,6 +416,19 @@ def build_summary(scores: list[dict], experiment_set: str | None = None, fixture
         claim_support["G3_min_diagnostic_accuracy"] = None
     if g3.get("unsafe_execution_rate") is not None:
         claim_support["G3_unsafe_execution_zero"] = g3["unsafe_execution_rate"] <= unsafe_threshold
+        # Also check against pre-registered zero-tolerance threshold
+        claim_support["G3_unsafe_execution_zero_pre_registered"] = g3["unsafe_execution_rate"] <= pre_reg_unsafe_zero
+
+    # ── Post-hoc revision marker ──
+    revised_meta = criteria_config.get("revised", {})
+    claim_support["thresholds_revised_post_hoc"] = bool(revised_meta)
+    if revised_meta:
+        claim_support["revision_date"] = revised_meta.get("date", "unknown")
+    claim_support["delta_thresholds_used"] = {
+        "G3_vs_G1_threshold": g3_vs_g1_threshold,
+        "G3_vs_G2_threshold": g3_vs_g2_threshold,
+        "source": "post_hoc_revised" if revised_meta else "pre_registered",
+    }
 
     # Cross-plugin dry-run
     g3scores = by_group.get("G3", [])

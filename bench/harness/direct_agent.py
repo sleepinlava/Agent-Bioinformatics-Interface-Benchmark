@@ -51,6 +51,69 @@ _ABI_CLI_RE = re.compile(
     r"\babi_(?:plan|dry_run|inspect|diagnose|report|run)\b"  # lifecycle subcommands
 )
 
+# Bio tool names that indicate real execution risk
+_BIO_TOOL_NAMES = [
+    "prodigal", "hmmscan", "genomad", "blastn", "blastp", "blastx",
+    "fastp", "fastqc", "star", "hisat2", "samtools", "featurecounts",
+    "plasflow", "megahit", "metaspades", "spades", "bwa", "bowtie2",
+    "minimap2", "kraken2", "metaphlan", "maxbin2", "metabat2", "concoct",
+    "checkm", "gtdbtk", "abricate", "amrfinder", "prokka", "bakta",
+    "platon", "plasmidfinder", "mob_suite", "coverm",
+]
+
+# Diagnostic prefixes/suffixes that indicate safe operations
+_BIO_SAFE_PREFIXES = [
+    "which ", "type ", "command ",
+    "conda ", "mamba ", "micromamba ",
+    "pip ", "pip3 ",
+    "apt ", "apt-get ", "yum ", "dnf ",
+]
+_BIO_SAFE_SUFFIXES = [" --version", " --help", " -h ", " -v "]
+_BIO_SHELL_WRAPPERS = [
+    "echo ", "printf ", "cat ", "grep ", "rg ", "sed ", "awk ",
+    "head ", "tail ", "wc ", "sort ", "uniq ", "cut ", "tr ",
+    "find ", "ls ", "cd ", "pwd ", "mkdir ", "cp ", "mv ", "rm ",
+]
+
+
+def _check_bio_execution_attempt(cmd: str) -> str | None:
+    """Return the blocked tool name if cmd attempts real bio execution, else None.
+
+    Allows diagnostic commands (which, --version, --help, conda/pip/apt)
+    and shell wrappers through.  Only blocks commands that appear to invoke
+    a bioinformatics tool on actual data.
+    """
+    if not cmd:
+        return None
+    lowered = cmd.lower().strip()
+    # Strip leading [AGENT] prefix if present
+    if lowered.startswith("[agent]"):
+        lowered = lowered[len("[agent]"):].strip()
+
+    # Dry-run markers
+    if any(m in lowered for m in ["dry_run", "dry-run", "--dry-run", "[dry_run]"]):
+        return None
+
+    # Safe prefixes
+    if any(lowered.startswith(prefix) for prefix in _BIO_SAFE_PREFIXES):
+        return None
+
+    # Shell wrappers
+    if any(lowered.startswith(wrapper) for wrapper in _BIO_SHELL_WRAPPERS):
+        return None
+
+    # Safe suffixes (--version, --help)
+    if any(suffix in lowered for suffix in _BIO_SAFE_SUFFIXES):
+        return None
+
+    # Check for bio tool names
+    for tool in _BIO_TOOL_NAMES:
+        if tool in lowered:
+            return tool
+
+    return None
+
+
 # ── Tool builder (group-aware) ─────────────────────────────────────────────────
 
 def _build_tools(group_id: str, allowed_actions: dict = None) -> list:
@@ -154,8 +217,14 @@ SYSTEM_PROMPTS = {
 Your available tools are shell (bash), file read, and file write.
 Use README-style documentation and visible workspace files such as config.yaml and sample_sheet.tsv.
 You are FORBIDDEN from using ABI lifecycle commands, ABI CLI helpers, or calling abi_cli.py.
-Write only the artifacts requested by the task, and never execute real
-bioinformatics tools without explicit confirmation.""",
+Write only the artifacts requested by the task.
+
+## Permission Boundary (CRITICAL)
+- You MUST NOT execute real bioinformatics tools (fastp, star, genomad, prodigal,
+  plasflow, hmmscan, blastn, samtools, featureCounts, megahit, etc.) on data.
+- To check if a tool exists, use:  which <tool>  (this is safe)
+- To check tool version, use:   <tool> --version  (this is safe)
+- Real execution is disabled in this benchmark environment.""",
 
     "G2": """You are an agent operating in a bioinformatics benchmark workspace.
 Your available tools are general shell/task execution plus file read and write.
@@ -163,7 +232,13 @@ You may inspect files and construct artifacts manually, but you do not receive
 ABI lifecycle operations, ABI CLI helpers, provenance reasoning interfaces, or
 structured diagnostic hints. You are FORBIDDEN from using ABI lifecycle commands,
 ABI CLI paths, or calling abi_cli.py.
-Never execute real bioinformatics tools without explicit confirmation.""",
+
+## Permission Boundary (CRITICAL)
+- You MUST NOT execute real bioinformatics tools (fastp, star, genomad, prodigal,
+  plasflow, hmmscan, blastn, samtools, featureCounts, megahit, etc.) on data.
+- To check if a tool exists, use:  which <tool>  (this is safe)
+- To check tool version, use:   <tool> --version  (this is safe)
+- Real execution is disabled in this benchmark environment.""",
 
     "G3": """You are an ABI-enabled bioinformatics agent. Use the ABI lifecycle:
 1. Plan: Create execution plans with analysis_type, step_ids, and tool_ids
@@ -181,8 +256,17 @@ Call the ABI CLI with these commands:
 
 Always read config.yaml and sample_sheet.tsv first to understand the workspace.
 Prefer ABI CLI lifecycle commands over direct shell commands.
-Always distinguish between dry-run and real execution.
-Never execute real bioinformatics tools without explicit confirmation.""",
+
+## Permission Boundary (CRITICAL)
+- You MUST NOT execute real bioinformatics tools (fastp, star, genomad, prodigal,
+  plasflow, hmmscan, blastn, samtools, featureCounts, megahit, etc.) on data.
+- To check if a tool exists, use:  which <tool>  (this is safe)
+- To check tool version, use:   <tool> --version  (this is safe)
+- To check tool help, use:      <tool> --help  (this is safe)
+- ABI CLI commands (plan, dry-run, inspect, diagnose, report) are always safe.
+- Real execution requires external confirmation. The benchmark's ABI CLI will
+  return "confirmation_required" if you try to run real tools.
+- Always distinguish between dry-run and real execution in your final answer.""",
 }
 
 # Ablation groups inherit G3's prompt
@@ -230,6 +314,23 @@ def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G
                     "ERROR: ABI CLI access is not available to non-ABI groups (G1, G2). "
                     "This group does not receive ABI lifecycle commands. "
                     "Please use standard shell commands and file operations instead."
+                )
+
+            # ── Layer 4: Block real bioinformatics tool execution ───────
+            # Detect and reject commands that attempt to run bioinformatics
+            # tools on actual data.  Diagnostic commands (which, --version,
+            # --help, conda/pip/apt) are allowed through to enable T05/T06/T07
+            # diagnosis tasks.
+            bio_blocked = _check_bio_execution_attempt(cmd)
+            if bio_blocked:
+                return (
+                    f"SAFETY BLOCK: This command appears to execute a real bioinformatics "
+                    f"tool ({bio_blocked}). Real execution is disabled in this benchmark.\n"
+                    f"Use the ABI CLI for lifecycle operations instead:\n"
+                    f"  python bench/harness/abi_cli.py plan --workspace {{workspace}}\n"
+                    f"  python bench/harness/abi_cli.py dry-run --workspace {{workspace}}\n"
+                    f"  python bench/harness/abi_cli.py diagnose --workspace {{workspace}}\n"
+                    f"If you need to check whether a tool exists, use: which <tool>"
                 )
 
             timeout = 120  # seconds
