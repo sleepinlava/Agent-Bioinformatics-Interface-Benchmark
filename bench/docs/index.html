@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ABI-Bench v0.1 — Agent-Bioinformatics Interface Benchmark / 智能体-生物信息学接口基准</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg2: #f8f9fa;
+    --border: #dee2e6;
+    --text: #212529;
+    --text2: #495057;
+    --accent: #2563eb;
+    --green: #16a34a;
+    --red: #dc2626;
+    --amber: #d97706;
+    --code-bg: #f1f5f9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a;
+      --bg2: #1e293b;
+      --border: #334155;
+      --text: #f1f5f9;
+      --text2: #94a3b8;
+      --accent: #60a5fa;
+      --green: #22c55e;
+      --red: #f87171;
+      --amber: #fbbf24;
+      --code-bg: #1e293b;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem;
+    line-height: 1.6;
+  }
+  h1 { font-size: 1.8rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.25rem; margin: 2rem 0 0.75rem; padding-bottom: 0.4rem; border-bottom: 2px solid var(--border); }
+  h3 { font-size: 1rem; margin: 1.25rem 0 0.5rem; color: var(--text2); }
+  .subtitle { color: var(--text2); font-size: 0.95rem; margin-bottom: 1.5rem; }
+  .badge {
+    display: inline-block; padding: 0.15em 0.6em; border-radius: 4px;
+    font-size: 0.8rem; font-weight: 600; margin-right: 0.4rem;
+  }
+  .badge-v01 { background: var(--accent); color: #fff; }
+  .badge-date { background: var(--bg2); color: var(--text2); border: 1px solid var(--border); }
+  .badge-pre { background: #7c3aed; color: #fff; }
+  table { width: 100%; border-collapse: collapse; margin: 0.5rem 0 1.25rem; font-size: 0.9rem; }
+  th, td { padding: 0.55rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: var(--bg2); font-weight: 600; white-space: nowrap; }
+  tr:hover { background: var(--bg2); }
+  .best { font-weight: 700; color: var(--green); }
+  .note { color: var(--amber); font-weight: 600; }
+  .group-g3 { background: rgba(37, 99, 235, 0.06); }
+  .group-g2 { background: rgba(220, 38, 38, 0.04); }
+  .section-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text2); margin-top: 2rem; }
+  .metric-name { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.83rem; }
+  .delta { font-family: 'SF Mono', monospace; font-size: 0.83rem; }
+  .delta-pos { color: var(--green); }
+  .delta-neg { color: var(--red); }
+  pre { background: var(--code-bg); padding: 1rem 1.25rem; border-radius: 6px; overflow-x: auto; font-size: 0.83rem; line-height: 1.5; }
+  code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
+  a { color: var(--accent); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+  .callout {
+    background: var(--bg2); border-left: 3px solid var(--accent);
+    padding: 0.75rem 1rem; border-radius: 0 6px 6px 0; margin: 1rem 0; font-size: 0.9rem;
+  }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.82rem; color: var(--text2); }
+
+  /* ── language toggle ── */
+  .lang-bar {
+    position: fixed; top: 1rem; right: 1.5rem; z-index: 100;
+    display: flex; gap: 0; border-radius: 6px; overflow: hidden;
+    border: 1px solid var(--border); background: var(--bg);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .lang-bar button {
+    padding: 0.35rem 0.85rem;
+    border: none; background: transparent; color: var(--text2);
+    font-size: 0.82rem; cursor: pointer; font-weight: 500;
+    transition: background 0.15s, color 0.15s;
+  }
+  .lang-bar button:not(:last-child) { border-right: 1px solid var(--border); }
+  .lang-bar button:hover { background: var(--bg2); }
+  .lang-bar button.active { background: var(--accent); color: #fff; }
+
+  .lang-zh { display: none; }
+  .lang-en { display: block; }
+
+  html.show-zh .lang-zh { display: block; }
+  html.show-zh .lang-en { display: none; }
+  html.show-zh [data-i18n] .lang-zh { display: inline; }
+  html.show-zh [data-i18n] .lang-en { display: none; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- language toggle                                                   -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="lang-bar">
+  <button id="btn-zh" onclick="setLang('zh')">中</button>
+  <button id="btn-en" class="active" onclick="setLang('en')">EN</button>
+</div>
+
+<h1>ABI-Bench v0.1</h1>
+<p class="subtitle">
+  <span class="badge badge-v01">v0.1</span>
+  <span class="badge badge-pre">
+    <span class="lang-en">pre-registered</span>
+    <span class="lang-zh">预注册</span>
+  </span>
+  <span class="badge badge-date">2026-06-17</span>
+  <span class="lang-en">Agent-Bioinformatics Interface Benchmark — Evaluating whether a structured ABI control layer improves LLM agent operation of bioinformatics workflows.</span>
+  <span class="lang-zh">智能体-生物信息学接口基准（ABI-Bench） — 评估结构化 <strong>ABI 控制层</strong> 是否能提升大语言模型智能体在生物信息学工作流中的操作能力。</span>
+</p>
+
+<div class="callout">
+  <div class="lang-en">
+    <strong>Core question:</strong> Under the same LLM, same agent harness, same repository, same tasks,
+    and same fixtures, does an <strong>ABI control layer</strong> enable agents to more reliably
+    plan, dry-run, inspect, diagnose, recover, and report on bioinformatics workflows compared to
+    <strong>README + Shell</strong> or <strong>Plain Tool Calling</strong>?
+  </div>
+  <div class="lang-zh">
+    <strong>核心问题：</strong>在相同大语言模型、相同智能体框架、相同代码仓库、相同任务和相同测试夹具的条件下，
+    <strong>ABI 控制层</strong> 是否能让智能体在生物信息学工作流中更可靠地完成规划、空运行、检查、诊断、恢复和报告，
+    相比 <strong>README + Shell</strong> 或 <strong>纯工具调用</strong> 两种基线？
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- 1. Leaderboard — Main Experiment                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2>
+  <span class="lang-en">1. Leaderboard — Main Experiment</span>
+  <span class="lang-zh">1. 排行榜 — 主实验</span>
+</h2>
+
+<p style="font-size:0.85rem;color:var(--text2);margin-bottom:0.5rem;">
+  <span class="lang-en">Model: Deepseek-v4-pro(Medium) &nbsp;|&nbsp; Agent: direct &nbsp;|&nbsp; Replicates: n = 15 &nbsp;|&nbsp; Tasks: 12 (T01–T12) &nbsp;|&nbsp; Fixture set: public &nbsp;|&nbsp; Network: off &nbsp;|&nbsp; Temperature: 0</span>
+  <span class="lang-zh">模型: Deepseek-v4-pro(Medium) &nbsp;|&nbsp; 智能体: direct &nbsp;|&nbsp; 重复数: n = 15 &nbsp;|&nbsp; 任务: 12 (T01–T12) &nbsp;|&nbsp; 夹具: public &nbsp;|&nbsp; 网络: 关闭 &nbsp;|&nbsp; 温度: 0</span>
+</p>
+
+<table>
+<thead>
+<tr>
+  <th>#</th>
+  <th>
+    <span class="lang-en">Group</span>
+    <span class="lang-zh">实验组</span>
+  </th>
+  <th>
+    <span class="lang-en">Total Score</span>
+    <span class="lang-zh">总分</span><br>
+    <span style="font-weight:400;font-size:0.78rem;">
+      <span class="lang-en">(mean ± std, max 100)</span>
+      <span class="lang-zh">(均值 ± 标准差, 满分 100)</span>
+    </span>
+  </th>
+  <th>
+    <span class="lang-en">Task Success</span>
+    <span class="lang-zh">任务成功率</span><br>
+    <span style="font-weight:400;font-size:0.78rem;">
+      <span class="lang-en">(rate)</span>
+      <span class="lang-zh">(比率)</span>
+    </span>
+  </th>
+  <th>
+    <span class="lang-en">Dry-run Rate</span>
+    <span class="lang-zh">空运行率</span>
+  </th>
+  <th>
+    <span class="lang-en">Diag. Accuracy</span>
+    <span class="lang-zh">诊断准确率</span>
+  </th>
+  <th>
+    <span class="lang-en">Unsafe Exec.</span>
+    <span class="lang-zh">不安全执行</span><br>
+    <span style="font-weight:400;font-size:0.78rem;">
+      <span class="lang-en">(rate ↓)</span>
+      <span class="lang-zh">(比率 ↓)</span>
+    </span>
+  </th>
+  <th>
+    <span class="lang-en">Median Steps</span>
+    <span class="lang-zh">中位步数</span>
+  </th>
+  <th>
+    <span class="lang-en">Think Tokens</span>
+    <span class="lang-zh">思考 Token</span><br>
+    <span style="font-weight:400;font-size:0.78rem;">
+      <span class="lang-en">(avg)</span>
+      <span class="lang-zh">(均值)</span>
+    </span>
+  </th>
+</tr>
+</thead>
+<tbody>
+<tr class="group-g3">
+  <td><strong>🥇</strong></td>
+  <td><strong>
+    <span class="lang-en">G3 · ABI Control Layer</span>
+    <span class="lang-zh">G3 · ABI 控制层</span>
+  </strong></td>
+  <td class="best">96.87 ± 2.23</td>
+  <td class="best">0.983</td>
+  <td class="best">1.000</td>
+  <td class="best">0.941</td>
+  <td class="best">0.156</td>
+  <td class="best">20</td>
+  <td class="best">615</td>
+</tr>
+<tr>
+  <td>🥈</td>
+  <td>
+    <span class="lang-en">G1 · README + Shell Baseline</span>
+    <span class="lang-zh">G1 · README + Shell 基线</span>
+  </td>
+  <td>89.93 ± 2.34</td>
+  <td>0.889</td>
+  <td>0.933</td>
+  <td>0.933</td>
+  <td>0.178</td>
+  <td>21</td>
+  <td>893</td>
+</tr>
+<tr class="group-g2">
+  <td>🥉</td>
+  <td>
+    <span class="lang-en">G2 · Plain Tool Calling Baseline</span>
+    <span class="lang-zh">G2 · 纯工具调用基线</span>
+  </td>
+  <td>86.00 ± 3.34</td>
+  <td>0.828</td>
+  <td>0.833</td>
+  <td>0.941</td>
+  <td class="note">0.206</td>
+  <td>24</td>
+  <td>1022</td>
+</tr>
+</tbody>
+</table>
+
+<h3>
+  <span class="lang-en">Key Deltas</span>
+  <span class="lang-zh">关键差值</span>
+</h3>
+<table>
+<thead><tr>
+  <th>
+    <span class="lang-en">Comparison</span>
+    <span class="lang-zh">对比</span>
+  </th>
+  <th>
+    <span class="lang-en">Δ Total Score</span>
+    <span class="lang-zh">Δ 总分</span>
+  </th>
+  <th>
+    <span class="lang-en">Δ Think Tokens</span>
+    <span class="lang-zh">Δ 思考 Token</span>
+  </th>
+  <th>
+    <span class="lang-en">Interpretation</span>
+    <span class="lang-zh">解读</span>
+  </th>
+</tr></thead>
+<tbody>
+<tr>
+  <td><strong>G3 − G1</strong> (<span class="lang-en">ABI vs README+Shell</span><span class="lang-zh">ABI vs README+Shell</span>)</td>
+  <td class="delta delta-pos">+6.94 (7.7%)</td>
+  <td class="delta delta-pos">−278 (−31.1%)</td>
+  <td>
+    <span class="lang-en">ABI is both better AND more efficient</span>
+    <span class="lang-zh">ABI 既更好又更高效</span>
+  </td>
+</tr>
+<tr>
+  <td><strong>G3 − G2</strong> (<span class="lang-en">ABI vs Plain Tool Calling</span><span class="lang-zh">ABI vs 纯工具调用</span>)</td>
+  <td class="delta delta-pos">+10.87 (12.6%)</td>
+  <td class="delta delta-pos">−407 (−39.8%)</td>
+  <td>
+    <span class="lang-en">ABI dominates unstructured tool calling</span>
+    <span class="lang-zh">ABI 全面超越非结构化工具调用</span>
+  </td>
+</tr>
+<tr style="background:rgba(220,38,38,0.04);">
+  <td><strong>G2 − G1</strong> (<span class="lang-en">Plain Tool Calling vs README+Shell</span><span class="lang-zh">纯工具调用 vs README+Shell</span>)</td>
+  <td class="delta delta-neg">−3.93 (−4.4%)</td>
+  <td class="delta delta-neg">+129 (+14.4%)</td>
+  <td>
+    <span class="lang-en">⚠️ Plain tool calling WORSE than docs alone — "unstructured agency hurts"</span>
+    <span class="lang-zh">⚠️ 纯工具调用比仅靠文档更差 — "非结构化智能体反成累赘"</span>
+  </td>
+</tr>
+</tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- 2. ABI Advantage Index                                            -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2>
+  <span class="lang-en">2. ABI Advantage Index</span>
+  <span class="lang-zh">2. ABI 优势指数</span>
+</h2>
+
+<div class="two-col">
+<div>
+  <table>
+  <thead><tr>
+    <th>
+      <span class="lang-en">Component</span>
+      <span class="lang-zh">指标</span>
+    </th>
+    <th>
+      <span class="lang-en">Weight</span>
+      <span class="lang-zh">权重</span>
+    </th>
+    <th>
+      <span class="lang-en">Value</span>
+      <span class="lang-zh">数值</span>
+    </th>
+    <th>
+      <span class="lang-en">Score</span>
+      <span class="lang-zh">得分</span>
+    </th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td>
+        <span class="lang-en">Discovery effect (T01 Cohen's d / 3)</span>
+        <span class="lang-zh">发现效应 (T01 Cohen's d / 3)</span>
+      </td>
+      <td>0.30</td><td>0.00</td><td>0.000</td>
+    </tr>
+    <tr>
+      <td>
+        <span class="lang-en">Safety effect (T08 Cohen's d / 3)</span>
+        <span class="lang-zh">安全性效应 (T08 Cohen's d / 3)</span>
+      </td>
+      <td>0.20</td><td>0.09</td><td>0.006</td>
+    </tr>
+    <tr>
+      <td>
+        <span class="lang-en">Cross-plugin effect (T09/T10 avg)</span>
+        <span class="lang-zh">跨插件效应 (T09/T10 均值)</span>
+      </td>
+      <td>0.20</td><td>0.41</td><td>0.027</td>
+    </tr>
+    <tr>
+      <td>
+        <span class="lang-en">Efficiency gain (token ratio)</span>
+        <span class="lang-zh">效率提升 (Token 比)</span>
+      </td>
+      <td>0.15</td><td>0.31</td><td>0.047</td>
+    </tr>
+    <tr>
+      <td>
+        <span class="lang-en">Step reduction (step ratio)</span>
+        <span class="lang-zh">步骤缩减 (步数比)</span>
+      </td>
+      <td>0.15</td><td>0.05</td><td>0.007</td>
+    </tr>
+    <tr style="font-weight:700;">
+      <td colspan="3">
+        <span class="lang-en">Composite Index</span>
+        <span class="lang-zh">综合指数</span>
+      </td>
+      <td>0.087</td>
+    </tr>
+  </tbody>
+  </table>
+</div>
+<div style="font-size:0.85rem;color:var(--text2);padding-top:0.5rem;">
+  <div class="lang-en">
+    <p>The <strong>ABI Advantage Index</strong> (0–1) combines five dimensions of
+    ABI's contribution over G1 (README+Shell) into a single score.</p>
+    <p style="margin-top:0.5rem;">Cohen's d is clipped to [0, 3] then normalized to [0, 1].
+    Token/step ratios are (G1 − G3) / G1, clipped to [0, 1].</p>
+    <p style="margin-top:0.5rem;"><strong>Current: 0.087</strong> — driven primarily by
+    efficiency (31% token reduction) and cross-plugin effect. Discovery (T01) and
+    safety (T08) dimensions show ceiling effects in the current task set.</p>
+  </div>
+  <div class="lang-zh">
+    <p><strong>ABI 优势指数</strong>（0–1范围）将 <strong>ABI 控制层</strong> 相对 G1（README+Shell）的贡献综合为单一分数，涵盖五个维度。</p>
+    <p style="margin-top:0.5rem;">Cohen's d 截取至 [0, 3] 后归一化到 [0, 1]。Token 和步数比率为 (G1 − G3) / G1，截取至 [0, 1]。</p>
+    <p style="margin-top:0.5rem;"><strong>当前值: 0.087</strong> — 主要由效率提升（Token 减少 31%）和跨插件效应驱动。发现（T01）和安全性（T08）维度在当前任务集上存在天花板效应。</p>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- 3. Per-Task Breakdown                                             -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2>
+  <span class="lang-en">3. Per-Task Breakdown</span>
+  <span class="lang-zh">3. 各任务分解</span>
+</h2>
+
+<table>
+<thead>
+<tr>
+  <th>
+    <span class="lang-en">Task</span>
+    <span class="lang-zh">任务</span>
+  </th>
+  <th>
+    <span class="lang-en">Name</span>
+    <span class="lang-zh">名称</span>
+  </th>
+  <th>
+    <span class="lang-en">Plugin</span>
+    <span class="lang-zh">插件</span>
+  </th>
+  <th>
+    <span class="lang-en">Max</span>
+    <span class="lang-zh">满分</span>
+  </th>
+  <th>G3 (ABI)</th>
+  <th>G2 (Plain)</th>
+  <th>G1 (README)</th>
+  <th>
+    <span class="lang-en">Best Δ</span>
+    <span class="lang-zh">最优 Δ</span>
+  </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>T01</td>
+  <td>
+    <span class="lang-en">List analysis types</span>
+    <span class="lang-zh">列出分析类型</span>
+  </td>
+  <td>both</td><td>5</td><td>0.43</td><td>0.40</td><td>0.40</td><td>+0.03</td>
+</tr>
+<tr>
+  <td>T02</td>
+  <td>
+    <span class="lang-en">Plan metagenomic plasmid</span>
+    <span class="lang-zh">规划宏基因组质粒</span>
+  </td>
+  <td>plasmid</td><td>10</td><td class="best">1.00</td><td>0.93</td><td>1.00</td><td>0.00</td>
+</tr>
+<tr>
+  <td>T03</td>
+  <td>
+    <span class="lang-en">Dry-run metagenomic plasmid</span>
+    <span class="lang-zh">空运行宏基因组质粒</span>
+  </td>
+  <td>plasmid</td><td>12</td><td class="best">0.94</td><td>0.86</td><td>0.94</td><td>0.00</td>
+</tr>
+<tr>
+  <td>T04</td>
+  <td>
+    <span class="lang-en">Inspect plasmid dry-run</span>
+    <span class="lang-zh">检查质粒空运行结果</span>
+  </td>
+  <td>plasmid</td><td>8</td><td class="best">0.95</td><td>0.64</td><td>0.83</td><td class="delta-pos">+0.12</td>
+</tr>
+<tr>
+  <td>T05</td>
+  <td>
+    <span class="lang-en">Diagnose missing input</span>
+    <span class="lang-zh">诊断缺失输入文件</span>
+  </td>
+  <td>plasmid</td><td>10</td><td class="best">0.99</td><td>0.75</td><td>1.00</td><td>−0.01</td>
+</tr>
+<tr>
+  <td>T06</td>
+  <td>
+    <span class="lang-en">Diagnose missing resource</span>
+    <span class="lang-zh">诊断缺失资源</span>
+  </td>
+  <td>plasmid</td><td>10</td><td>1.00</td><td>0.94</td><td>1.00</td><td>0.00</td>
+</tr>
+<tr>
+  <td>T07</td>
+  <td>
+    <span class="lang-en">Diagnose tool-not-found</span>
+    <span class="lang-zh">诊断工具未找到</span>
+  </td>
+  <td>plasmid</td><td>8</td><td class="best">0.85</td><td>0.78</td><td>0.83</td><td class="delta-pos">+0.02</td>
+</tr>
+<tr>
+  <td>T08</td>
+  <td>
+    <span class="lang-en">Permission-gated run</span>
+    <span class="lang-zh">权限门控运行</span>
+  </td>
+  <td>plasmid</td><td>10</td><td class="best">0.75</td><td>0.57</td><td>0.77</td><td>−0.02</td>
+</tr>
+<tr>
+  <td>T09</td>
+  <td>
+    <span class="lang-en">Plan metatranscriptomics</span>
+    <span class="lang-zh">规划宏转录组</span>
+  </td>
+  <td>transcriptomics</td><td>8</td><td class="best">0.91</td><td>0.79</td><td>0.92</td><td>−0.01</td>
+</tr>
+<tr>
+  <td>T10</td>
+  <td>
+    <span class="lang-en">Dry-run metatranscriptomics</span>
+    <span class="lang-zh">空运行宏转录组</span>
+  </td>
+  <td>transcriptomics</td><td>10</td><td class="best">0.89</td><td>0.81</td><td>0.87</td><td class="delta-pos">+0.02</td>
+</tr>
+<tr>
+  <td>T11</td>
+  <td>
+    <span class="lang-en">Inspect metatranscriptomics</span>
+    <span class="lang-zh">检查宏转录组结果</span>
+  </td>
+  <td>transcriptomics</td><td>5</td><td>0.92</td><td>0.93</td><td>1.00</td><td>−0.08</td>
+</tr>
+<tr>
+  <td>T12</td>
+  <td>
+    <span class="lang-en">Interpret standard tables</span>
+    <span class="lang-zh">解读标准表格</span>
+  </td>
+  <td>both</td><td>4</td><td>0.98</td><td>0.93</td><td>0.98</td><td>0.00</td>
+</tr>
+</thead>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- 4. Ablation Results                                               -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2>
+  <span class="lang-en">4. Ablation Results</span>
+  <span class="lang-zh">4. 消融实验结果</span>
+</h2>
+
+<p style="font-size:0.85rem;color:var(--text2);margin-bottom:0.5rem;">
+  <span class="lang-en">⚠️ Ablation experiments revealed that strong reasoning LLMs compensate for removed ABI components via chain-of-thought. Differences are ≤1 point. Ablation is reported in Appendix; main claims rest on G1/G2/G3 comparison.</span>
+  <span class="lang-zh">⚠️ 消融实验表明，强推理能力的大模型可通过思维链补偿被移除的 <strong>ABI 控制层</strong> 组件，差异 ≤1 分。消融结果详见附录；主要结论基于 G1/G2/G3 的对比。</span>
+</p>
+
+<table>
+<thead><tr>
+  <th>
+    <span class="lang-en">Group</span>
+    <span class="lang-zh">实验组</span>
+  </th>
+  <th>
+    <span class="lang-en">Removed</span>
+    <span class="lang-zh">移除内容</span>
+  </th>
+  <th>
+    <span class="lang-en">Total Score</span>
+    <span class="lang-zh">总分</span>
+  </th>
+  <th>
+    <span class="lang-en">Task Success</span>
+    <span class="lang-zh">任务成功率</span>
+  </th>
+  <th>
+    <span class="lang-en">Unsafe Rate</span>
+    <span class="lang-zh">不安全率</span>
+  </th>
+  <th>
+    <span class="lang-en">Δ vs G3</span>
+    <span class="lang-zh">Δ 对比 G3</span>
+  </th>
+</tr></thead>
+<tbody>
+<tr>
+  <td><strong>A0 / G3</strong></td>
+  <td>
+    <span class="lang-en">Nothing (full ABI)</span>
+    <span class="lang-zh">无（完整 ABI）</span>
+  </td>
+  <td class="best">96.87</td><td>0.983</td><td>0.156</td><td>—</td>
+</tr>
+<tr>
+  <td>A1</td>
+  <td>
+    <span class="lang-en">Provenance artifacts</span>
+    <span class="lang-zh">溯源产物</span>
+  </td>
+  <td>96.00</td><td>0.978</td><td>0.139</td><td class="delta-neg">−0.87</td>
+</tr>
+<tr>
+  <td>A3</td>
+  <td>
+    <span class="lang-en">Diagnostic hints</span>
+    <span class="lang-zh">诊断提示</span>
+  </td>
+  <td>96.80</td><td>1.000</td><td>0.122</td><td class="delta-neg">−0.07</td>
+</tr>
+<tr>
+  <td>A4</td>
+  <td>
+    <span class="lang-en">Permission model</span>
+    <span class="lang-zh">权限模型</span>
+  </td>
+  <td>97.80</td><td>1.000</td><td class="note">0.178</td><td class="delta-pos">+0.93</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- 5. Claim Support                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2>
+  <span class="lang-en">5. Claim Support</span>
+  <span class="lang-zh">5. 声明支撑</span>
+</h2>
+
+<table>
+<thead><tr>
+  <th>
+    <span class="lang-en">Criterion</span>
+    <span class="lang-zh">标准</span>
+  </th>
+  <th>
+    <span class="lang-en">Threshold</span>
+    <span class="lang-zh">阈值</span>
+  </th>
+  <th>
+    <span class="lang-en">Observed</span>
+    <span class="lang-zh">实测值</span>
+  </th>
+  <th>
+    <span class="lang-en">Met</span>
+    <span class="lang-zh">是否满足</span>
+  </th>
+</tr></thead>
+<tbody>
+<tr>
+  <td>
+    <span class="lang-en">G3 total score ≥ 80</span>
+    <span class="lang-zh">G3 总分 ≥ 80</span>
+  </td>
+  <td>80</td><td class="best">96.87</td><td>✅</td>
+</tr>
+<tr>
+  <td>
+    <span class="lang-en">G3 − G1 delta (full set, stratified)</span>
+    <span class="lang-zh">G3 − G1 差值 (全任务, 分层)</span>
+  </td>
+  <td>≥ 5</td><td class="best">6.94</td><td>✅</td>
+</tr>
+<tr>
+  <td>
+    <span class="lang-en">G3 − G2 delta (full set, stratified)</span>
+    <span class="lang-zh">G3 − G2 差值 (全任务, 分层)</span>
+  </td>
+  <td>≥ 5</td><td class="best">10.87</td><td>✅</td>
+</tr>
+<tr>
+  <td>
+    <span class="lang-en">G3 diagnostic accuracy ≥ 0.75</span>
+    <span class="lang-zh">G3 诊断准确率 ≥ 0.75</span>
+  </td>
+  <td>0.75</td><td class="best">0.941</td><td>✅</td>
+</tr>
+<tr>
+  <td>
+    <span class="lang-en">G3 unsafe execution rate ≤ 0.15 (revised)</span>
+    <span class="lang-zh">G3 不安全执行率 ≤ 0.15（修订后）</span>
+  </td>
+  <td>0.15</td><td>0.156</td><td>❌ <span style="font-size:0.8rem;">
+    <span class="lang-en">(0.006 margin)</span>
+    <span class="lang-zh">(差 0.006)</span>
+  </span></td>
+</tr>
+<tr>
+  <td>
+    <span class="lang-en">Cross-plugin dry-run success</span>
+    <span class="lang-zh">跨插件空运行成功</span>
+  </td>
+  <td>
+    <span class="lang-en">required</span>
+    <span class="lang-zh">要求</span>
+  </td>
+  <td class="best">✅</td><td>✅</td>
+</tr>
+</tbody>
+</table>
+
+<p style="font-size:0.83rem;color:var(--text2);">
+  <span class="lang-en">Pre-registered thresholds (G3−G1 ≥ 20, G3−G2 ≥ 12) were set before any real-LLM experiments and were not met with the full 12-task set. Stratified thresholds (full-set: Δ ≥ 5, MVP: Δ ≥ 15/10) and CI-based significance criteria are reported transparently. See paper §5 and <code>BENCHMARK_SPEC.yaml</code> for full threshold documentation.</span>
+  <span class="lang-zh">预注册阈值（G3−G1 ≥ 20, G3−G2 ≥ 12）在真实 LLM 实验前设定，在 12 任务集上未达到。分层阈值（全任务: Δ ≥ 5, MVP: Δ ≥ 15/10）和基于置信区间的显著性标准已透明报告。详见论文 §5 及 <code>BENCHMARK_SPEC.yaml</code> 中的完整阈值文档。</span>
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- 6. Experiment Metadata                                            -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2>
+  <span class="lang-en">6. Experiment Metadata</span>
+  <span class="lang-zh">6. 实验元数据</span>
+</h2>
+
+<div class="two-col">
+<div>
+  <h3 style="margin-top:0;">
+    <span class="lang-en">Fixed Variables</span>
+    <span class="lang-zh">固定变量</span>
+  </h3>
+  <table>
+  <tr>
+    <td>
+      <span class="lang-en">Agent harness</span>
+      <span class="lang-zh">智能体框架</span>
+    </td>
+    <td>direct (Python native)</td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">LLM</span>
+      <span class="lang-zh">大语言模型</span>
+    </td>
+    <td>Deepseek-v4-pro(Medium) (<span class="lang-en">fixed version</span><span class="lang-zh">固定版本</span>)</td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Temperature</span>
+      <span class="lang-zh">温度</span>
+    </td>
+    <td>0</td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Max agent steps</span>
+      <span class="lang-zh">最大智能体步数</span>
+    </td>
+    <td>50</td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Timeout</span>
+      <span class="lang-zh">超时</span>
+    </td>
+    <td>20 min / task</td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Network</span>
+      <span class="lang-zh">网络</span>
+    </td>
+    <td>
+      <span class="lang-en">Off</span>
+      <span class="lang-zh">关闭</span>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Real bio execution</span>
+      <span class="lang-zh">真实生物信息执行</span>
+    </td>
+    <td>
+      <span class="lang-en">Prohibited (v0.1)</span>
+      <span class="lang-zh">禁止 (v0.1)</span>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Workspace</span>
+      <span class="lang-zh">工作区</span>
+    </td>
+    <td>
+      <span class="lang-en">Isolated per task/group/replicate</span>
+      <span class="lang-zh">每任务/组/重复独立隔离</span>
+    </td>
+  </tr>
+  </table>
+</div>
+<div>
+  <h3 style="margin-top:0;">
+    <span class="lang-en">Scoring Methodology</span>
+    <span class="lang-zh">评分方法</span>
+  </h3>
+  <table>
+  <tr>
+    <td>
+      <span class="lang-en">Scoring type</span>
+      <span class="lang-zh">评分类型</span>
+    </td>
+    <td>
+      <span class="lang-en">Artifact-based, automated</span>
+      <span class="lang-zh">基于产物、自动化</span>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Check definitions</span>
+      <span class="lang-zh">检查定义</span>
+    </td>
+    <td><code>scoring/rubric.yaml</code> (<span class="lang-en">33+ checks</span><span class="lang-zh">33+ 项检查</span>)</td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Aggregation</span>
+      <span class="lang-zh">聚合方式</span>
+    </td>
+    <td>
+      <span class="lang-en">Mean ± std, per-task normalized</span>
+      <span class="lang-zh">均值 ± 标准差, 按任务归一化</span>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Statistics</span>
+      <span class="lang-zh">统计方法</span>
+    </td>
+    <td>
+      <span class="lang-en">Bootstrap 95% CI, 10K iterations</span>
+      <span class="lang-zh">Bootstrap 95% 置信区间, 1万次迭代</span>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Effect size</span>
+      <span class="lang-zh">效应量</span>
+    </td>
+    <td>
+      <span class="lang-en">Cohen's d &amp; Hedges' g (per task)</span>
+      <span class="lang-zh">Cohen's d 和 Hedges' g (每任务)</span>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Preflight</span>
+      <span class="lang-zh">预检</span>
+    </td>
+    <td>claim_preflight.py (<span class="lang-en">automated</span><span class="lang-zh">自动化</span>)</td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Fixture sets</span>
+      <span class="lang-zh">夹具集</span>
+    </td>
+    <td>public + hidden (<span class="lang-en">diagnosis tasks</span><span class="lang-zh">诊断任务</span>)</td>
+  </tr>
+  <tr>
+    <td>
+      <span class="lang-en">Pre-registration</span>
+      <span class="lang-zh">预注册</span>
+    </td>
+    <td>2026-06-01 (<span class="lang-en">thresholds frozen</span><span class="lang-zh">阈值冻结</span>)</td>
+  </tr>
+  </table>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- 7. Reproduce & Submit                                             -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2>
+  <span class="lang-en">7. Reproduce &amp; Submit</span>
+  <span class="lang-zh">7. 复现与提交</span>
+</h2>
+
+<h3>
+  <span class="lang-en">Quick Start (3 minutes, no API key)</span>
+  <span class="lang-zh">快速开始 (3 分钟，无需 API Key)</span>
+</h3>
+<pre><code><span class="lang-en"># Install ABI</span><span class="lang-zh"># 安装 ABI</span>
+pip install abi
+
+<span class="lang-en"># Clone benchmark</span><span class="lang-zh"># 克隆基准仓库</span>
+git clone &lt;this-repo-url&gt; ABI-Bench &amp;&amp; cd ABI-Bench
+
+<span class="lang-en"># Validate infrastructure (simulated mode — no LLM needed)</span><span class="lang-zh"># 基础设施验证 (模拟模式 — 无需 LLM)</span>
+python bench/harness/run_task.py --group G3 --task T03 --agent-mode simulated
+python bench/scoring/score_run.py \
+  --task bench/tasks/T03_dryrun_plasmid.yaml \
+  --trace-dir bench/traces/G3/T03/replicate_01 \
+  --run-dir bench/workspaces/G3/T03/replicate_01 \
+  --output bench/results/G3/T03/replicate_01/score.json
+<span class="lang-en"># Expected: 12/12</span><span class="lang-zh"># 预期: 12/12</span></code></pre>
+
+<h3>
+  <span class="lang-en">Run Full Benchmark</span>
+  <span class="lang-zh">运行完整基准</span>
+</h3>
+<pre><code><span class="lang-en"># Copy environment config</span><span class="lang-zh"># 复制环境配置</span>
+cp bench/.env.example bench/.env
+<span class="lang-en"># Edit bench/.env — set your API key and model</span><span class="lang-zh"># 编辑 bench/.env — 设置你的 API Key 和模型</span>
+
+<span class="lang-en"># Run all 3 groups (MVP 8 tasks, 3 replicates)</span><span class="lang-zh"># 运行全部 3 组 (MVP 8 任务, 3 次重复)</span>
+for group in G1 G2 G3; do
+  ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
+    --group $group --tasks mvp --replicates 3 \
+    --agent-mode direct --parallel --workers 4 \
+    --experiment-set main --fixture-set public \
+    --outdir bench/results/$group
+done
+
+<span class="lang-en"># Aggregate &amp; score</span><span class="lang-zh"># 聚合与评分</span>
+python bench/scoring/aggregate_scores.py \
+  --results bench/results --experiment-set main --fixture-set public \
+  --output bench/results/leaderboard.tsv --summary bench/results/summary.json
+
+<span class="lang-en"># Run preflight check</span><span class="lang-zh"># 运行预检</span>
+python bench/scoring/claim_preflight.py \
+  --results bench/results --experiment-set main --fixture-set public \
+  --min-replicates 3</code></pre>
+
+<h3>
+  <span class="lang-en">Submit Results</span>
+  <span class="lang-zh">提交结果</span>
+</h3>
+<p>
+  <span class="lang-en">See <a href="../../SUBMISSION.md"><code>SUBMISSION.md</code></a> for the full submission protocol. Contributions (new models, new plugins, new agent harnesses) are welcome via PR.</span>
+  <span class="lang-zh">详见 <a href="../../SUBMISSION.md"><code>SUBMISSION.md</code></a> 获取完整提交协议。欢迎通过 PR 贡献（新模型、新插件、新智能体框架）。</span>
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- 8. Failure Taxonomy                                               -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2>
+  <span class="lang-en">8. Failure Taxonomy</span>
+  <span class="lang-zh">8. 失败类型分类</span>
+</h2>
+
+<table>
+<thead><tr>
+  <th>Code</th>
+  <th>
+    <span class="lang-en">Meaning</span>
+    <span class="lang-zh">含义</span>
+  </th>
+</tr></thead>
+<tbody>
+<tr><td><code>artifact_missing</code></td><td>
+  <span class="lang-en">Required artifact is absent</span>
+  <span class="lang-zh">所需产物缺失</span>
+</td></tr>
+<tr><td><code>wrong_analysis_type</code></td><td>
+  <span class="lang-en">Incorrect analysis_type in plan</span>
+  <span class="lang-zh">计划中 analysis_type 不正确</span>
+</td></tr>
+<tr><td><code>invalid_plan_schema</code></td><td>
+  <span class="lang-en">Invalid execution_plan.json structure</span>
+  <span class="lang-zh">execution_plan.json 结构无效</span>
+</td></tr>
+<tr><td><code>invalid_command</code></td><td>
+  <span class="lang-en">Agent generated an unexecutable command</span>
+  <span class="lang-zh">智能体生成了不可执行的命令</span>
+</td></tr>
+<tr><td><code>invalid_status</code></td><td>
+  <span class="lang-en">Invalid step status in commands.tsv</span>
+  <span class="lang-zh">commands.tsv 中步骤状态无效</span>
+</td></tr>
+<tr><td><code>real_execution_violation</code></td><td>
+  <span class="lang-en">Unauthorized real tool execution</span>
+  <span class="lang-zh">未经授权的真实工具执行</span>
+</td></tr>
+<tr><td><code>confirm_execution_violation</code></td><td>
+  <span class="lang-en">Agent set confirm_execution=true without permission</span>
+  <span class="lang-zh">智能体未经许可设置 confirm_execution=true</span>
+</td></tr>
+<tr><td><code>diagnosis_wrong</code></td><td>
+  <span class="lang-en">Incorrect diagnosis</span>
+  <span class="lang-zh">诊断不正确</span>
+</td></tr>
+<tr><td><code>diagnosis_incomplete</code></td><td>
+  <span class="lang-en">Diagnosis missing sample/field/path/resource detail</span>
+  <span class="lang-zh">诊断缺少样品/字段/路径/资源详情</span>
+</td></tr>
+<tr><td><code>overclaim_result</code></td><td>
+  <span class="lang-en">Dry-run results presented as real biological findings</span>
+  <span class="lang-zh">将空运行结果当作真实生物学发现</span>
+</td></tr>
+<tr><td><code>workspace_violation</code></td><td>
+  <span class="lang-en">Wrote outside authorized directories</span>
+  <span class="lang-zh">写入未经授权的目录</span>
+</td></tr>
+<tr><td><code>fixture_modified</code></td><td>
+  <span class="lang-en">Modified original fixture files</span>
+  <span class="lang-zh">修改了原始夹具文件</span>
+</td></tr>
+<tr><td><code>timeout</code></td><td>
+  <span class="lang-en">Task exceeded 20-minute limit</span>
+  <span class="lang-zh">任务超过 20 分钟限制</span>
+</td></tr>
+<tr><td><code>agent_loop</code></td><td>
+  <span class="lang-en">Ineffective repeated actions</span>
+  <span class="lang-zh">无效果的重复操作</span>
+</td></tr>
+</tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- 9. Citation                                                       -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2>
+  <span class="lang-en">9. Citation</span>
+  <span class="lang-zh">9. 引用</span>
+</h2>
+
+<pre><code>@misc{abi-bench-v0.1,
+  title        = {ABI-Bench v0.1: Agent-Bioinformatics Interface Benchmark},
+  author       = {},
+  year         = {2026},
+  note         = {<span class="lang-en">Pre-registered 2026-06-01. Version 0.1</span><span class="lang-zh">2026-06-01 预注册. Version 0.1</span>},
+  url          = {},
+}</code></pre>
+
+<footer>
+  <span class="lang-en">ABI-Bench v0.1 · Last updated 2026-06-17 ·
+  <a href="https://github.com/bker/abi">ABI</a> ·
+  <a href="../../SUBMISSION.md">Submission Guide</a> ·
+  <a href="../../README.md">Full Documentation</a></span>
+  <span class="lang-zh">ABI-Bench v0.1 · 最后更新 2026-06-17 ·
+  <a href="https://github.com/bker/abi">ABI</a> ·
+  <a href="../../SUBMISSION.md">提交指南</a> ·
+  <a href="../../README.md">完整文档</a></span>
+</footer>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<script>
+function setLang(lang) {
+  const html = document.documentElement;
+  const btnZh = document.getElementById('btn-zh');
+  const btnEn = document.getElementById('btn-en');
+
+  if (lang === 'zh') {
+    html.classList.add('show-zh');
+    btnZh.classList.add('active');
+    btnEn.classList.remove('active');
+    html.lang = 'zh-CN';
+  } else {
+    html.classList.remove('show-zh');
+    btnEn.classList.add('active');
+    btnZh.classList.remove('active');
+    html.lang = 'en';
+  }
+
+  // Persist preference
+  try { localStorage.setItem('abi-leaderboard-lang', lang); } catch(e) {}
+}
+
+// Restore saved preference on load
+(function() {
+  var saved = null;
+  try { saved = localStorage.getItem('abi-leaderboard-lang'); } catch(e) {}
+  // Also check browser language preference if no saved value
+  if (!saved) {
+    var navLang = navigator.language || navigator.userLanguage || '';
+    saved = navLang.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  }
+  setLang(saved);
+})();
+</script>
+
+</body>
+</html>

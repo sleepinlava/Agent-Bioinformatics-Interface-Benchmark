@@ -4,6 +4,8 @@
 
 ## Agent-Bioinformatics Interface Benchmark
 
+> 📋 **Submission Guide**: [English](SUBMISSION.md) | [中文版](SUBMISSION.zh.md)
+
 ---
 
 ## 1. What is ABI-Bench
