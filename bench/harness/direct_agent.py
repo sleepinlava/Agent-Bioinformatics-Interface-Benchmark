@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import re
+import statistics
 import subprocess
 import sys
 import time
@@ -367,6 +368,7 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
     total_thinking_tokens = 0
     total_prompt_tokens = 0
     total_completion_tokens = 0
+    api_latencies_ms: list[int] = []
 
     # ── Agent loop ────────────────────────────────────────────────────────
     final_answer = ""
@@ -386,6 +388,8 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
         step_count = step + 1
         print(f"  Step {step_count}/{max_steps} ({elapsed:.0f}s)...", end=" ", flush=True)
 
+        # ── API call with latency tracking ──
+        api_start = time.time()
         try:
             response = client.chat.completions.create(
                 model=model,
@@ -398,6 +402,9 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
             print(f"API ERROR: {e}")
             final_answer = f"# API Error\n\n{e}"
             break
+        api_latency_ms = int((time.time() - api_start) * 1000)
+        api_latencies_ms.append(api_latency_ms)
+        # ── end latency tracking ──
 
         msg = response.choices[0].message
         finish = response.choices[0].finish_reason
@@ -548,6 +555,10 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
         "reasoning_used": total_thinking_tokens > 0,
         "allowed_actions": allowed_actions or {},
         "tools_provided": [t["function"]["name"] for t in tools],
+        "api_latencies_ms": api_latencies_ms,
+        "api_latency_mean_ms": int(statistics.mean(api_latencies_ms)) if api_latencies_ms else 0,
+        "api_latency_median_ms": int(statistics.median(api_latencies_ms)) if api_latencies_ms else 0,
+        "api_latency_p95_ms": int(sorted(api_latencies_ms)[int(len(api_latencies_ms) * 0.95)]) if api_latencies_ms else 0,
     }
     with open(log_dir / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)

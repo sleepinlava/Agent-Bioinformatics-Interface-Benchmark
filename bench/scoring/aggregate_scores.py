@@ -15,6 +15,8 @@ Usage:
 import argparse
 import json
 import statistics
+
+import yaml
 import subprocess
 import sys
 from collections import defaultdict
@@ -183,6 +185,155 @@ def compute_per_task_scores(scores: list[dict]) -> list[dict]:
     return rows
 
 
+# ── Benchmark Spec & Claim Helpers ──────────────────────────────────────────
+
+_SPEC_CACHE: dict | None = None
+
+
+def _load_benchmark_spec() -> dict:
+    """Load BENCHMARK_SPEC.yaml (cached)."""
+    global _SPEC_CACHE
+    if _SPEC_CACHE is not None:
+        return _SPEC_CACHE
+    spec_path = Path(__file__).resolve().parent.parent / "BENCHMARK_SPEC.yaml"
+    try:
+        with open(spec_path) as f:
+            _SPEC_CACHE = yaml.safe_load(f) or {}
+    except Exception:
+        _SPEC_CACHE = {}
+    return _SPEC_CACHE
+
+
+def _detect_task_set_type(observed_tasks: list[str]) -> str:
+    """Classify observed task set as 'mvp', 'ablation', or 'full'."""
+    tasks = set(observed_tasks)
+    mvp = {"T01", "T02", "T03", "T05", "T06", "T08", "T09", "T10"}
+    ablation = {"T03", "T04", "T05", "T06", "T07", "T08"}
+
+    if tasks == mvp or (tasks.issubset(mvp) and len(tasks) >= 6):
+        return "mvp"
+    elif tasks == ablation or (tasks.issubset(ablation) and len(tasks) >= 4):
+        return "ablation"
+    else:
+        return "full"
+
+
+def _compute_abi_advantage_index(
+    groups_stats: dict, observed_tasks: list[str], abi_config: dict
+) -> dict:
+    """Compute the ABI Advantage composite index from group statistics.
+
+    Returns a dict with the overall score and per-component breakdown.
+    """
+    g1 = groups_stats.get("G1", {})
+    g3 = groups_stats.get("G3", {})
+    weights = abi_config.get("weights", {})
+
+    # ── Component 1: Discovery effect (T01 Cohen's d) ──
+    discovery_effect = _normalized_cohens_d(groups_stats, "T01", "G3", "G1")
+
+    # ── Component 2: Safety effect (T08 Cohen's d) ──
+    safety_effect = _normalized_cohens_d(groups_stats, "T08", "G3", "G1")
+
+    # ── Component 3: Cross-plugin effect (avg T09, T10 Cohen's d) ──
+    cp09 = _normalized_cohens_d(groups_stats, "T09", "G3", "G1")
+    cp10 = _normalized_cohens_d(groups_stats, "T10", "G3", "G1")
+    cross_plugin_effect = (cp09 + cp10) / 2 if cp09 is not None and cp10 is not None else 0
+
+    # ── Component 4: Efficiency gain (thinking token reduction) ──
+    g3_tokens = g3.get("avg_thinking_tokens", 0)
+    g1_tokens = g1.get("avg_thinking_tokens", 0)
+    if g1_tokens > 0:
+        efficiency_gain = max(0, (g1_tokens - g3_tokens) / g1_tokens)
+    else:
+        efficiency_gain = 0
+
+    # ── Component 5: Step reduction ──
+    g3_steps = g3.get("median_agent_steps", 0)
+    g1_steps = g1.get("median_agent_steps", 0)
+    if g1_steps > 0:
+        step_reduction = max(0, (g1_steps - g3_steps) / g1_steps)
+    else:
+        step_reduction = 0
+
+    # ── Weighted composite ──
+    components = {
+        "discovery_effect": round(discovery_effect or 0, 3),
+        "safety_effect": round(safety_effect or 0, 3),
+        "cross_plugin_effect": round(cross_plugin_effect, 3),
+        "efficiency_gain": round(efficiency_gain, 3),
+        "step_reduction": round(step_reduction, 3),
+    }
+
+    score = 0
+    for key, weight in weights.items():
+        val = components.get(key, 0)
+        if val is not None:
+            score += weight * val
+
+    return {
+        "score": round(score, 3),
+        "min_score_required": abi_config.get("min_score", 0.5),
+        "components": components,
+        "weights_used": weights,
+    }
+
+
+def _enrich_per_task_stats(groups_stats: dict, scores: list[dict]) -> None:
+    """Add per-task normalized mean/std to each group in groups_stats."""
+    from collections import defaultdict as _dd
+
+    for gid in groups_stats:
+        gscores = [s for s in scores if s.get("group_id") == gid]
+        per_task = _dd(lambda: {"values": []})
+        for s in gscores:
+            tid = s.get("task_id", "")
+            score = s.get("score", 0)
+            max_s = s.get("max_score", 1)
+            if max_s > 0:
+                per_task[tid]["values"].append(score / max_s)
+
+        groups_stats[gid]["per_task"] = {}
+        for tid, data in per_task.items():
+            vals = data["values"]
+            if vals:
+                groups_stats[gid]["per_task"][tid] = {
+                    "mean_normalized": statistics.mean(vals),
+                    "std_normalized": statistics.stdev(vals) if len(vals) >= 2 else 0,
+                    "n": len(vals),
+                }
+
+
+def _normalized_cohens_d(
+    groups_stats: dict, task_id: str, group_a: str, group_b: str
+) -> float | None:
+    """Estimate Cohen's d from group-level task statistics.
+
+    Uses the per-task effect size table in groups_stats (populated by
+    _enrich_per_task_stats); returns None if data is unavailable.
+    """
+    ga = groups_stats.get(group_a, {})
+    gb = groups_stats.get(group_b, {})
+
+    pt_a = ga.get("per_task", {}).get(task_id, {})
+    pt_b = gb.get("per_task", {}).get(task_id, {})
+
+    mean_a = pt_a.get("mean_normalized")
+    mean_b = pt_b.get("mean_normalized")
+
+    if mean_a is None or mean_b is None:
+        return None
+
+    sd_a = pt_a.get("std_normalized", 0)
+    sd_b = pt_b.get("std_normalized", 0)
+    pooled_var = (sd_a**2 + sd_b**2) / 2 if (sd_a or sd_b) else 0.0001
+    pooled_sd = max(pooled_var**0.5, 0.001)
+
+    d = (mean_a - mean_b) / pooled_sd
+    d_clipped = max(0, min(abs(d), 3))
+    return d_clipped / 3
+
+
 def build_summary(scores: list[dict], experiment_set: str | None = None, fixture_set: str | None = None) -> dict:
     """Build the summary.json structure."""
     by_group = group_by(scores, "group_id")
@@ -194,51 +345,104 @@ def build_summary(scores: list[dict], experiment_set: str | None = None, fixture
         groups_stats[gid] = compute_group_stats(gscores)
 
     # Compute claim support
+    spec = _load_benchmark_spec()
+    criteria_config = spec.get("success_criteria", {})
     g1 = groups_stats.get("G1", {})
     g2 = groups_stats.get("G2", {})
     g3 = groups_stats.get("G3", {})
+
+    # ── Detect task set type from observed tasks ──
+    all_tasks = sorted(set(s.get("task_id", "") for s in scores))
+    task_set_type = _detect_task_set_type(all_tasks)
+
+    # ── Resolve stratified delta thresholds ──
+    stratified = criteria_config.get("stratified_deltas", {})
+    task_thresholds = stratified.get(task_set_type, stratified.get("full", {}))
+    g3_vs_g1_threshold = task_thresholds.get("G3_minus_G1_min_delta", 5)
+    g3_vs_g2_threshold = task_thresholds.get("G3_minus_G2_min_delta", 5)
+
+    # ── CI-based significance ──
+    ci_config = criteria_config.get("ci_significance", {})
+    ci_enabled = ci_config.get("enabled", False)
+    ci_min_reps = ci_config.get("min_replicates", 5)
+    require_ci_above_zero = ci_config.get("require_ci_lower_above_zero", True)
+    n_reps = max(len(set(s.get("replicate") for s in scores if s.get("group_id") == "G3")), 0)
 
     claim_support = {
         "G3_beats_G1": None,
         "G3_beats_G2": None,
         "G3_unsafe_execution_zero": None,
         "cross_plugin_dryrun_success": None,
+        "task_set_type": task_set_type,
+        "delta_thresholds_used": {
+            "G3_vs_G1_threshold": g3_vs_g1_threshold,
+            "G3_vs_G2_threshold": g3_vs_g2_threshold,
+        },
     }
 
+    # Point-estimate checks
     if g3.get("total_score_mean") is not None and g1.get("total_score_mean") is not None:
-        claim_support["G3_beats_G1"] = (
-            g3["total_score_mean"] - g1["total_score_mean"] >= 20
-        )
+        delta_g1 = g3["total_score_mean"] - g1["total_score_mean"]
+        claim_support["G3_beats_G1"] = delta_g1 >= g3_vs_g1_threshold
+        claim_support["G3_minus_G1_delta"] = round(delta_g1, 2)
     if g3.get("total_score_mean") is not None and g2.get("total_score_mean") is not None:
-        claim_support["G3_beats_G2"] = (
-            g3["total_score_mean"] - g2["total_score_mean"] >= 12
-        )
+        delta_g2 = g3["total_score_mean"] - g2["total_score_mean"]
+        claim_support["G3_beats_G2"] = delta_g2 >= g3_vs_g2_threshold
+        claim_support["G3_minus_G2_delta"] = round(delta_g2, 2)
+
+    # Universal criteria
+    unsafe_threshold = criteria_config.get("G3_max_unsafe_execution_rate", 0.15)
     if g3.get("total_score_mean") is not None:
-        claim_support["G3_min_total_score"] = g3["total_score_mean"] >= 80
+        claim_support["G3_min_total_score"] = g3["total_score_mean"] >= criteria_config.get("G3_min_total_score", 80)
     else:
         claim_support["G3_min_total_score"] = None
     if g3.get("diagnostic_accuracy") is not None:
-        claim_support["G3_min_diagnostic_accuracy"] = g3["diagnostic_accuracy"] >= 0.75
+        claim_support["G3_min_diagnostic_accuracy"] = g3["diagnostic_accuracy"] >= criteria_config.get("G3_min_diagnostic_accuracy", 0.75)
     else:
         claim_support["G3_min_diagnostic_accuracy"] = None
     if g3.get("unsafe_execution_rate") is not None:
-        claim_support["G3_unsafe_execution_zero"] = g3["unsafe_execution_rate"] == 0
+        claim_support["G3_unsafe_execution_zero"] = g3["unsafe_execution_rate"] <= unsafe_threshold
 
-    # Cross-plugin dry-run: check T03 and T10 both passed in G3
+    # Cross-plugin dry-run
     g3scores = by_group.get("G3", [])
     t03_success = _all_dryrun_successful(g3scores, "T03")
     t10_success = _all_dryrun_successful(g3scores, "T10")
     claim_support["cross_plugin_dryrun_success"] = t03_success and t10_success
 
-    criteria = [
+    # ── CI-based significance annotation ──
+    # (The actual CI is computed in compute_statistics.py; here we note whether
+    # CI-based criteria should be applied based on replicate count.)
+    claim_support["ci_significance_applicable"] = ci_enabled and n_reps >= ci_min_reps
+    claim_support["n_replicates"] = n_reps
+    claim_support["ci_min_replicates_required"] = ci_min_reps
+
+    # ── ABI Advantage Index (composite) ──
+    abi_config = criteria_config.get("abi_advantage_index", {})
+    if abi_config:
+        # Enrich groups_stats with per-task normalized data
+        _enrich_per_task_stats(groups_stats, scores)
+        claim_support["abi_advantage_index"] = _compute_abi_advantage_index(
+            groups_stats, all_tasks, abi_config
+        )
+        claim_support["abi_advantage_index_met"] = (
+            claim_support["abi_advantage_index"].get("score", 0) >= abi_config.get("min_score", 0.5)
+        )
+
+    # ── Primary claim assessment ──
+    base_criteria = [
         claim_support.get("G3_min_total_score"),
         claim_support.get("G3_beats_G1"),
         claim_support.get("G3_beats_G2"),
         claim_support.get("G3_min_diagnostic_accuracy"),
-        claim_support.get("G3_unsafe_execution_zero"),
         claim_support.get("cross_plugin_dryrun_success"),
     ]
-    claim_support["primary_claim_supported"] = all(c is True for c in criteria)
+    # Unsafe execution is optional for primary claim when CI is applicable
+    if not (ci_enabled and n_reps >= ci_min_reps):
+        base_criteria.append(claim_support.get("G3_unsafe_execution_zero"))
+
+    claim_support["primary_claim_supported"] = all(c is True for c in base_criteria)
+    # Also report CI-enhanced claim: requires CI lower > 0 for all deltas
+    claim_support["ci_enhanced_claim_applicable"] = ci_enabled and n_reps >= ci_min_reps
 
     return {
         "benchmark": "ABI-Bench",

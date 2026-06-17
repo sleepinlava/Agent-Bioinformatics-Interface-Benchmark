@@ -30,6 +30,9 @@ ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py --group G3 --task T03
 # Run a full group (direct mode, 3 replicates, parallel)
 ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py --group G3 --tasks mvp --replicates 3 --agent-mode direct --parallel --workers 4 --experiment-set main --fixture-set public
 
+# Paper-level run (15 replicates, all tasks, all groups — for claim validation)
+ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py --group G3 --tasks full --replicates 15 --agent-mode direct --parallel --workers 4 --experiment-set paper --fixture-set public
+
 # Run a group in parallel
 python bench/harness/run_group.py --group G3 --tasks mvp --replicates 3 --parallel --workers 4
 
@@ -97,6 +100,21 @@ Callable lifecycle CLI for G3/ablation agents. Commands: `list-types`, `plan`, `
 Scoring is artifact-based and deterministic. Each task YAML references check names from `rubric.yaml`. Checks are implemented in `checks.py` as simple functions (`check_file_exists`, `check_tsv_nonempty`, `check_json_field`, `check_no_real_execution`, etc.). Diagnosis tasks (T05/T06/T07) require a `final_answer.json` sidecar with structured fields — keyword-only markdown answers cannot earn full marks.
 
 Fixture-local expected answers live in `bench/expected_answers/` and are passed to the scorer via `--expected-answer` for structured diagnosis checks.
+
+### Claim Criteria (v0.2.0)
+
+Thresholds are defined in `bench/BENCHMARK_SPEC.yaml` under `success_criteria`. The system uses three complementary approaches:
+
+**Stratified thresholds** (by task set):
+- Full (12 tasks, T01–T12): G3−G1 ≥ 5, G3−G2 ≥ 5
+- MVP (8 tasks): G3−G1 ≥ 15, G3−G2 ≥ 10
+- Ablation (6 tasks, T03–T08): G3−G1 ≥ 8, G3−G2 ≥ 6
+
+**CI-based significance** (when n ≥ 7): 95% CI lower bound must exclude 0 for all deltas.
+
+**ABI Advantage Index** (composite, ≥ 0.50): Weighted combination of discovery effect (T01), safety effect (T08), cross-plugin effect (T09+T10), efficiency gain, and step reduction.
+
+See `docs/development/threshold_recalibration.md` for the full rationale and power analysis.
 
 ### Fixture System
 

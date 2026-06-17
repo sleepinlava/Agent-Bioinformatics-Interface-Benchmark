@@ -25,6 +25,13 @@ Plan.md
 NEXT_DEVELOPMENT_PLAN.md
 DEVELOPMENT.md
 
+# Experiment reports — track v0.1.1+ final reports, ignore old v0.1
+docs/experiments/
+docs/experiments/abi_bench_v0_1/
+docs/experiments/ABI_Bench_v0_1_Results_Report.md
+docs/experiments/ABI_Bench_v0_1_Results_Report_zh.md
+
 # OpenCode agent harness (install globally or clone into agent/)
 agent/
-opencode
+opencodebench/results/paper_*
+bench/results/sequential_manifest.json

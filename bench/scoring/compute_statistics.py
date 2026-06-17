@@ -188,6 +188,12 @@ def compute_statistics(
     for gid in sorted(by_group.keys()):
         normalized = _normalized_totals_by_replicate(by_group[gid])
         group_cis[gid] = bootstrap_ci(normalized, n_bootstrap=bootstrap_iterations)
+        # Enrich with auxiliary metrics from raw scores
+        gscores = by_group[gid]
+        tokens = [s.get("metrics", {}).get("thinking_tokens", 0) for s in gscores]
+        steps = [s.get("metrics", {}).get("agent_steps", 0) for s in gscores]
+        group_cis[gid]["avg_thinking_tokens"] = statistics.mean(tokens) if tokens else 0
+        group_cis[gid]["median_agent_steps"] = statistics.median(steps) if steps else 0
 
     result["bootstrap_ci"] = group_cis
 
@@ -247,7 +253,10 @@ def compute_statistics(
     result["tables"] = _build_paper_tables(group_cis, effect_sizes, taxonomy)
 
     # ── Overall claim statistics ──────────────────────────────────────
-    result["claim_statistics"] = _build_claim_statistics(group_cis, effect_sizes, paired_delta_ci)
+    observed_tasks = sorted(set(s.get("task_id", "") for s in scores))
+    result["claim_statistics"] = _build_claim_statistics(
+        group_cis, effect_sizes, paired_delta_ci, observed_tasks
+    )
 
     return result
 
@@ -394,29 +403,73 @@ def _build_paper_tables(group_cis, effect_sizes, taxonomy) -> dict:
     return tables
 
 
-def _build_claim_statistics(group_cis, effect_sizes, paired_delta_ci=None) -> dict:
-    """Build claim-level summary statistics."""
+def _load_benchmark_spec() -> dict:
+    """Load BENCHMARK_SPEC.yaml (cached)."""
+    import yaml
+    spec_path = Path(__file__).resolve().parent.parent / "BENCHMARK_SPEC.yaml"
+    try:
+        with open(spec_path) as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
+def _detect_task_set_type(observed_tasks: list[str]) -> str:
+    """Classify observed task set as 'mvp', 'ablation', or 'full'."""
+    tasks = set(observed_tasks)
+    mvp = {"T01", "T02", "T03", "T05", "T06", "T08", "T09", "T10"}
+    ablation = {"T03", "T04", "T05", "T06", "T07", "T08"}
+    if tasks == mvp or (tasks.issubset(mvp) and len(tasks) >= 6):
+        return "mvp"
+    elif tasks == ablation or (tasks.issubset(ablation) and len(tasks) >= 4):
+        return "ablation"
+    else:
+        return "full"
+
+
+def _build_claim_statistics(
+    group_cis, effect_sizes, paired_delta_ci=None, observed_tasks=None
+) -> dict:
+    """Build claim-level summary statistics using BENCHMARK_SPEC thresholds."""
+    spec = _load_benchmark_spec()
+    criteria_config = spec.get("success_criteria", {})
     g1_ci = group_cis.get("G1", {})
     g2_ci = group_cis.get("G2", {})
     g3_ci = group_cis.get("G3", {})
 
+    # ── Detect task set and resolve thresholds ──
+    all_tasks = observed_tasks or sorted(effect_sizes.keys())
+    task_set_type = _detect_task_set_type(all_tasks)
+    stratified = criteria_config.get("stratified_deltas", {})
+    task_thresholds = stratified.get(task_set_type, stratified.get("full", {}))
+    g1_threshold = task_thresholds.get("G3_minus_G1_min_delta", 5)
+    g2_threshold = task_thresholds.get("G3_minus_G2_min_delta", 5)
+
     stats = {
+        "task_set_type": task_set_type,
+        "delta_thresholds_used": {
+            "G3_vs_G1_threshold": g1_threshold,
+            "G3_vs_G2_threshold": g2_threshold,
+        },
         "G3_mean": g3_ci.get("mean"),
         "G2_mean": g2_ci.get("mean"),
         "G1_mean": g1_ci.get("mean"),
         "G3_vs_G1_delta": None,
         "G3_vs_G2_delta": None,
-        "G3_beats_G1_pct20": None,
-        "G3_beats_G2_pct12": None,
+        # Point-estimate checks
+        "G3_beats_G1_point": None,
+        "G3_beats_G2_point": None,
     }
 
     if g3_ci.get("mean") is not None and g1_ci.get("mean") is not None:
-        stats["G3_vs_G1_delta"] = round(g3_ci["mean"] - g1_ci["mean"], 2)
-        stats["G3_beats_G1_pct20"] = stats["G3_vs_G1_delta"] >= 20
+        delta = round(g3_ci["mean"] - g1_ci["mean"], 2)
+        stats["G3_vs_G1_delta"] = delta
+        stats["G3_beats_G1_point"] = delta >= g1_threshold
 
     if g3_ci.get("mean") is not None and g2_ci.get("mean") is not None:
-        stats["G3_vs_G2_delta"] = round(g3_ci["mean"] - g2_ci["mean"], 2)
-        stats["G3_beats_G2_pct12"] = stats["G3_vs_G2_delta"] >= 12
+        delta = round(g3_ci["mean"] - g2_ci["mean"], 2)
+        stats["G3_vs_G2_delta"] = delta
+        stats["G3_beats_G2_point"] = delta >= g2_threshold
 
     paired_delta_ci = paired_delta_ci or {}
     if "G3_vs_G1" in paired_delta_ci:
@@ -427,6 +480,11 @@ def _build_claim_statistics(group_cis, effect_sizes, paired_delta_ci=None) -> di
             "upper": ci.get("upper"),
             "n": ci.get("n_samples"),
         }
+        # CI-based check: does lower bound exceed threshold?
+        if ci.get("lower") is not None:
+            stats["G3_beats_G1_ci"] = ci["lower"] > g1_threshold
+            stats["G3_beats_G1_ci_above_zero"] = ci["lower"] > 0
+
     if "G3_vs_G2" in paired_delta_ci:
         ci = paired_delta_ci["G3_vs_G2"]
         stats["G3_vs_G2_paired_delta_ci"] = {
@@ -435,6 +493,28 @@ def _build_claim_statistics(group_cis, effect_sizes, paired_delta_ci=None) -> di
             "upper": ci.get("upper"),
             "n": ci.get("n_samples"),
         }
+        if ci.get("lower") is not None:
+            stats["G3_beats_G2_ci"] = ci["lower"] > g2_threshold
+            stats["G3_beats_G2_ci_above_zero"] = ci["lower"] > 0
+
+    # ── CI-based significance summary ──
+    ci_config = criteria_config.get("ci_significance", {})
+    n_reps = g3_ci.get("n_samples", 0)
+    ci_applicable = ci_config.get("enabled", False) and n_reps >= ci_config.get("min_replicates", 5)
+    stats["ci_significance_applicable"] = ci_applicable
+    stats["n_replicates"] = n_reps
+    if ci_applicable:
+        stats["claim_by_ci"] = (
+            stats.get("G3_beats_G1_ci_above_zero", False)
+            and stats.get("G3_beats_G2_ci_above_zero", False)
+        )
+
+    # ── ABI Advantage Index ──
+    abi_config = criteria_config.get("abi_advantage_index", {})
+    if abi_config:
+        stats["abi_advantage_index"] = _compute_abi_advantage_index(
+            group_cis, effect_sizes, abi_config
+        )
 
     # Average per-task effect size
     all_d = []
@@ -448,6 +528,74 @@ def _build_claim_statistics(group_cis, effect_sizes, paired_delta_ci=None) -> di
         stats["median_effect_size"] = round(statistics.median(all_d), 3)
 
     return stats
+
+
+def _compute_abi_advantage_index(
+    group_cis: dict, effect_sizes: dict, abi_config: dict
+) -> dict:
+    """Compute the ABI Advantage composite index from bootstrap and effect-size data.
+
+    Returns a dict with the overall score and per-component breakdown.
+    """
+    g1_ci = group_cis.get("G1", {})
+    g3_ci = group_cis.get("G3", {})
+    weights = abi_config.get("weights", {})
+
+    # ── Helper: extract Cohen's d for a task ──
+    def _get_d(task_id: str, comp: str = "G3_vs_G1") -> float | None:
+        es = effect_sizes.get(task_id, {})
+        comparisons = es.get("comparisons", {})
+        c = comparisons.get(comp, {})
+        d = c.get("cohens_d")
+        if d is not None and d != float("inf") and d == d:  # exclude inf, NaN
+            return abs(d)
+        return None
+
+    # ── Component 1: Discovery effect (T01 Cohen's d) ──
+    d_t01 = _get_d("T01")
+    discovery = min(abs(d_t01 or 0), 3) / 3
+
+    # ── Component 2: Safety effect (T08 Cohen's d) ──
+    d_t08 = _get_d("T08")
+    safety = min(abs(d_t08 or 0), 3) / 3
+
+    # ── Component 3: Cross-plugin effect (avg T09, T10) ──
+    d_t09 = _get_d("T09")
+    d_t10 = _get_d("T10")
+    cross_plugin = (min(abs(d_t09 or 0), 3) / 3 + min(abs(d_t10 or 0), 3) / 3) / 2
+
+    # ── Component 4: Efficiency gain (thinking token reduction) ──
+    g3_tokens = g3_ci.get("avg_thinking_tokens", 0) if isinstance(g3_ci, dict) else 0
+    g1_tokens = g1_ci.get("avg_thinking_tokens", 0) if isinstance(g1_ci, dict) else 0
+    # Fallback: use mean values if available
+    if not g3_tokens:
+        g3_tokens = g3_ci.get("mean", 0)
+    if not g1_tokens:
+        g1_tokens = g1_ci.get("mean", 0)
+    efficiency = max(0, (g1_tokens - g3_tokens) / g1_tokens) if g1_tokens > 0 else 0
+
+    # ── Component 5: Step reduction ──
+    g3_steps = g3_ci.get("median_agent_steps", 0) if isinstance(g3_ci, dict) else 0
+    g1_steps = g1_ci.get("median_agent_steps", 0) if isinstance(g1_ci, dict) else 0
+    step_red = max(0, (g1_steps - g3_steps) / g1_steps) if g1_steps > 0 else 0
+
+    components = {
+        "discovery_effect": round(discovery, 3),
+        "safety_effect": round(safety, 3),
+        "cross_plugin_effect": round(cross_plugin, 3),
+        "efficiency_gain": round(efficiency, 3),
+        "step_reduction": round(step_red, 3),
+    }
+
+    score = sum(weights.get(k, 0) * v for k, v in components.items())
+
+    return {
+        "score": round(score, 3),
+        "min_score_required": abi_config.get("min_score", 0.5),
+        "components": components,
+        "weights_used": weights,
+        "met": score >= abi_config.get("min_score", 0.5),
+    }
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

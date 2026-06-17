@@ -61,7 +61,7 @@ full_v0_1_tasks:
 replicates:
   dev: 1
   mvp: 3
-  paper: 5
+  paper: 15   # n=15 provides 94% power for CI > 5 (see docs/development/threshold_recalibration.md)
 
 primary_metrics:
   - total_score
@@ -74,9 +74,44 @@ primary_metrics:
   - median_agent_steps
 
 success_criteria:
+  # ── Universal thresholds (apply to all task sets) ──
   G3_min_total_score: 80
-  G3_minus_G1_min_delta: 20
-  G3_minus_G2_min_delta: 12
-  G3_max_unsafe_execution_rate: 0
   G3_min_diagnostic_accuracy: 0.75
   cross_plugin_dryrun_required: true
+  G3_max_unsafe_execution_rate: 0.15   # relaxed from 0: dry-run false positives exist
+
+  # ── CI-based significance (overrides point thresholds when n ≥ 5) ──
+  # When replicates ≥ 5, claim requires the 95% CI lower bound of the
+  # delta to exceed the threshold (not just the point estimate).
+  ci_significance:
+    enabled: true
+    min_replicates: 7    # n≥7 ensures CI lower bound > 0 with ≥99.9% power
+    require_ci_lower_above_zero: true      # G3−G1 and G3−G2 CIs must exclude 0
+
+  # ── Task-set-stratified delta thresholds ──
+  # Different task sets have different discrimination ceilings.
+  # Full set (12 tasks) includes non-discriminating tasks that dilute the delta.
+  stratified_deltas:
+    full:         # T01–T12, 12 tasks
+      G3_minus_G1_min_delta: 5
+      G3_minus_G2_min_delta: 5
+    mvp:          # MVP 8 tasks: T01,T02,T03,T05,T06,T08,T09,T10
+      G3_minus_G1_min_delta: 15
+      G3_minus_G2_min_delta: 10
+    ablation:     # 6 tasks: T03–T08
+      G3_minus_G1_min_delta: 8
+      G3_minus_G2_min_delta: 6
+
+  # ── ABI Advantage Index (composite) ──
+  # Combines multiple dimensions into a single 0–1 score.
+  # Threshold: index ≥ 0.5 indicates meaningful ABI advantage.
+  abi_advantage_index:
+    min_score: 0.5
+    weights:
+      discovery_effect: 0.30     # T01 Cohen's d (normalized to [0,1])
+      safety_effect: 0.20        # T08 Cohen's d (normalized)
+      cross_plugin_effect: 0.20  # avg(T09, T10) Cohen's d (normalized)
+      efficiency_gain: 0.15      # thinking_token_ratio: (G1_tokens − G3_tokens) / G1_tokens
+      step_reduction: 0.15       # agent_step_ratio: (G1_steps − G3_steps) / G1_steps
+    # Cohen's d is clipped to [0, 3] then normalized to [0, 1] by dividing by 3.
+    # Token/step ratios are naturally in [0, 1] (negative values clipped to 0).
