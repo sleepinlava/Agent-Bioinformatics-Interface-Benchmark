@@ -1,0 +1,51 @@
+task_id: T17
+name: Plan WGS bacteria analysis
+plugin: wgs_bacteria
+task_type: planning
+fixture: wgs_valid
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 40
+
+prompt: |
+  Create an execution plan for WGS bacterial genome analysis.
+  The plan must specify analysis_type "wgs_bacteria",
+  include unique step_ids, and reference valid tool_ids
+  from the workspace configuration.
+  Do not execute any real bioinformatics tools.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: false
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - execution_plan.json
+
+scoring:
+  execution_plan_exists:
+    points: 2
+    args:
+      relpath: "execution_plan.json"
+  analysis_type_wgs:
+    points: 2
+    args:
+      relpath: "execution_plan.json"
+      field: "analysis_type"
+      expected: "wgs_bacteria"
+  step_ids_unique:
+    points: 2
+  tool_ids_valid:
+    points: 1
+  plan_no_execution:
+    points: 1
+
+failure_codes:
+  - artifact_missing
+  - wrong_analysis_type
+  - invalid_plan_schema
+  - real_execution_violation
+  - timeout
+  - agent_loop

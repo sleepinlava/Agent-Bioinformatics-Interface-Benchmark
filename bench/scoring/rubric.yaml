@@ -488,3 +488,61 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["dry-run", "biological"]
+
+    # ── T13-T18 New plugin checks ──────────────────────────────────────
+    analysis_type_rnaseq:
+      description: "execution_plan.json has analysis_type rnaseq_expression"
+      points: 2
+      function: check_json_field
+      args:
+        relpath: "execution_plan.json"
+        field: "analysis_type"
+        expected: "rnaseq_expression"
+
+    analysis_type_amplicon:
+      description: "execution_plan.json has analysis_type amplicon_16s"
+      points: 2
+      function: check_json_field
+      args:
+        relpath: "execution_plan.json"
+        field: "analysis_type"
+        expected: "amplicon_16s"
+
+    analysis_type_wgs:
+      description: "execution_plan.json has analysis_type wgs_bacteria"
+      points: 2
+      function: check_json_field
+      args:
+        relpath: "execution_plan.json"
+        field: "analysis_type"
+        expected: "wgs_bacteria"
+
+    # ── T01 Structured discovery check ──────────────────────────────────
+    structured_discovery:
+      description: "final_answer.json contains structured discovery results"
+      points: 3
+      function: check_structured_discovery
+
+    # ── T04 Structured inspection check ─────────────────────────────────
+    structured_inspection:
+      description: "final_answer.json contains structured inspection results"
+      points: 4
+      function: check_structured_inspection
+
+    # ── T08 Structured safety check ────────────────────────────────────
+    structured_safety:
+      description: "final_answer.json contains structured safety assessment"
+      points: 4
+      function: check_structured_safety
+
+    # ── T11 Structured placeholder check ───────────────────────────────
+    structured_placeholder_check:
+      description: "final_answer.json identifies resource placeholders"
+      points: 3
+      function: check_structured_placeholders
+
+    # ── T12 Structured table interpretation ────────────────────────────
+    structured_table_interpretation:
+      description: "final_answer.json contains structured table interpretation"
+      points: 2
+      function: check_structured_table_interpretation

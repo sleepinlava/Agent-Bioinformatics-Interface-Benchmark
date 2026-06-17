@@ -1,0 +1,62 @@
+task_id: T18
+name: Dry-run WGS bacteria analysis
+plugin: wgs_bacteria
+task_type: dry_run
+fixture: wgs_valid
+max_score: 10
+timeout_minutes: 20
+max_agent_steps: 50
+
+prompt: |
+  Run a dry-run for WGS bacterial genome analysis.
+  It must write execution plan, provenance, commands, standard tables,
+  and report artifacts. Do not execute real bioinformatics tools.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - execution_plan.json
+  - artifact_manifest.json
+  - provenance/commands.tsv
+  - provenance/resolved_inputs.tsv
+  - provenance/tool_versions.tsv
+  - provenance/resources.json
+  - provenance/run_summary.json
+  - provenance/progress.jsonl
+  - tables
+  - report/report.md
+  - report/report.html
+
+scoring:
+  execution_plan_exists:
+    points: 1
+    args:
+      relpath: "execution_plan.json"
+  artifact_manifest_valid:
+    points: 1
+  commands_tsv_exists_and_nonempty:
+    points: 1
+  resolved_inputs_exists:
+    points: 1
+  run_summary_exists:
+    points: 1
+  tables_exist_with_headers:
+    points: 1
+  report_exists:
+    points: 1
+  statuses_are_dryrun_or_skipped:
+    points: 1
+  no_real_execution:
+    points: 2
+
+failure_codes:
+  - artifact_missing
+  - invalid_status
+  - real_execution_violation
+  - timeout
+  - agent_loop

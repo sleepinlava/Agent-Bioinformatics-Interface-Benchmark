@@ -63,6 +63,12 @@ def load_task_definition(task_id: str) -> dict:
         "T10": "T10_dryrun_metatranscriptomics.yaml",
         "T11": "T11_inspect_metatranscriptomics.yaml",
         "T12": "T12_standard_tables_interpretation.yaml",
+        "T13": "T13_plan_rnaseq.yaml",
+        "T14": "T14_dryrun_rnaseq.yaml",
+        "T15": "T15_plan_amplicon.yaml",
+        "T16": "T16_dryrun_amplicon.yaml",
+        "T17": "T17_plan_wgs.yaml",
+        "T18": "T18_dryrun_wgs.yaml",
     }
     fname = task_files.get(task_id)
     if not fname:

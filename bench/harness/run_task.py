@@ -294,6 +294,12 @@ def _select_fixture(task_id: str, task_def: dict, fixture_set: str) -> tuple[str
         "T10": "transcriptomics_valid",
         "T11": "transcriptomics_valid",
         "T12": "plasmid_valid",
+        "T13": "rnaseq_valid",
+        "T14": "rnaseq_valid",
+        "T15": "amplicon_valid",
+        "T16": "amplicon_valid",
+        "T17": "wgs_valid",
+        "T18": "wgs_valid",
     }
     if fixture_set == "hidden":
         fixture_name = task_def.get("hidden_fixture")
@@ -529,7 +535,32 @@ def _write_simulated_artifacts(workspace_dir: Path, group_id: str, task_id: str)
             {"step_id": "classify_plasmids", "tool_id": "genomad", "input": "assembly", "output": "plasmid_classification.tsv", "status": "dry_run"},
         ],
     }
-    if task_id in ("T09", "T10"):
+    if task_id in ("T13", "T14"):
+        plan["analysis_type"] = "rnaseq_expression"
+        plan["steps"] = [
+            {"step_id": "qc_fastp", "tool_id": "fastp", "status": "dry_run"},
+            {"step_id": "alignment_star", "tool_id": "star", "status": "dry_run"},
+            {"step_id": "quant_featurecounts", "tool_id": "featurecounts", "status": "dry_run"},
+            {"step_id": "de_deseq2", "tool_id": "deseq2", "status": "dry_run"},
+        ]
+    elif task_id in ("T15", "T16"):
+        plan["analysis_type"] = "amplicon_16s"
+        plan["steps"] = [
+            {"step_id": "trim_cutadapt", "tool_id": "cutadapt", "status": "dry_run"},
+            {"step_id": "derep_vsearch", "tool_id": "vsearch_derep", "status": "dry_run"},
+            {"step_id": "denoise_unoise3", "tool_id": "vsearch_denoise", "status": "dry_run"},
+            {"step_id": "taxonomy_sintax", "tool_id": "vsearch_taxonomy", "status": "dry_run"},
+        ]
+    elif task_id in ("T17", "T18"):
+        plan["analysis_type"] = "wgs_bacteria"
+        plan["steps"] = [
+            {"step_id": "qc_fastp", "tool_id": "fastp", "status": "dry_run"},
+            {"step_id": "assembly_spades", "tool_id": "spades", "status": "dry_run"},
+            {"step_id": "annotation_prokka", "tool_id": "prokka", "status": "dry_run"},
+            {"step_id": "mlst", "tool_id": "mlst", "status": "dry_run"},
+            {"step_id": "amr", "tool_id": "amrfinderplus", "status": "dry_run"},
+        ]
+    elif task_id in ("T09", "T10"):
         plan["analysis_type"] = "metatranscriptomics"
         plan["steps"] = [
             {"step_id": "trim_reads", "tool_id": "fastp", "status": "dry_run"},

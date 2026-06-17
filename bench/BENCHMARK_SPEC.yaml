@@ -19,6 +19,9 @@ environment:
 plugins:
   - metagenomic_plasmid
   - metatranscriptomics
+  - rnaseq_expression
+  - amplicon_16s
+  - wgs_bacteria
 
 main_groups:
   - G1
@@ -76,6 +79,13 @@ full_v0_1_tasks:
   - T10
   - T11
   - T12
+  # ── v0.1.5 expansion (2026-06-17): cross-plugin ecosystem ──
+  - T13
+  - T14
+  - T15
+  - T16
+  - T17
+  - T18
 
 replicates:
   dev: 1

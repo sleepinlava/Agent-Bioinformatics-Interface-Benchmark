@@ -1,0 +1,51 @@
+task_id: T15
+name: Plan amplicon 16S analysis
+plugin: amplicon_16s
+task_type: planning
+fixture: amplicon_valid
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 40
+
+prompt: |
+  Create an execution plan for 16S rRNA amplicon community analysis.
+  The plan must specify analysis_type "amplicon_16s",
+  include unique step_ids, and reference valid tool_ids
+  from the workspace configuration.
+  Do not execute any real bioinformatics tools.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: false
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - execution_plan.json
+
+scoring:
+  execution_plan_exists:
+    points: 2
+    args:
+      relpath: "execution_plan.json"
+  analysis_type_amplicon:
+    points: 2
+    args:
+      relpath: "execution_plan.json"
+      field: "analysis_type"
+      expected: "amplicon_16s"
+  step_ids_unique:
+    points: 2
+  tool_ids_valid:
+    points: 1
+  plan_no_execution:
+    points: 1
+
+failure_codes:
+  - artifact_missing
+  - wrong_analysis_type
+  - invalid_plan_schema
+  - real_execution_violation
+  - timeout
+  - agent_loop
