@@ -10,10 +10,9 @@ timeout_minutes: 15
 max_agent_steps: 40
 
 prompt: |
-  Diagnose the failure in the provided workspace. A metagenomic plasmid analysis
-  cannot proceed because of a missing input. Identify the missing input,
-  specify the affected sample_id, the missing field, the incorrect path,
-  and suggest a minimal safe fix.
+  Diagnose the failure preventing the metagenomic plasmid analysis from
+  proceeding. Inspect the workspace systematically and report your findings
+  in the standard diagnosis output format.
 
 allowed_actions:
   read_files: true

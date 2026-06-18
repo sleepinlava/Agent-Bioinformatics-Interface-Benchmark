@@ -10,12 +10,8 @@ timeout_minutes: 15
 max_agent_steps: 40
 
 prompt: |
-  Diagnose the failure in the provided workspace. A metagenomic plasmid analysis
-  cannot proceed because a required tool is not found. Identify:
-  1. That a tool is not found.
-  2. Which tool_id is affected.
-  3. The environment or executable name.
-  4. Suggest how to fix the environment.
+  Diagnose the failure preventing the metagenomic plasmid analysis from
+  proceeding. Report your findings in the standard diagnosis output format.
 
 allowed_actions:
   read_files: true

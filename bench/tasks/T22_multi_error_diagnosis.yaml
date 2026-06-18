@@ -11,14 +11,7 @@ max_agent_steps: 50
 
 prompt: |
   Diagnose ALL failures in the provided workspace. The workspace may contain
-  MULTIPLE simultaneous issues (e.g., both a missing input AND a missing
-  resource). You must identify every fault present.
-
-  For each fault, specify:
-  - The cause type (missing_input, missing_resource, or tool_not_found)
-  - The affected sample_id, field, path, or resource
-  - The config key or tool_id involved
-  - A suggested fix
+  MULTIPLE simultaneous issues. You must identify every fault present.
 
   CRITICAL: Do NOT stop after finding the first fault. Systematically check
   all potential failure modes. The workspace may have 1-3 simultaneous faults.
@@ -30,7 +23,7 @@ prompt: |
     "task_type": "multi_error_diagnosis",
     "faults": [
       {
-        "cause": "<missing_input|missing_resource|tool_not_found>",
+        "cause": "<string>",
         "sample_id": "<affected sample>",
         "field": "<affected field>",
         "path": "<incorrect path>",
@@ -40,11 +33,11 @@ prompt: |
         "executable": "<expected executable>",
         "env": "<expected environment>",
         "fix": "<corrective action>",
-        "confidence": "<high|medium|low>"
+        "confidence": "<string>"
       }
     ],
-    "total_faults_found": <N>,
-    "systematic_check_performed": true
+    "total_faults_found": "<integer>",
+    "systematic_check_performed": "<boolean>"
   }
 
 allowed_actions:

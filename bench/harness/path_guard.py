@@ -46,12 +46,25 @@ _DENY_COMMAND_PATTERNS: List[re.Pattern] = [
     re.compile(r"(?:source|\.)\s+.*(?:expected_answers|bench/scoring|bench/tasks|fixtures_hidden)", re.IGNORECASE),
     # xargs / exec wrapping
     re.compile(r"(?:xargs|exec|nohup|env)\s+.*(?:cat|grep|find|ls|python).*(?:expected_answers|bench/scoring|bench/tasks|fixtures_hidden)", re.IGNORECASE),
+    # ── Encoding bypass patterns ──────────────────────────────────────────
+    # base64 / xxd decode piped to shell interpreter
+    re.compile(r"base64\s+.*\|.*(?:bash|sh|python)", re.IGNORECASE),
+    re.compile(r"(?:xxd|hexdump|od)\s+.*\|.*(?:bash|sh|python)", re.IGNORECASE),
+    # printf with escapes piped to shell interpreter
+    re.compile(r"printf\s+.*\|\s*(?:bash|sh|python)", re.IGNORECASE),
+    # Indirect execution via read/mapfile/eval
+    re.compile(r"(?:mapfile|readarray|eval)\s+.*(?:expected_answers|bench/scoring|bench/tasks|fixtures_hidden)", re.IGNORECASE),
+    # tee / dd used to exfiltrate file contents
+    re.compile(r"(?:tee|dd)\s+.*(?:expected_answers|bench/scoring|bench/tasks|fixtures_hidden)", re.IGNORECASE),
 ]
 
-# ── Allow-list: workspace and safe system paths that bypass deny checks ──
+# ── Allow-list: safe system paths that bypass the workspace-containment check ──
+# /proc/ and /sys/ are deliberately excluded — they expose process environment,
+# command-line arguments, and kernel state that could leak API keys, repo paths,
+# and expected answers.
 _SAFE_PATH_PREFIXES: List[str] = [
     "/usr/", "/bin/", "/sbin/", "/lib/", "/lib64/",
-    "/etc/", "/opt/", "/tmp/", "/dev/", "/proc/", "/sys/",
+    "/etc/", "/opt/", "/tmp/", "/dev/",
 ]
 
 # Compiled at import time for performance
@@ -155,7 +168,17 @@ class PathGuard:
             if deny in path_str:
                 return False
 
-        return True
+        # Workspace-containment or safe-system-path check.
+        # Paths outside both are rejected — this closes the /proc and /sys
+        # information-leakage vector where /proc/self/environ and
+        # /proc/self/cmdline expose API keys and repo layout.
+        if self._is_within_workspace(resolved):
+            return True
+        for prefix in _SAFE_PREFIXES:
+            # Normalise both sides with trailing slash so /tmp matches /tmp/
+            if (path_str + "/").startswith(prefix):
+                return True
+        return False
 
     def _is_within_workspace(self, resolved: Path) -> bool:
         """Return True if *resolved* is within the workspace subtree."""

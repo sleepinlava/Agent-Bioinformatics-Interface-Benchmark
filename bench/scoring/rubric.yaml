@@ -137,15 +137,6 @@ rubric:
       args:
         required_terms: ["discover", "analysis"]
 
-    analysis_type_correct:
-      description: "execution_plan.json has correct analysis_type"
-      points: 2
-      function: check_json_field
-      args:
-        relpath: "execution_plan.json"
-        field: "analysis_type"
-        expected: "metagenomic_plasmid"
-
     analysis_type_metagenomic_plasmid:
       description: "execution_plan.json has analysis_type metagenomic_plasmid"
       points: 2
@@ -185,6 +176,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["missing", "input"]
+        min_sections: 2
 
     diagnostic_identifies_sample_id:
       description: "Agent identifies the affected sample_id"
@@ -217,6 +209,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["missing", "resource"]
+        min_sections: 2
 
     diagnostic_identifies_resource_name:
       description: "Agent identifies the resource name"
@@ -311,6 +304,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["prodigal", "genomad"]
+        min_sections: 2
 
     plan_text_describes_structure:
       description: "Agent describes step structure and tool provenance"
@@ -318,6 +312,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["step", "tool", "plan"]
+        min_sections: 3
 
     # ── T03 Dry-run text-based checks ────────────────────────────────
     dryrun_text_describes_artifacts:
@@ -326,6 +321,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["provenance", "execution_plan", "commands"]
+        min_sections: 3
 
     dryrun_text_describes_safety:
       description: "Agent describes dry-run safety and placeholder values"
@@ -333,6 +329,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["dry-run", "placeholder"]
+        min_sections: 2
 
     dryrun_text_describes_tables:
       description: "Agent describes standard table output"
@@ -353,6 +350,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["dry_run", "provenance", "commands"]
+        min_sections: 3
 
     counts_statuses_correctly:
       description: "Agent correctly counts dry_run/skipped/failed statuses"
@@ -367,6 +365,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["placeholder", "missing"]
+        min_sections: 2
 
     gives_safe_next_step:
       description: "Agent recommends a safe next step"
@@ -389,6 +388,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["plasflow", "mob_suite", "tool"]
+        min_sections: 2
 
     identifies_env_name:
       description: "Agent identifies the environment name"
@@ -410,6 +410,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["install", "conda", "environment"]
+        min_sections: 2
 
     structured_tool_not_found_diagnosis:
       description: "final_answer.json contains structured tool-not-found diagnosis fields"
@@ -430,6 +431,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["fastp", "featureCounts"]
+        min_sections: 2
 
     # ── T11 Metatranscriptomics inspection checks ─────────────────
     identifies_genome_index_placeholder:
@@ -617,6 +619,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["genome_index", "star_index", "placeholder", "missing"]
+        min_sections: 2
 
     identifies_annotation_gtf_placeholder_rnaseq:
       description: "Identifies annotation GTF as a placeholder resource"
@@ -646,6 +649,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["amr", "placeholder", "database", "amrfinder"]
+        min_sections: 2
 
     identifies_mlst_placeholder_wgs:
       description: "Identifies MLST database as a placeholder resource"
@@ -653,6 +657,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["mlst", "placeholder", "database"]
+        min_sections: 2
 
     # ── T27 DAG contract-lint ───────────────────────────────────────────
     dag_lint_executed:
@@ -703,6 +708,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["qc", "fastp", "checksum"]
+        min_sections: 2
 
     integrity_assessed_correctly:
       description: "Correctly assessed as simulation artifact (not real data corruption)"
@@ -710,6 +716,7 @@ rubric:
       function: check_final_answer_contains
       args:
         required_terms: ["simulation_artifact", "dry-run", "fix"]
+        min_sections: 2
 
     # ── T30 Report quality ──────────────────────────────────────────────
     methods_populated:

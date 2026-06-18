@@ -8,11 +8,10 @@ timeout_minutes: 15
 max_agent_steps: 40
 
 prompt: |
-  Create an execution plan for 16S rRNA amplicon community analysis.
-  The plan must specify analysis_type "amplicon_16s",
-  include unique step_ids, and reference valid tool_ids
-  from the workspace configuration.
-  Do not execute any real bioinformatics tools.
+  Create an execution plan for amplicon community analysis based on the workspace
+  configuration. Inspect config.yaml to determine the correct analysis_type.
+  Include unique step_ids and reference valid tool_ids from the workspace
+  tool registry. Do not execute any real bioinformatics tools.
 
 allowed_actions:
   read_files: true

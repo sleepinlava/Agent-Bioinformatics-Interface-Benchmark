@@ -25,12 +25,12 @@ prompt: |
     "task_type": "job_control",
     "job_id": "<assigned job ID>",
     "phases": {
-      "submitted": true,
-      "status_checked": true,
-      "cancelled": true,
-      "artifacts_retrieved": true
+      "submitted": "<boolean>",
+      "status_checked": "<boolean>",
+      "cancelled": "<boolean>",
+      "artifacts_retrieved": "<boolean>"
     },
-    "final_status": "<completed|cancelled|failed>",
+    "final_status": "<string>",
     "artifacts_available": ["<list of artifact paths>"]
   }
 

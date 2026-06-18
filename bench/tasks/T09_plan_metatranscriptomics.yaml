@@ -8,12 +8,9 @@ timeout_minutes: 15
 max_agent_steps: 40
 
 prompt: |
-  Create an execution plan for metatranscriptomics analysis
-  on the transcriptomics fixture. The plan must include:
-  - analysis_type "metatranscriptomics"
-  - fastp for quality control
-  - STAR or HISAT2 for alignment
-  - featureCounts for quantification
+  Create an execution plan for transcriptomics analysis based on the workspace
+  configuration. Inspect config.yaml to determine the correct analysis_type
+  and select appropriate tools from the workspace tool registry.
   Do not execute any real bioinformatics tools.
 
 allowed_actions:
