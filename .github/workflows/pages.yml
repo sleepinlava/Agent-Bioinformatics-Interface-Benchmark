@@ -1,0 +1,66 @@
+name: Deploy Leaderboard to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  # ── Step 1: Aggregate benchmark results ──────────────────────────────
+  aggregate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Aggregate scores
+        shell: bash
+        run: |
+          if [ -d bench/results ] && [ "$(find bench/results -name 'score.json' | head -1)" ]; then
+            python bench/scoring/aggregate_scores.py \
+              --results bench/results \
+              --experiment-set main \
+              --fixture-set public \
+              --output bench/docs/leaderboard.tsv \
+              --summary bench/docs/summary.json \
+              --per-task bench/docs/per_task_scores.tsv
+            echo "Leaderboard data regenerated."
+          else
+            echo "No score.json files found in bench/results/ — using hand-authored leaderboard."
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: bench/docs
+
+  # ── Step 2: Deploy to GitHub Pages ───────────────────────────────────
+  deploy:
+    needs: aggregate
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
