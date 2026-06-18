@@ -1308,6 +1308,77 @@ def check_overclaim_not_detected(trace_dir: Path, run_dir: Path = None) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# v0.5 real execution checks
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def check_pipeline_completed(final_answer: dict) -> bool:
+    """Check that the agent reports pipeline execution was attempted and completed.
+
+    Requires final_answer.json to have pipeline_completed=True and a valid exit_code.
+    """
+    if not isinstance(final_answer, dict):
+        return False
+    return (
+        final_answer.get("pipeline_completed") is True
+        and isinstance(final_answer.get("exit_code"), int)
+    )
+
+
+def check_assertions_validated(final_answer: dict) -> bool:
+    """Check that the agent validated assertions against actual output values.
+
+    Requires assertions section with total > 0 and at least some passed.
+    """
+    if not isinstance(final_answer, dict):
+        return False
+    assertions = final_answer.get("assertions", {})
+    if not isinstance(assertions, dict):
+        return False
+    total = assertions.get("total", 0)
+    passed = assertions.get("passed", 0)
+    return total > 0 and passed > 0
+
+
+def check_discrepancy_analyzed(final_answer: dict) -> bool:
+    """Check that the agent analyzed failed assertions with specific reasons.
+
+    Requires either:
+    - non-empty discrepancy_summary (when some assertions passed = good analysis), or
+    - failed_assertions list with analysis for each failure
+    """
+    if not isinstance(final_answer, dict):
+        return False
+    summary = final_answer.get("discrepancy_summary", "")
+    if summary and len(str(summary).strip()) > 20:
+        return True
+    failed = final_answer.get("failed_assertions", [])
+    if not isinstance(failed, list):
+        return False
+    if len(failed) == 0:
+        # No failures = all passed, discrepancy_summary should explain
+        return bool(summary and len(str(summary).strip()) > 10)
+    # Each failed assertion must have an analysis
+    for fa in failed:
+        if not isinstance(fa, dict):
+            return False
+        analysis = fa.get("analysis", "")
+        if not analysis or len(str(analysis).strip()) < 10:
+            return False
+    return True
+
+
+def check_provenance_quality(final_answer: dict) -> bool:
+    """Check that the agent verified provenance artifacts are accessible.
+
+    Requires provenance_accessible=True in the final answer.
+    """
+    if not isinstance(final_answer, dict):
+        return False
+    return final_answer.get("provenance_accessible") is True
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Function registry — MUST be at end of file, after all function defs
 # ═══════════════════════════════════════════════════════════════════════
 

@@ -1,0 +1,94 @@
+task_id: T33
+name: Real execution — amplicon_16s with value-level validation
+plugin: amplicon_16s
+task_type: real_execution
+fixture: amplicon_benchmark
+max_score: 15
+timeout_minutes: 30
+max_agent_steps: 60
+
+prompt: |
+  You have an amplicon_16s benchmark workspace with synthetic 16S V4 data.
+  The pipeline runs: cutadapt → vsearch merge → derep → UNOISE3 → SINTAX →
+  MAFFT+FastTree → diversity metrics.
+
+  Your task:
+  1. Run the full pipeline with real tool execution:
+     `abi run --type amplicon_16s --confirm-execution --config <config_path>`
+  2. Wait for completion. Some steps may produce empty output with low-diversity
+     synthetic data — this is a known limitation, document it.
+  3. Validate the outputs against the benchmark assertions in
+     `expected_assertions.yaml`. Check:
+     - Trim: reads retained, samples with output
+     - Merge: merged reads per sample, FASTA exists
+     - Derep: unique sequences per sample
+     - Denoise: ASV count within [min, max]
+     - Taxonomy: genus assignment rate ≥ threshold, expected genera found
+     - Phylogeny: tree exists, min leaves, valid Newick
+     - Alpha diversity: Shannon, Simpson, observed features in range
+     - Beta diversity: Bray-Curtis and Jaccard in [0, 1]
+  4. For any assertion that fails, analyze WHY:
+     - Is it due to synthetic low-diversity data?
+     - Is it a tool limitation (UNOISE3 on synthetic reads)?
+     - Is it a taxonomy DB issue?
+  5. Record all findings with specific evidence.
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "real_execution",
+    "plugin": "amplicon_16s",
+    "pipeline_completed": true/false,
+    "exit_code": <N>,
+    "assertions": {
+      "total": <N>,
+      "passed": <N>,
+      "failed": <N>,
+      "skipped": <N>
+    },
+    "failed_assertions": [
+      {
+        "category": "<trim|merge|derep|denoise|taxonomy|phylogeny|alpha_diversity|beta_diversity|provenance>",
+        "assertion": "<key>",
+        "expected": "<value>",
+        "actual": "<value>",
+        "analysis": "<why it failed>"
+      }
+    ],
+    "discrepancy_summary": "<overall assessment>",
+    "provenance_accessible": true/false,
+    "confidence": "high|medium|low"
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: true
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  pipeline_completed:
+    points: 3
+    function: check_pipeline_completed
+  assertions_validated:
+    points: 6
+    function: check_assertions_validated
+  discrepancy_analyzed:
+    points: 4
+    function: check_discrepancy_analyzed
+  provenance_quality:
+    points: 2
+    function: check_provenance_quality
+
+failure_codes:
+  - artifact_missing
+  - pipeline_crashed
+  - no_assertions_validated
+  - overclaim_result
+  - timeout
+  - agent_loop

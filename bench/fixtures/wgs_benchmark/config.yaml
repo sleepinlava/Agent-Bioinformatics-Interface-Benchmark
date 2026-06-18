@@ -1,0 +1,21 @@
+# WGS benchmark fixture — points to ABI benchmark data
+analysis:
+  type: wgs_bacteria
+  description: "Real execution benchmark with bacterial isolate data"
+
+benchmark:
+  assertions: expected_assertions.yaml
+  data_source: "ABI data/benchmarks/wgs_bacteria/"
+
+execution:
+  confirm_execution: true
+  timeout_minutes: 30
+
+resources:
+  assembly:
+    tool: spades
+  annotation:
+    genus: Escherichia
+    species: coli
+  typing:
+    mlst_scheme: auto

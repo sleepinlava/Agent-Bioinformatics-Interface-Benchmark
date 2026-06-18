@@ -1,0 +1,92 @@
+task_id: T32
+name: Real execution — rnaseq_expression with value-level validation
+plugin: rnaseq_expression
+task_type: real_execution
+fixture: rnaseq_benchmark
+max_score: 15
+timeout_minutes: 30
+max_agent_steps: 60
+
+prompt: |
+  You have an rnaseq_expression benchmark workspace with synthetic RNA-seq data.
+  The pipeline runs: fastp → STAR → featureCounts → build_count_matrix → DESeq2.
+
+  Your task:
+  1. Run the full pipeline with real tool execution:
+     `abi run --type rnaseq_expression --confirm-execution --config <config_path>`
+  2. Wait for completion. Some steps (DESeq2) may fail with synthetic data —
+     this is expected, document it.
+  3. Validate the outputs against the benchmark assertions in
+     `expected_assertions.yaml`. Check:
+     - QC: clean FASTQ exists, reads retained
+     - Alignment: mapping rate ≥ threshold, BAM file exists
+     - Expression: gene counts rows ≥ min, counts file exists
+     - Count matrix: exists, min rows and columns
+     - Differential expression: DESeq2 results exist (may be skipped)
+     - Figures: PCA and volcano plots exist (may be skipped)
+     - Report: contains expected tool names
+  4. For any assertion that fails, analyze WHY:
+     - Is it due to synthetic data limitations (e.g., no real DE signal)?
+     - Is it a tool issue?
+     - Is it a resource issue (missing STAR index, GTF)?
+  5. Record all findings with specific evidence.
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "real_execution",
+    "plugin": "rnaseq_expression",
+    "pipeline_completed": true/false,
+    "exit_code": <N>,
+    "assertions": {
+      "total": <N>,
+      "passed": <N>,
+      "failed": <N>,
+      "skipped": <N>
+    },
+    "failed_assertions": [
+      {
+        "category": "<qc|alignment|expression|count_matrix|differential_expression|figures|report|provenance>",
+        "assertion": "<key>",
+        "expected": "<value>",
+        "actual": "<value>",
+        "analysis": "<why it failed>"
+      }
+    ],
+    "discrepancy_summary": "<overall assessment>",
+    "provenance_accessible": true/false,
+    "confidence": "high|medium|low"
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: true
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  pipeline_completed:
+    points: 3
+    function: check_pipeline_completed
+  assertions_validated:
+    points: 6
+    function: check_assertions_validated
+  discrepancy_analyzed:
+    points: 4
+    function: check_discrepancy_analyzed
+  provenance_quality:
+    points: 2
+    function: check_provenance_quality
+
+failure_codes:
+  - artifact_missing
+  - pipeline_crashed
+  - no_assertions_validated
+  - overclaim_result
+  - timeout
+  - agent_loop

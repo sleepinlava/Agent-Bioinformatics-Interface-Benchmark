@@ -1,6 +1,6 @@
 benchmark:
   name: ABI-Bench
-  version: "0.4"
+  version: "0.5"
   benchmark_type: agent_bioinformatics_interface
   primary_claim: >
     ABI is a structured control layer that improves LLM agent operability
@@ -230,6 +230,59 @@ v0_4_new_tasks:
   - T28
   - T29
   - T30
+
+# ═══════════════════════════════════════════════════════════════════════
+# v0.5 Task Architecture (2026-06-18)
+#
+# Adds 5 real execution tasks (T31-T35) — one per plugin.
+# These tasks require real_tool_execution: true and validate
+# actual pipeline outputs against benchmark assertions.
+# ═══════════════════════════════════════════════════════════════════════
+full_v0_5_tasks:
+  - T01
+  - T02
+  - T03
+  - T04
+  - T05
+  - T06
+  - T07
+  - T08
+  - T09
+  - T10
+  - T11
+  - T12
+  - T13
+  - T14
+  - T15
+  - T16
+  - T17
+  - T18
+  - T19
+  - T25
+  - T26
+  - T27
+  - T28
+  - T29
+  - T30
+  - T31
+  - T32
+  - T33
+  - T34
+  - T35
+
+real_exec_tasks:
+  - T31
+  - T32
+  - T33
+  - T34
+  - T35
+
+v0_5_new_tasks:
+  - T31
+  - T32
+  - T33
+  - T34
+  - T35
 
 ablation_tasks:
   - T03

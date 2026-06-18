@@ -36,6 +36,11 @@ EXTENDED_V0_3_TASKS = ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "
 FULL_V0_4_TASKS = ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T25", "T26", "T27", "T28", "T29", "T30"]
 EXTENDED_V0_4_TASKS = ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T20", "T21", "T22", "T23", "T24", "T25", "T26", "T27", "T28", "T29", "T30"]
 V0_4_NEW_TASKS = ["T25", "T26", "T27", "T28", "T29", "T30"]
+# v0.5: +5 real execution tasks — one per plugin (T31-T35)
+FULL_V0_5_TASKS = FULL_V0_4_TASKS + ["T31", "T32", "T33", "T34", "T35"]
+EXTENDED_V0_5_TASKS = EXTENDED_V0_4_TASKS + ["T31", "T32", "T33", "T34", "T35"]
+REAL_EXEC_TASKS = ["T31", "T32", "T33", "T34", "T35"]
+V0_5_NEW_TASKS = ["T31", "T32", "T33", "T34", "T35"]
 ABLATION_TASKS = ["T03", "T04", "T05", "T06", "T07", "T08"]
 
 _print_lock = threading.Lock()
@@ -63,6 +68,14 @@ def resolve_tasks(task_spec: str) -> list[str]:
         return EXTENDED_V0_4_TASKS
     elif task_spec == "v0_4_new":
         return V0_4_NEW_TASKS
+    elif task_spec == "full_v0_5":
+        return FULL_V0_5_TASKS
+    elif task_spec == "extended_v0_5":
+        return EXTENDED_V0_5_TASKS
+    elif task_spec == "real_exec":
+        return REAL_EXEC_TASKS
+    elif task_spec == "v0_5_new":
+        return V0_5_NEW_TASKS
     elif task_spec == "ablation":
         return ABLATION_TASKS
     else:

@@ -1,0 +1,91 @@
+task_id: T34
+name: Real execution — wgs_bacteria with value-level validation
+plugin: wgs_bacteria
+task_type: real_execution
+fixture: wgs_benchmark
+max_score: 15
+timeout_minutes: 30
+max_agent_steps: 60
+
+prompt: |
+  You have a wgs_bacteria benchmark workspace with bacterial isolate data.
+  The pipeline runs: fastp → SPAdes → Prokka → MLST → AMRFinderPlus.
+
+  Your task:
+  1. Run the full pipeline with real tool execution:
+     `abi run --type wgs_bacteria --confirm-execution --config <config_path>`
+  2. Wait for completion. Some tools (Prokka, MLST, AMRFinderPlus) may need
+     specific resource databases — if they fail, document the missing resources.
+  3. Validate the outputs against the benchmark assertions in
+     `expected_assertions.yaml`. Check:
+     - QC: clean FASTQ exists, reads retained
+     - Assembly: contig count within [min, max], N50 ≥ threshold
+     - Annotation: GFF exists, CDS count ≥ min
+     - MLST typing: output TSV exists
+     - AMR profiling: output TSV exists
+     - Report: contains expected tool names
+  4. For any assertion that fails, analyze WHY:
+     - Is it a missing resource database?
+     - Is it a tool configuration issue?
+     - Is it a data quality issue?
+  5. Record all findings with specific evidence.
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "real_execution",
+    "plugin": "wgs_bacteria",
+    "pipeline_completed": true/false,
+    "exit_code": <N>,
+    "assertions": {
+      "total": <N>,
+      "passed": <N>,
+      "failed": <N>,
+      "skipped": <N>
+    },
+    "failed_assertions": [
+      {
+        "category": "<qc|assembly|annotation|typing|amr|report|provenance>",
+        "assertion": "<key>",
+        "expected": "<value>",
+        "actual": "<value>",
+        "analysis": "<why it failed>"
+      }
+    ],
+    "discrepancy_summary": "<overall assessment>",
+    "provenance_accessible": true/false,
+    "confidence": "high|medium|low"
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: true
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  pipeline_completed:
+    points: 3
+    function: check_pipeline_completed
+  assertions_validated:
+    points: 6
+    function: check_assertions_validated
+  discrepancy_analyzed:
+    points: 4
+    function: check_discrepancy_analyzed
+  provenance_quality:
+    points: 2
+    function: check_provenance_quality
+
+failure_codes:
+  - artifact_missing
+  - pipeline_crashed
+  - no_assertions_validated
+  - overclaim_result
+  - timeout
+  - agent_loop

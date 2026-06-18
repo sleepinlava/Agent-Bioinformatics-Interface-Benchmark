@@ -1,0 +1,19 @@
+# RNA-seq benchmark fixture — points to ABI benchmark data
+analysis:
+  type: rnaseq_expression
+  description: "Real execution benchmark with synthetic RNA-seq data"
+
+benchmark:
+  assertions: expected_assertions.yaml
+  data_source: "ABI data/benchmarks/rnaseq_expression/"
+
+execution:
+  confirm_execution: true
+  timeout_minutes: 30
+
+resources:
+  alignment:
+    tool: star
+  differential_expression:
+    comparison: "treatment_vs_control"
+    alpha: 0.05

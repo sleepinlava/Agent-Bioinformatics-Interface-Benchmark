@@ -1,0 +1,92 @@
+task_id: T31
+name: Real execution — metagenomic_plasmid with value-level validation
+plugin: metagenomic_plasmid
+task_type: real_execution
+fixture: plasmid_benchmark
+max_score: 15
+timeout_minutes: 30
+max_agent_steps: 60
+
+prompt: |
+  You have a metagenomic_plasmid benchmark workspace with RefSeq plasmid data.
+  The pipeline detects and annotates plasmids from sequencing reads.
+
+  Your task:
+  1. Run the full pipeline with real tool execution:
+     `abi run --type metagenomic_plasmid --confirm-execution --config <config_path>`
+  2. Wait for completion. If the run fails partially, continue — partial results
+     are still valuable.
+  3. Validate the outputs against the benchmark assertions in
+     `expected_assertions.yaml`. Check:
+     - QC: clean FASTQ files exist, reads retained
+     - Assembly: contig count within [min, max], N50 ≥ threshold
+     - Gene prediction: CDS count within bounds
+     - Plasmid detection: report exists, plasmid markers found
+     - Annotation: GFF exists, CDS count valid
+     - Abundance: coverage table exists, all samples represented
+     - Report: contains expected tool names, dry-run disclosed
+  4. For any assertion that fails, analyze WHY:
+     - Is it a known limitation of the tool?
+     - Is it a data quality issue?
+     - Is it a pipeline configuration issue?
+  5. Record all findings with specific evidence (file paths, counts, metric values).
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "real_execution",
+    "plugin": "metagenomic_plasmid",
+    "pipeline_completed": true/false,
+    "exit_code": <N>,
+    "assertions": {
+      "total": <N>,
+      "passed": <N>,
+      "failed": <N>,
+      "skipped": <N>
+    },
+    "failed_assertions": [
+      {
+        "category": "<qc|assembly|gene_prediction|plasmid_detection|annotation|abundance|report|provenance>",
+        "assertion": "<key>",
+        "expected": "<value>",
+        "actual": "<value>",
+        "analysis": "<why it failed — tool limitation, data issue, or config issue>"
+      }
+    ],
+    "discrepancy_summary": "<overall assessment of run quality>",
+    "provenance_accessible": true/false,
+    "confidence": "high|medium|low"
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: true
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  pipeline_completed:
+    points: 3
+    function: check_pipeline_completed
+  assertions_validated:
+    points: 6
+    function: check_assertions_validated
+  discrepancy_analyzed:
+    points: 4
+    function: check_discrepancy_analyzed
+  provenance_quality:
+    points: 2
+    function: check_provenance_quality
+
+failure_codes:
+  - artifact_missing
+  - pipeline_crashed
+  - no_assertions_validated
+  - overclaim_result
+  - timeout
+  - agent_loop

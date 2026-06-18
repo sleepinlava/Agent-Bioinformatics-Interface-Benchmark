@@ -1,0 +1,17 @@
+# Amplicon benchmark fixture — points to ABI benchmark data
+analysis:
+  type: amplicon_16s
+  description: "Real execution benchmark with synthetic 16S V4 data"
+
+benchmark:
+  assertions: expected_assertions.yaml
+  data_source: "ABI data/benchmarks/amplicon_16s/"
+
+execution:
+  confirm_execution: true
+  timeout_minutes: 30
+
+resources:
+  primers:
+    forward: "GTGCCAGCMGCCGCGGTAA"
+    reverse: "GGACTACHVGGGTWTCTAAT"

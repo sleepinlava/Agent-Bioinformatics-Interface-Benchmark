@@ -742,3 +742,24 @@ rubric:
       description: "final_answer.json uses schema_version abi-bench.final_answer.v1"
       points: 1
       function: check_final_answer_has_structure
+
+    # ── v0.5 real execution checks (T31-T35) ────────────────────────────
+    pipeline_completed:
+      description: "Pipeline executed with confirm_execution=true and completed"
+      points: 3
+      function: check_pipeline_completed
+
+    assertions_validated:
+      description: "Agent validated actual output values against benchmark assertions"
+      points: 6
+      function: check_assertions_validated
+
+    discrepancy_analyzed:
+      description: "Agent analyzed assertion failures with specific, evidence-based reasons"
+      points: 4
+      function: check_discrepancy_analyzed
+
+    provenance_quality:
+      description: "Agent verified that provenance artifacts are accessible and complete"
+      points: 2
+      function: check_provenance_quality
