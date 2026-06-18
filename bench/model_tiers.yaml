@@ -1,0 +1,32 @@
+# ABI-Bench v0.5 — Model Tier Configuration
+#
+# Defines which models belong to which capability tier for scaffolding
+# analysis and multi-model experiments.
+#
+# To add custom models (including local/self-hosted models), add them under
+# the appropriate tier.  Models not listed here receive tier "unknown" and
+# are included in aggregate statistics but excluded from scaffolding analysis.
+#
+# Used by:
+#   bench/harness/run_multi_model.py  — model selection for experiments
+#   bench/scoring/compute_statistics.py — scaffolding gain computation
+
+tiers:
+  strong:
+    description: "Frontier models with strong reasoning and tool-calling capabilities"
+    models:
+      - gpt-4o
+      - claude-sonnet-4-6
+      - deepseek-v4-pro
+
+  medium:
+    description: "Mid-tier models with adequate reasoning for bioinformatics tasks"
+    models:
+      - gpt-4o-mini
+      - qwen2.5-72b
+
+  weak:
+    description: "Smaller models where the ABI scaffolding effect is most pronounced"
+    models:
+      - qwen2.5-7b
+      - llama-3.1-8b

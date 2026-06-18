@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-ABI-Bench Direct Agent — DeepSeek API agent loop (no OpenCode dependency).
+ABI-Bench Direct Agent — LLM API agent loop (no external harness dependency).
 
-Replaces the legacy OpenCode harness (removed in v0.1.1) by calling the LLM API directly via the openai SDK.
-Handles tool calls (bash, read_file, write_file, list_files) in a simple
-agent loop until the model produces a final answer or max steps is reached.
+Calls the LLM API directly via the openai SDK.  Handles tool calls
+(bash, read_file, write_file, list_files) in a simple agent loop until
+the model produces a final answer or max steps is reached.
+
+Configuration is loaded from ``bench/.env`` and environment variables
+via ``bench.harness.config.load_bench_config()``.
 
 Usage (standalone):
     python bench/harness/direct_agent.py \\
@@ -17,6 +20,7 @@ Usage (standalone):
 import argparse
 import json
 import os
+import random
 import re
 import secrets
 import shlex
@@ -27,12 +31,21 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from openai import OpenAI
+from openai import (
+    APIError,
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    OpenAI,
+    RateLimitError,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from bench.harness.path_guard import PathGuard
+from bench.harness.config import load_bench_config, validate_config
 
 # ── Tool builder is now _build_tools() below, invoked at agent startup ─────────
 
@@ -417,26 +430,6 @@ You may execute tools directly. Document what you executed and why.
 # No inheritance needed — each group's prompt reflects its actual capability set.
 
 
-def load_dotenv(path: str) -> dict:
-    """Load key=value pairs from a dotenv file."""
-    result = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" in line:
-                    key, _, value = line.partition("=")
-                    key = key.strip()
-                    value = value.strip().strip("'").strip('"')
-                    if key not in result:
-                        result[key] = value
-    except OSError:
-        pass
-    return result
-
-
 def resolve_path(workspace: Path, path: str, guard: PathGuard = None) -> Path:
     """Resolve a path relative to workspace. Always resolves within workspace subtree."""
     p = Path(path)
@@ -599,15 +592,14 @@ def run_agent(
     task_type: str = "",
     allowed_actions: dict = None,
 ) -> int:
-    """Run the agent loop with direct DeepSeek API calls."""
+    """Run the agent loop with direct LLM API calls via the OpenAI SDK."""
 
     # ── Load config ───────────────────────────────────────────────────────
-    env = load_dotenv(str(PROJECT_ROOT / "bench" / ".env"))
-    api_key = os.environ.get("ABI_BENCH_API_KEY") or env.get("ABI_BENCH_API_KEY", "")
-    api_base = os.environ.get("ABI_BENCH_API_BASE") or env.get("ABI_BENCH_API_BASE", "https://api.deepseek.com")
-    model = os.environ.get("ABI_BENCH_MODEL") or env.get("ABI_BENCH_MODEL", "deepseek-v4-pro")
+    config = load_bench_config(PROJECT_ROOT / "bench" / ".env")
+    for warning in validate_config(config):
+        print(f"  CONFIG WARNING: {warning}")
 
-    client = OpenAI(api_key=api_key, base_url=api_base)
+    client = OpenAI(api_key=config.api_key, base_url=config.api_base)
 
     # ── Generate workspace nonce for artifact freshness ──────────────────
     nonce = secrets.token_hex(16)
@@ -682,7 +674,7 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
     final_answer = ""
     step_count = 0
 
-    print(f"  Direct agent: model={model}, max_tokens={max_tokens}, max_steps={max_steps}")
+    print(f"  Direct agent: model={config.model}, max_tokens={max_tokens}, max_steps={max_steps}")
     print(f"  System prompt: {len(system_prompt)} chars")
     print(f"  Task prompt: {len(task_prompt)} chars")
 
@@ -696,20 +688,90 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
         step_count = step + 1
         print(f"  Step {step_count}/{max_steps} ({elapsed:.0f}s)...", end=" ", flush=True)
 
-        # ── API call with latency tracking ──
+        # ── API call with latency tracking and retry logic ──
         api_start = time.time()
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=tools,
-                temperature=0,
-                max_tokens=max_tokens,
-            )
-        except Exception as e:
-            print(f"API ERROR: {e}")
-            final_answer = f"# API Error\n\n{e}"
+        response = None
+        last_error: Exception | None = None
+
+        for attempt in range(config.max_retries + 1):
+            try:
+                response = client.chat.completions.create(
+                    model=config.model,
+                    messages=messages,
+                    tools=tools,
+                    temperature=config.temperature,
+                    max_tokens=max_tokens,
+                )
+                last_error = None
+                break
+            except AuthenticationError as e:
+                # Auth failures are permanent — do not retry.
+                last_error = e
+                print(f"FAILED: {type(e).__name__}: {e}")
+                break
+            except (APIConnectionError, APITimeoutError, RateLimitError) as e:
+                last_error = e
+                if attempt < config.max_retries:
+                    delay = min(
+                        config.retry_base_delay_seconds * (2 ** attempt)
+                        + random.uniform(0, 1),
+                        config.retry_max_delay_seconds,
+                    )
+                    print(
+                        f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
+                        f"{type(e).__name__} — waiting {delay:.1f}s",
+                        end=" ", flush=True,
+                    )
+                    time.sleep(delay)
+                else:
+                    print(f"FAILED after {config.max_retries + 1} attempts: {type(e).__name__}: {e}")
+            except APIStatusError as e:
+                # Retry on server errors (5xx), fail on client errors (4xx except 429).
+                last_error = e
+                if e.status_code >= 500 and attempt < config.max_retries:
+                    delay = min(
+                        config.retry_base_delay_seconds * (2 ** attempt)
+                        + random.uniform(0, 1),
+                        config.retry_max_delay_seconds,
+                    )
+                    print(
+                        f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
+                        f"HTTP {e.status_code} — waiting {delay:.1f}s",
+                        end=" ", flush=True,
+                    )
+                    time.sleep(delay)
+                else:
+                    print(f"FAILED after {attempt + 1} attempts: HTTP {e.status_code}: {e}")
+                    break
+            except APIError as e:
+                # Catch-all for other API errors — one retry then fail.
+                last_error = e
+                if attempt < 1:
+                    delay = config.retry_base_delay_seconds + random.uniform(0, 1)
+                    print(
+                        f"RETRY (attempt {attempt + 1}/2): "
+                        f"{type(e).__name__} — waiting {delay:.1f}s",
+                        end=" ", flush=True,
+                    )
+                    time.sleep(delay)
+                else:
+                    print(f"FAILED after 2 attempts: {type(e).__name__}: {e}")
+                    break
+            except Exception as e:
+                # Unexpected errors — fail immediately.
+                last_error = e
+                print(f"API ERROR: {type(e).__name__}: {e}")
+                break
+
+        if last_error is not None:
+            final_answer = f"# API Error\n\n{type(last_error).__name__}: {last_error}"
             break
+
+        if response is None:
+            # Should not happen, but be defensive.
+            final_answer = "# API Error\n\nNo response received after all retries."
+            break
+
         api_latency_ms = int((time.time() - api_start) * 1000)
         api_latencies_ms.append(api_latency_ms)
         # ── end latency tracking ──
@@ -854,7 +916,7 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
         "agent_mode": "direct",
         "start_time": start_time.isoformat(),
         "end_time": end_time.isoformat(),
-        "model": model,
+        "model": config.model,
         "max_tokens": max_tokens,
         "step_count": step_count,
         "total_prompt_tokens": total_prompt_tokens,

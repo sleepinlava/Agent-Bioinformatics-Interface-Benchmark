@@ -360,10 +360,11 @@ def _build_failure_taxonomy(scores: list[dict]) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# v0.3 Scaffolding Analysis
+# v0.5 Scaffolding Analysis
 # ═══════════════════════════════════════════════════════════════════════
 
-MODEL_TIER_MAP = {
+# Built-in fallback (used when bench/model_tiers.yaml is missing).
+_BUILTIN_MODEL_TIER_MAP = {
     "gpt-4o": "strong",
     "claude-sonnet-4-6": "strong",
     "deepseek-v4-pro": "strong",
@@ -372,6 +373,32 @@ MODEL_TIER_MAP = {
     "qwen2.5-7b": "weak",
     "llama-3.1-8b": "weak",
 }
+
+
+def _load_model_tier_map(yaml_path: Path | None = None) -> dict:
+    """Load model → tier mapping from ``bench/model_tiers.yaml``.
+
+    Falls back to *_BUILTIN_MODEL_TIER_MAP* when the YAML file is absent.
+    """
+    if yaml_path is None:
+        yaml_path = Path(__file__).resolve().parent.parent / "model_tiers.yaml"
+    try:
+        if yaml_path.is_file():
+            import yaml
+            with open(yaml_path) as f:
+                data = yaml.safe_load(f) or {}
+            tier_map = {}
+            for tname, tinfo in data.get("tiers", {}).items():
+                for model in tinfo.get("models", []):
+                    tier_map[model] = tname
+            if tier_map:
+                return tier_map
+    except Exception:
+        pass
+    return dict(_BUILTIN_MODEL_TIER_MAP)
+
+
+MODEL_TIER_MAP = _load_model_tier_map()
 
 
 def _compute_scaffolding_analysis(scores: list[dict]) -> dict:

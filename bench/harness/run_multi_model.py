@@ -42,7 +42,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # ── Model Tier Definitions ────────────────────────────────────────────────
 
-MODEL_TIERS = {
+# Built-in fallback tiers (used when bench/model_tiers.yaml is missing).
+_BUILTIN_TIERS = {
     "strong": {
         "description": "Frontier models with strong reasoning capabilities",
         "models": ["gpt-4o", "claude-sonnet-4-6", "deepseek-v4-pro"],
@@ -55,15 +56,42 @@ MODEL_TIERS = {
         "description": "Smaller models where scaffolding effect is most pronounced",
         "models": ["qwen2.5-7b", "llama-3.1-8b"],
     },
-    "all": {
-        "description": "All models across all tiers",
-        "models": [
-            "gpt-4o", "claude-sonnet-4-6", "deepseek-v4-pro",
-            "gpt-4o-mini", "qwen2.5-72b",
-            "qwen2.5-7b", "llama-3.1-8b",
-        ],
-    },
 }
+
+
+def _load_model_tiers(yaml_path: Path | None = None) -> dict:
+    """Load model tiers from a YAML file, returning a dict with an ``"all"`` key.
+
+    Falls back to *_BUILTIN_TIERS* if the file is missing or unreadable.
+    """
+    if yaml_path is None:
+        yaml_path = PROJECT_ROOT / "bench" / "model_tiers.yaml"
+    try:
+        if yaml_path.is_file():
+            import yaml
+            with open(yaml_path) as f:
+                data = yaml.safe_load(f) or {}
+            tiers = {}
+            all_models = []
+            for tname, tinfo in data.get("tiers", {}).items():
+                models = list(tinfo.get("models", []))
+                tiers[tname] = {"description": tinfo.get("description", ""), "models": models}
+                all_models.extend(models)
+            if tiers:
+                tiers["all"] = {"description": "All models across all tiers", "models": all_models}
+                return tiers
+    except Exception:
+        pass
+    # Fallback
+    all_models = []
+    for tinfo in _BUILTIN_TIERS.values():
+        all_models.extend(tinfo["models"])
+    result = dict(_BUILTIN_TIERS)
+    result["all"] = {"description": "All models across all tiers", "models": all_models}
+    return result
+
+
+MODEL_TIERS = _load_model_tiers()
 
 
 def resolve_models(tier: str | None, models_arg: str | None) -> list[dict]:

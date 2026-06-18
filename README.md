@@ -1,4 +1,4 @@
-# ABI-Bench v0.3
+# ABI-Bench v0.5
 
 > [中文版 (Chinese Version)](README.zh.md)
 
@@ -12,9 +12,10 @@
 
 **ABI-Bench** (Agent-Bioinformatics Interface Benchmark) evaluates whether
 a structured **ABI control layer** improves LLM agent operation of
-bioinformatics workflows. v0.3 focuses on the **scaffolding effect**:
+bioinformatics workflows. v0.5 focuses on the **scaffolding effect**:
 does ABI lower the model capability threshold required for reliable
-bioinformatics workflow operation?
+bioinformatics workflow operation, and extends evaluation to real
+bioinformatics tool execution (T31-T35).
 
 ABI-Bench answers three core questions:
 
@@ -81,7 +82,25 @@ artifact paths) provides value beyond simply having more documentation.
 ### Prerequisites
 
 - Python ≥ 3.10
-- `pip install pyyaml openai`
+- `pip install pyyaml openai scipy`
+- Dev tools (optional): `pip install pytest ruff`
+
+### Configuration
+
+Copy `bench/.env.example` to `bench/.env` and set your provider credentials.
+The harness supports any OpenAI-compatible endpoint, including self-hosted
+models (Ollama, vLLM, llama.cpp):
+
+```bash
+# Local model example (Ollama)
+ABI_BENCH_API_BASE=http://localhost:11434/v1
+ABI_BENCH_MODEL=qwen2.5:7b
+ABI_BENCH_TEMPERATURE=0.3
+ABI_BENCH_MAX_TOKENS=4096
+```
+
+See `bench/.env.example` for all configuration options including retry
+settings, reasoning model support, and provider-specific notes.
 
 ### Run a Single Task
 
@@ -95,7 +114,7 @@ ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py \
 
 ```bash
 ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
-  --group G3 --tasks full_v0_3 --replicates 3 \
+  --group G3 --tasks full_v0_5 --replicates 3 \
   --agent-mode direct --parallel --workers 4 \
   --experiment-set main --fixture-set public
 ```
@@ -105,7 +124,7 @@ ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
 ```bash
 python bench/harness/run_multi_model.py \
   --tier all --groups G1,G2,G3,G4 \
-  --tasks full_v0_3 --replicates 3 \
+  --tasks full_v0_5 --replicates 3 \
   --experiment-set paper --fixture-set public \
   --workers 4 --seed 42
 ```
@@ -134,13 +153,16 @@ python bench/scoring/compute_statistics.py \
 | Discovery | T01 | List available analysis types |
 | Planning | T02, T09, T13, T15, T17 | Create execution plans across plugins |
 | Dry-run | T03, T10, T14, T16, T18 | Validate plans without real execution |
-| Inspection | T04, T11 | Read provenance, identify placeholders |
+| Inspection | T04, T11, T25, T26 | Read provenance, identify placeholders |
 | Diagnosis | T05, T06, T07 | Single-fault diagnosis |
 | Complex Diagnosis | T22, T23 | Multi-fault and distractor diagnosis |
 | Safety | T08, T24 | Permission boundary and stress test |
 | Interpretation | T12, T19 | Table interpretation, overclaim guard |
 | Job Control | T20 | Submit, monitor, cancel, retrieve |
 | Cross-plugin | T21 | Zero-shot new plugin operation |
+| Contract | T27, T28, T29 | Contract lint, Nextflow export, violation detection |
+| Report Quality | T30 | Report completeness and structure |
+| Real Execution | T31-T35 | Real bioinformatics tool execution (v0.5) |
 
 ---
 
@@ -180,7 +202,7 @@ For detailed architecture, see [CLAUDE.md](CLAUDE.md).
 If you use ABI-Bench in your research, please cite:
 
 ```bibtex
-@software{abi_bench_v0_3,
+@software{abi_bench_v0_5,
   title = {ABI-Bench: Agent-Bioinformatics Interface Benchmark v0.3},
   author = {ABI-Bench Contributors},
   year = {2026},

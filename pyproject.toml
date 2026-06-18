@@ -57,5 +57,5 @@ exclude = ["workspaces/*", "traces/*", "results/*"]
 quote-style = "double"
 
 [tool.pytest.ini_options]
-testpaths = []
+testpaths = ["tests"]
 pythonpath = ["bench"]

@@ -76,7 +76,9 @@ def run_group(
         "--workers", str(workers),
     ]
 
-    env = {**__import__("os").environ, "ABI_BENCH_MAX_TOKENS": "8000"}
+    from bench.harness.config import load_bench_config
+    _cfg = load_bench_config()
+    env = {**__import__("os").environ, "ABI_BENCH_MAX_TOKENS": str(_cfg.max_tokens)}
 
     print(f"\n{'='*70}")
     print(f"GROUP {group_id} — START ({start_dt.strftime('%H:%M:%S')})")

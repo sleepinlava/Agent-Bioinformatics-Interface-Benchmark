@@ -39,36 +39,17 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from bench.harness.diagnosis import diagnose_workspace_structured
 from bench.harness.diagnosis import format_diagnosis_markdown as _format_diagnosis_markdown
 from bench.harness.diagnosis import summarize_workspace_data as _summarize_workspace_data
+from bench.harness.config import load_dotenv, load_bench_config, validate_config
 
 
-def _load_dotenv(path: Path) -> None:
-    """Load key=value pairs from *path* into ``os.environ``.
-
-    Loads key=value pairs so the Python harness sees provider, model,
-    and other configuration flags.
-    """
-    if not path.is_file():
-        return
-    try:
-        with open(path) as fh:
-            for raw in fh:
-                line = raw.strip()
-                if not line or line.startswith("#"):
-                    continue
-                eq = line.find("=")
-                if eq <= 0:
-                    continue
-                key = line[:eq].strip()
-                value = line[eq + 1:].strip().strip("'").strip('"')
-                if key not in os.environ:          # never override existing env
-                    os.environ[key] = value
-    except OSError:
-        pass
-
-
-# Load bench/.env at import time so provider / model / reasoning flags
-# are visible to every function in this module.
-_load_dotenv(PROJECT_ROOT / "bench" / ".env")
+# Load bench/.env into os.environ at import time so subprocess invocations
+# (run_task -> run_agent as subprocess) inherit the config automatically.
+# Keys already in os.environ are NOT overwritten.
+_dotenv_path = PROJECT_ROOT / "bench" / ".env"
+if _dotenv_path.is_file():
+    for _key, _value in load_dotenv(str(_dotenv_path)).items():
+        if _key not in os.environ:
+            os.environ[_key] = _value
 
 
 def run_task(
@@ -364,6 +345,10 @@ def _run_agent(
     if agent_mode == "direct":
         print("  Direct agent mode (Python, LLM API)")
         trace_dir.mkdir(parents=True, exist_ok=True)
+        config = load_bench_config()
+        # Print config warnings early so they are visible before agent output.
+        for warning in validate_config(config):
+            print(f"  CONFIG WARNING: {warning}")
         from bench.harness.direct_agent import run_agent
         return run_agent(
             workspace=workspace_dir,
@@ -372,7 +357,7 @@ def _run_agent(
             task_id=task_id,
             task_prompt=task_prompt,
             max_steps=max_agent_steps,
-            max_tokens=int(os.environ.get("ABI_BENCH_MAX_TOKENS", "8000")),
+            max_tokens=config.max_tokens,
             timeout_minutes=timeout_minutes,
             task_type=task_type,
             allowed_actions=allowed_actions or {},
