@@ -1,0 +1,48 @@
+analysis:
+  type: rnaseq_expression
+  description: "Standard RNA-seq analysis — CONTRACT VIOLATION (checksum mismatch)"
+
+samples:
+  sample_sheet: sample_sheet.tsv
+
+tools:
+  fastp:
+    executable: fastp
+    version: "0.23.4"
+    env: rnaseq
+  star:
+    executable: STAR
+    version: "2.7.11b"
+    env: rnaseq
+  featurecounts:
+    executable: featureCounts
+    version: "2.0.6"
+    env: rnaseq
+  deseq2:
+    executable: Rscript
+    version: "1.42.0"
+    env: rnaseq
+
+resources:
+  genome_index:
+    path: resources/star_index
+    type: directory
+  annotation_gtf:
+    path: resources/genes.gtf
+    type: file
+
+output:
+  tables:
+    - gene_expression.tsv
+    - differential_expression.tsv
+  provenance_dir: provenance
+  report_dir: report
+
+# Injected contract violation: checksums.json will contain a bogus hash
+# for the fastp output, causing STAR alignment step to fail checksum validation
+_contract_violation:
+  step: qc
+  output: trimmed_reads
+  violation: checksum_mismatch
+  expected_checksum: "sha256:abc123def456789"
+  actual_checksum: "sha256:000000000000000"

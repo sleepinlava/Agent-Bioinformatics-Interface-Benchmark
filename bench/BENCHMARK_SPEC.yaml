@@ -1,6 +1,6 @@
 benchmark:
   name: ABI-Bench
-  version: "0.3"
+  version: "0.4"
   benchmark_type: agent_bioinformatics_interface
   primary_claim: >
     ABI is a structured control layer that improves LLM agent operability
@@ -50,6 +50,8 @@ plugins:
   - metagenomic_plasmid
   - metatranscriptomics
   - amplicon_16s
+  - rnaseq_expression
+  - wgs_bacteria
 
 main_groups:
   - G1
@@ -176,6 +178,58 @@ full_v0_3_tasks:
   - T17
   - T18
   - T19
+
+# ═══════════════════════════════════════════════════════════════════════
+# v0.4 Task Architecture (2026-06-18)
+#
+# Adds 6 new tasks spanning 3 new modules:
+#   DAG Validation  → T27 (contract-lint)
+#   Export          → T28 (Nextflow DSL2)
+#   Contract Diag   → T29 (checksum violation)
+#   Report Quality  → T30 (deep content validation)
+#   Inspection      → T25 (rnaseq), T26 (wgs) — completes 5-plugin coverage
+# ═══════════════════════════════════════════════════════════════════════
+full_v0_4_tasks:
+  - T01
+  - T02
+  - T03
+  - T04
+  - T05
+  - T06
+  - T07
+  - T08
+  - T09
+  - T10
+  - T11
+  - T12
+  - T13
+  - T14
+  - T15
+  - T16
+  - T17
+  - T18
+  - T19
+  - T25
+  - T26
+  - T27
+  - T28
+  - T29
+  - T30
+
+extended_v0_4_tasks:
+  - T20
+  - T21
+  - T22
+  - T23
+  - T24
+
+v0_4_new_tasks:
+  - T25
+  - T26
+  - T27
+  - T28
+  - T29
+  - T30
 
 ablation_tasks:
   - T03
@@ -304,8 +358,8 @@ success_criteria:
   # v0.3: Cross-Plugin Portability Criteria
   # ═══════════════════════════════════════════════════════════════════════
   cross_plugin_criteria:
-    # All 3 plugins must have successful dry-run by G3
-    min_plugins_dryrun_success: 3
+    # All 5 plugins must have successful dry-run by G3 (v0.4: 3→5)
+    min_plugins_dryrun_success: 5
     # Per-plugin plan score must be ≥ 70% of max
     min_plugin_plan_score_ratio: 0.70
 

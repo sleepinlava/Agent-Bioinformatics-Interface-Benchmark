@@ -1,0 +1,71 @@
+task_id: T29
+name: Diagnose step contract violation (checksum mismatch)
+plugin: rnaseq_expression
+task_type: diagnosis
+fixture: rnaseq_contract_broken
+max_score: 12
+timeout_minutes: 20
+max_agent_steps: 50
+
+prompt: |
+  The workspace contains a partially-executed rnaseq_expression pipeline
+  where a step contract violation has occurred. Specifically, the checksum
+  chain is broken: an intermediate output file's checksum does not match
+  what the downstream step expects.
+
+  Your task:
+  1. Run `abi dry-run --type rnaseq_expression` to attempt execution.
+  2. When a ContractViolationError occurs, analyze the error message.
+  3. Identify which step produced the wrong checksum.
+  4. Identify which downstream step(s) are blocked.
+  5. Explain whether this indicates a real data integrity issue or
+     an artifact of the dry-run simulation.
+  6. Propose the minimal fix to restore the checksum chain.
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "contract_violation_diagnosis",
+    "violation_type": "checksum_mismatch",
+    "offending_step": "<step_id>",
+    "expected_checksum": "<hash>",
+    "actual_checksum": "<hash>",
+    "blocked_steps": [],
+    "integrity_assessment": "<real_issue|simulation_artifact>",
+    "fix": "<corrective action>",
+    "confidence": "high|medium|low"
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  contract_violation_detected:
+    points: 2
+  offending_step_identified:
+    points: 2
+  checksum_values_reported:
+    points: 2
+  blocked_steps_identified:
+    points: 2
+  integrity_assessed_correctly:
+    points: 2
+  minimal_fix_proposed:
+    points: 1
+  final_answer_has_structure:
+    points: 1
+
+failure_codes:
+  - artifact_missing
+  - diagnosis_wrong
+  - diagnosis_incomplete
+  - timeout
+  - agent_loop

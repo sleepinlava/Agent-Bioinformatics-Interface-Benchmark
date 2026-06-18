@@ -1,0 +1,65 @@
+task_id: T27
+name: Validate workflow DAG with contract-lint
+plugin: metagenomic_plasmid
+task_type: dag_validation
+fixture: plasmid_valid
+max_score: 12
+timeout_minutes: 15
+max_agent_steps: 40
+
+prompt: |
+  Run `abi contract-lint --type metagenomic_plasmid --strict` to validate
+  the workflow DAG. Analyze and report:
+
+  1. Are there any cycles or broken dependency edges in the DAG?
+  2. For each WARNING emitted, explain whether it represents a real
+     workflow problem or a tolerable mismatch.
+  3. Explain the difference between L1 (literature-declared) and
+     L2 (path-inferred) edges in the DAG model.
+  4. Verify that all DAG node IDs match tool IDs in the tool registry.
+  5. Report whether any step has unsatisfied assertions.
+
+  Write your findings to final_answer.json using the schema:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "dag_validation",
+    "lint_exit_code": <int>,
+    "cycles_found": [],
+    "broken_edges": [],
+    "warnings": [{"step": "...", "message": "...", "severity": "..."}],
+    "l1_l2_explanation": "...",
+    "registry_consistency": true/false,
+    "unsatisfied_assertions": []
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  dag_lint_executed:
+    points: 2
+  cycles_broken_edges_reported:
+    points: 2
+  l1_l2_distinction_explained:
+    points: 3
+  registry_consistency_checked:
+    points: 2
+  unsatisfied_assertions_reported:
+    points: 1
+  final_answer_has_structure:
+    points: 2
+
+failure_codes:
+  - artifact_missing
+  - invalid_command
+  - diagnosis_incomplete
+  - timeout
+  - agent_loop

@@ -1,0 +1,11 @@
+{
+  "task_type": "contract_violation_diagnosis",
+  "violation_type": "checksum_mismatch",
+  "offending_step": "qc",
+  "offending_output": "trimmed_reads",
+  "expected_checksum": "sha256:abc123def456789",
+  "actual_checksum": "sha256:000000000000000",
+  "blocked_steps": ["alignment", "quantification", "diff_expression"],
+  "integrity_assessment": "simulation_artifact",
+  "fix": "Re-run the qc step to regenerate the correct checksum in provenance/checksums.json"
+}

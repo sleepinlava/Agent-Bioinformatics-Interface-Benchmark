@@ -1,0 +1,66 @@
+task_id: T28
+name: Export and validate Nextflow workflow
+plugin: metagenomic_plasmid
+task_type: export
+fixture: plasmid_valid
+max_score: 10
+timeout_minutes: 15
+max_agent_steps: 40
+
+prompt: |
+  Run `abi export-nextflow --type metagenomic_plasmid --outdir nf_export`
+  and validate the exported Nextflow DSL2 workflow. Report:
+
+  1. Does main.nf exist and contain all tool steps from the execution plan?
+  2. Does each process declare resource directives (cpus, memory, container)?
+  3. Does nextflow.config reference Docker images matching the plugin's
+     tool environments?
+  4. Does the workflow include proper channel wiring between steps?
+  5. Can `nextflow config nf_export/main.nf` parse without syntax errors?
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "export_validation",
+    "main_nf_exists": true/false,
+    "total_steps_in_plan": <N>,
+    "steps_in_nf": <N>,
+    "missing_steps": [],
+    "has_resource_directives": true/false,
+    "has_docker_references": true/false,
+    "channel_wiring_valid": true/false,
+    "config_parsable": true/false,
+    "issues": []
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - nf_export/main.nf
+  - nf_export/nextflow.config
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  main_nf_generated_and_valid:
+    points: 2
+  all_steps_included_in_nf:
+    points: 2
+  resource_directives_present:
+    points: 2
+  docker_image_references_correct:
+    points: 2
+  final_answer_has_structure:
+    points: 2
+
+failure_codes:
+  - artifact_missing
+  - invalid_command
+  - diagnosis_incomplete
+  - timeout
+  - agent_loop

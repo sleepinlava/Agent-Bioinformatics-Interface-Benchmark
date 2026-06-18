@@ -1,0 +1,11 @@
+{
+  "task_type": "diagnosis",
+  "cause": "missing_resource",
+  "resource": "genome_index",
+  "config_key": "resources.genome_index.path",
+  "path": "missing/star_index_v40",
+  "description": "STAR genome index directory does not exist",
+  "blocked_step": "alignment",
+  "fix_required": true,
+  "fix_suggestion": "Download and build STAR index using STAR --runMode genomeGenerate, or set resources.genome_index.path to an existing index directory"
+}

@@ -32,6 +32,10 @@ MVP_TASKS = ["T01", "T02", "T03", "T05", "T06", "T08", "T09", "T10"]
 FULL_TASKS = ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18"]
 FULL_V0_3_TASKS = ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19"]
 EXTENDED_V0_3_TASKS = ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T20", "T21", "T22", "T23", "T24"]
+# v0.4: +6 tasks — rnaseq/wgs inspection, DAG lint, Nextflow export, contract violation, report quality
+FULL_V0_4_TASKS = ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T25", "T26", "T27", "T28", "T29", "T30"]
+EXTENDED_V0_4_TASKS = ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T20", "T21", "T22", "T23", "T24", "T25", "T26", "T27", "T28", "T29", "T30"]
+V0_4_NEW_TASKS = ["T25", "T26", "T27", "T28", "T29", "T30"]
 ABLATION_TASKS = ["T03", "T04", "T05", "T06", "T07", "T08"]
 
 _print_lock = threading.Lock()
@@ -53,6 +57,12 @@ def resolve_tasks(task_spec: str) -> list[str]:
         return FULL_V0_3_TASKS
     elif task_spec == "extended_v0_3":
         return EXTENDED_V0_3_TASKS
+    elif task_spec == "full_v0_4":
+        return FULL_V0_4_TASKS
+    elif task_spec == "extended_v0_4":
+        return EXTENDED_V0_4_TASKS
+    elif task_spec == "v0_4_new":
+        return V0_4_NEW_TASKS
     elif task_spec == "ablation":
         return ABLATION_TASKS
     else:

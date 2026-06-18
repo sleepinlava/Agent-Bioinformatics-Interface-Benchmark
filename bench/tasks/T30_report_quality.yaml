@@ -1,0 +1,76 @@
+task_id: T30
+name: Report quality — deep content validation
+plugin: metagenomic_plasmid
+task_type: interpretation
+fixture: plasmid_valid
+max_score: 10
+timeout_minutes: 15
+max_agent_steps: 40
+
+prompt: |
+  After completing a dry-run for metagenomic_plasmid analysis, verify
+  the quality of the generated report beyond simple file existence:
+
+  1. Read report/report.md and check that:
+     - The methods section references actual tools used (not just placeholders)
+     - Citations are present and match the plugin's citation registry
+     - Limitations are explicitly acknowledged (e.g., "this is a dry-run,
+       results are not biological findings")
+  2. Read report/report.html and check that:
+     - Figures are rendered (check for <img> or <svg> tags)
+     - The HTML is well-formed (has <html>, <body>, etc.)
+  3. Read report/limitations.md and check that:
+     - At least one limitation is biological (not just computational)
+     - The dry-run nature is clearly disclosed
+  4. Read report/citations.md and check that:
+     - At least 3 citations are present
+     - Citations reference real tools used in the analysis
+
+  CRITICAL: The report MUST NOT present dry-run placeholder values as
+  real biological findings. Flag any instance of overclaim.
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "report_quality",
+    "methods_populated": true/false,
+    "tool_names_in_methods": [],
+    "citation_count": <N>,
+    "limitations_acknowledged": true/false,
+    "dryrun_disclosed": true/false,
+    "figures_rendered": true/false,
+    "figure_count": <N>,
+    "html_well_formed": true/false,
+    "overclaim_detected": true/false,
+    "overclaim_details": []
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: false
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  methods_populated:
+    points: 2
+  citations_present_and_valid:
+    points: 2
+  limitations_acknowledged:
+    points: 2
+  dryrun_explicitly_disclosed:
+    points: 2
+  overclaim_not_detected:
+    points: 2
+
+failure_codes:
+  - artifact_missing
+  - overclaim_result
+  - diagnosis_incomplete
+  - timeout
+  - agent_loop

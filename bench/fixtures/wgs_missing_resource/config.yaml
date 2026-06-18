@@ -1,0 +1,71 @@
+analysis:
+  type: wgs_bacteria
+  description: "Bacterial isolate WGS analysis — MISSING RESOURCE"
+
+samples:
+  sample_sheet: sample_sheet.tsv
+
+tools:
+  fastp:
+    executable: fastp
+    version: "0.23.4"
+    env: wgs
+  spades:
+    executable: spades.py
+    version: "3.15.5"
+    env: wgs
+  prokka:
+    executable: prokka
+    version: "1.14.6"
+    env: wgs
+  mlst:
+    executable: mlst
+    version: "2.23.0"
+    env: wgs
+  amrfinderplus:
+    executable: amrfinder
+    version: "3.12.8"
+    env: wgs
+
+resources:
+  amrfinder_db:
+    path: missing/amrfinderplus_db
+    type: directory
+    description: "AMRFinderPlus database directory — MISSING"
+  mlst_db:
+    path: missing/mlst_db
+    type: directory
+    description: "MLST database directory — MISSING"
+
+output:
+  tables:
+    - genome_assembly_stats.tsv
+    - mlst_profile.tsv
+    - amr_profile.tsv
+  provenance_dir: provenance
+  report_dir: report
+
+workflow:
+  steps:
+    - id: qc
+      tool: fastp
+      input: read1,read2
+      output: clean_reads
+    - id: assembly
+      tool: spades
+      input: clean_reads
+      output: contigs.fasta
+    - id: annotation
+      tool: prokka
+      input: contigs.fasta
+      output: annotation
+    - id: mlst
+      tool: mlst
+      input: contigs.fasta
+      database: mlst_db
+      output: mlst.tsv
+    - id: amr
+      tool: amrfinderplus
+      input: annotation
+      database: amrfinder_db
+      output: amr.tsv

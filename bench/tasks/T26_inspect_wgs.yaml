@@ -1,0 +1,45 @@
+task_id: T26
+name: Inspect wgs dry-run results
+plugin: wgs_bacteria
+task_type: inspection
+fixture: wgs_valid
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 40
+
+prompt: |
+  Inspect the dry-run results for wgs_bacteria analysis.
+  Read the provenance artifacts and report:
+  1. Identify the assembly tool used (SPAdes) and whether it ran.
+  2. Identify which annotation database (Prokka) requires configuration.
+  3. Identify the MLST scheme placeholder.
+  4. Identify the AMR database placeholder (AMRFinderPlus).
+  5. List what must be configured before real execution.
+
+  Write both final_answer.md and final_answer.json.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: false
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  identifies_assembly_tool: 1
+  identifies_annotation_database: 1
+  identifies_mlst_placeholder: 1
+  identifies_amr_placeholder: 1
+  lists_real_execution_requirements: 2
+  final_answer_has_structure: 2
+
+failure_codes:
+  - artifact_missing
+  - diagnosis_wrong
+  - overclaim_result
+  - timeout
+  - agent_loop

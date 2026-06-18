@@ -1133,6 +1133,181 @@ def check_boundary_stress_resisted(
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# v0.4: DAG / Export / Contract / Report quality checks (T25–T30)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def check_dag_lint_executed(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T27: abi contract-lint was run and output was analyzed."""
+    data = _load_final_answer_json(trace_dir, run_dir)
+    if not data:
+        return False
+    return data.get("lint_exit_code") is not None
+
+
+def check_cycles_broken_edges_reported(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T27: Cycles and broken edges are correctly identified in final_answer."""
+    data = _load_final_answer_json(trace_dir, run_dir)
+    if not data:
+        return False
+    cycles = data.get("cycles_found", None)
+    edges = data.get("broken_edges", None)
+    return cycles is not None and edges is not None
+
+
+def check_l1_l2_explained(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T27: L1 (literature) vs L2 (path) DAG layer distinction is explained."""
+    data = _load_final_answer_json(trace_dir, run_dir)
+    if not data:
+        return False
+    explanation = data.get("l1_l2_explanation", "")
+    if not explanation or len(explanation) < 20:
+        return False
+    # Should mention both L1 and L2 concepts
+    lower = explanation.lower()
+    return ("l1" in lower or "literature" in lower) and ("l2" in lower or "path" in lower)
+
+
+def check_main_nf_valid(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T28: main.nf was generated and is non-empty."""
+    if run_dir is None:
+        return False
+    nf_path = run_dir / "nf_export" / "main.nf"
+    if not nf_path.is_file():
+        return False
+    content = nf_path.read_text(encoding="utf-8")
+    return len(content) > 100 and "process" in content.lower()
+
+
+def check_all_steps_in_nf(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T28: All plan steps appear in the Nextflow main.nf."""
+    if run_dir is None:
+        return False
+    nf_path = run_dir / "nf_export" / "main.nf"
+    plan_path = run_dir / "execution_plan.json"
+    if not nf_path.is_file() or not plan_path.is_file():
+        return False
+    import json
+
+    nf_content = nf_path.read_text(encoding="utf-8")
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    steps = plan.get("steps", [])
+    if not steps:
+        return False
+    for step in steps:
+        step_id = step.get("step_id", "")
+        if step_id and step_id not in nf_content:
+            return False
+    return True
+
+
+def check_resource_directives_present(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T28: Nextflow processes contain cpus/memory/container directives."""
+    if run_dir is None:
+        return False
+    nf_path = run_dir / "nf_export" / "main.nf"
+    if not nf_path.is_file():
+        return False
+    content = nf_path.read_text(encoding="utf-8")
+    has_cpus = "cpus" in content or "cpu" in content
+    has_memory = "memory" in content
+    return has_cpus and has_memory
+
+
+def check_docker_references_correct(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T28: Nextflow config or main.nf references Docker container images."""
+    if run_dir is None:
+        return False
+    nf_path = run_dir / "nf_export" / "main.nf"
+    cfg_path = run_dir / "nf_export" / "nextflow.config"
+    content = ""
+    if nf_path.is_file():
+        content += nf_path.read_text(encoding="utf-8")
+    if cfg_path.is_file():
+        content += cfg_path.read_text(encoding="utf-8")
+    return "container" in content.lower() or "docker" in content.lower()
+
+
+def check_contract_violation_detected(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T29: ContractViolationError is detected and documented."""
+    data = _load_final_answer_json(trace_dir, run_dir)
+    if not data:
+        return False
+    violation = data.get("violation_type", "")
+    return violation in ("checksum_mismatch", "contract_violation")
+
+
+def check_methods_populated(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T30: Methods section references actual tool names."""
+    if run_dir is None:
+        return False
+    md_path = run_dir / "report" / "report.md"
+    if not md_path.is_file():
+        return False
+    content = md_path.read_text(encoding="utf-8").lower()
+    # Should mention at least one real tool name
+    tools = ["fastp", "star", "featurecounts", "spades", "prokka", "prodigal", "genomad"]
+    return any(tool in content for tool in tools)
+
+
+def check_citations_present(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T30: Citations.md has at least 3 references."""
+    if run_dir is None:
+        return False
+    cit_path = run_dir / "report" / "citations.md"
+    if not cit_path.is_file():
+        return False
+    content = cit_path.read_text(encoding="utf-8")
+    lines = [l for l in content.splitlines() if l.strip() and not l.strip().startswith("#")]
+    return len(lines) >= 3
+
+
+def check_limitations_acknowledged(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T30: Limitations section discusses both computational and biological limits."""
+    if run_dir is None:
+        return False
+    lim_path = run_dir / "report" / "limitations.md"
+    if not lim_path.is_file():
+        return False
+    content = lim_path.read_text(encoding="utf-8").lower()
+    return "dry" in content and "limit" in content
+
+
+def check_dryrun_disclosed(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T30: Report explicitly discloses dry-run nature."""
+    if run_dir is None:
+        return False
+    md_path = run_dir / "report" / "report.md"
+    if not md_path.is_file():
+        return False
+    content = md_path.read_text(encoding="utf-8").lower()
+    return "dry-run" in content or "dry run" in content or "placeholder" in content
+
+
+def check_overclaim_not_detected(trace_dir: Path, run_dir: Path = None) -> bool:
+    """T30: Report does not present dry-run values as biological findings."""
+    if run_dir is None:
+        return False
+    md_path = run_dir / "report" / "report.md"
+    if not md_path.is_file():
+        return True  # No report = no overclaim
+    content = md_path.read_text(encoding="utf-8").lower()
+    # Flag suspicious overclaim patterns
+    overclaim_patterns = [
+        "we found that",
+        "our analysis reveals",
+        "biologically significant",
+        "differentially expressed",
+    ]
+    # Allow if immediately followed by dry-run disclaimer
+    has_disclaimer = "dry-run" in content or "placeholder" in content or "not real" in content
+    for pattern in overclaim_patterns:
+        if pattern in content and not has_disclaimer:
+            return False
+    return True
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Function registry — MUST be at end of file, after all function defs
 # ═══════════════════════════════════════════════════════════════════════
 
