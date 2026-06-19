@@ -770,3 +770,24 @@ rubric:
       description: "Agent verified that provenance artifacts are accessible and complete"
       points: 2
       function: check_provenance_quality
+
+    # ── v0.6: Real execution assertion checks ────────────────────────────
+    check_pipeline_outputs_match_assertions:
+      description: "Pipeline outputs match expected_assertions.yaml values"
+      points: 8
+      function: check_pipeline_outputs_match_assertions
+
+    check_per_category_breakdown:
+      description: "Per-category (qc/assembly/annotation) assertion pass rates reported"
+      points: 2
+      function: check_per_category_breakdown
+
+    check_output_file_integrity:
+      description: "Required output files exist and are non-empty"
+      points: 2
+      function: check_output_file_integrity
+
+    check_assertion_value_in_range:
+      description: "Numeric assertion values fall within expected ranges"
+      points: 4
+      function: check_assertion_value_in_range
