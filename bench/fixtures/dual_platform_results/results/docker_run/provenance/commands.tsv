@@ -1,0 +1,5 @@
+step_id	tool_id	executable	status	command
+predict_genes	prodigal	prodigal	dry_run	prodigal -i assembly.fasta -o genes.gff
+annotate_domains	hmmer	hmmscan	dry_run	hmmscan --domtblout domains.tsv Pfam-A.hmm proteins.faa
+classify_plasmids	genomad	genomad	dry_run	genomad end-to-end assembly.fasta genomad_output
+similarity_search	blast	blastn	dry_run	blastn -db nt -query plasmids.fna -out blast_results.tsv

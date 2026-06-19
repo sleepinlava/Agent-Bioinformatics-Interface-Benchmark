@@ -41,6 +41,20 @@ FULL_V0_5_TASKS = FULL_V0_4_TASKS + ["T31", "T32", "T33", "T34", "T35"]
 EXTENDED_V0_5_TASKS = EXTENDED_V0_4_TASKS + ["T31", "T32", "T33", "T34", "T35"]
 REAL_EXEC_TASKS = ["T31", "T32", "T33", "T34", "T35"]
 V0_5_NEW_TASKS = ["T31", "T32", "T33", "T34", "T35"]
+# v0.6: +12 tasks — figure validation (T36-T38), progressive repair (T39-T41),
+# remaining tasks (T42-T47)
+FULL_V0_6_TASKS = FULL_V0_5_TASKS + [
+    "T36", "T37", "T38", "T39", "T40", "T41",
+    "T42", "T43", "T44", "T45", "T46", "T47",
+]
+EXTENDED_V0_6_TASKS = EXTENDED_V0_5_TASKS + [
+    "T36", "T37", "T38", "T39", "T40", "T41",
+    "T42", "T43", "T44", "T45", "T46", "T47",
+]
+V0_6_NEW_TASKS = [
+    "T36", "T37", "T38", "T39", "T40", "T41",
+    "T42", "T43", "T44", "T45", "T46", "T47",
+]
 ABLATION_TASKS = ["T03", "T04", "T05", "T06", "T07", "T08"]
 
 _print_lock = threading.Lock()
@@ -76,6 +90,12 @@ def resolve_tasks(task_spec: str) -> list[str]:
         return REAL_EXEC_TASKS
     elif task_spec == "v0_5_new":
         return V0_5_NEW_TASKS
+    elif task_spec == "full_v0_6":
+        return FULL_V0_6_TASKS
+    elif task_spec == "extended_v0_6":
+        return EXTENDED_V0_6_TASKS
+    elif task_spec == "v0_6_new":
+        return V0_6_NEW_TASKS
     elif task_spec == "ablation":
         return ABLATION_TASKS
     else:

@@ -1,0 +1,48 @@
+# Benchmark assertions for wgs_bacteria plugin
+# Uses synthetic paired-end reads from a minimal bacterial genome.
+#
+# Pipeline: fastp → SPAdes → Prokka → MLST → AMRFinderPlus
+# These assertions validate that a real-tool execution produces
+# biologically plausible outputs from bacterial WGS data.
+
+wgs_bacteria:
+  # ── QC (fastp) ──
+  qc:
+    min_reads_retained: 50          # At least some reads survive trimming
+    min_samples_with_output: 2
+    clean_fastq_exists: true
+
+  # ── Assembly (SPAdes) ──
+  assembly:
+    min_contigs: 10                 # Bacterial genome should assemble to 10+ contigs
+    max_contigs: 500                # Upper bound for non-clinical isolates
+    min_n50: 5000                   # At least 5 kb N50 for a reasonable assembly
+    assembly_dir_exists: true
+
+  # ── Annotation (Prokka) ──
+  annotation:
+    min_cds: 500                    # Even minimal bacterial genomes have 500+ CDS
+    max_cds: 10000                  # Upper bound (E. coli ~4,000)
+    annotation_gff_exists: true
+    protein_fasta_exists: true
+
+  # ── MLST Typing ──
+  typing:
+    mlst_output_exists: true
+    # MLST may not find a scheme for synthetic data — existence is the baseline
+
+  # ── AMR Profiling (AMRFinderPlus) ──
+  amr:
+    amr_output_exists: true
+    # AMRFinderPlus may find 0 hits on synthetic data — that is valid
+
+  # ── Report ──
+  report:
+    report_md_exists: true
+    contains_tool_name: "prokka"
+
+  # ── Provenance ──
+  provenance:
+    min_commands: 4                 # fastp + SPAdes + Prokka + MLST (+ AMRFinderPlus may be 5)
+    run_summary_exists: true
+    checksums_exist: true

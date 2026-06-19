@@ -1,0 +1,70 @@
+task_id: T43
+name: Cross-runtime output comparison — Docker vs local
+plugin: metagenomic_plasmid
+task_type: cross_platform
+fixture: dual_platform_results
+max_score: 12
+timeout_minutes: 20
+max_agent_steps: 40
+
+prompt: |
+  You have results from the same metagenomic_plasmid pipeline run twice:
+    results/local_run/   — local conda execution
+    results/docker_run/  — Docker container execution
+
+  Your task:
+  1. Compare provenance/commands.tsv between both runs — commands match?
+  2. Compare tables/*.tsv — numerical values match (allow <1% float error)?
+  3. Compare figures/*.png — visual content equivalent?
+  4. Determine: are the two runs "substantially equivalent"?
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "cross_platform",
+    "platforms": ["docker", "local"],
+    "command_comparison": {"match": true/false, "differences": [...]},
+    "table_comparison": {"match": true/false, "numeric_diffs": [...]},
+    "figure_comparison": {"match": true/false, "diffs": [...]},
+    "substantially_equivalent": true/false,
+    "rationale": "<explanation>"
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  command_compared:
+    points: 3
+    function: check_final_answer_contains
+    args:
+      required_terms: ["command", "compare"]
+  tables_compared:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["table", "numeric", "value"]
+      min_sections: 2
+  figures_compared:
+    points: 3
+    function: check_final_answer_contains
+    args:
+      required_terms: ["figure", "png", "visual"]
+  equivalence_conclusion:
+    points: 2
+    function: check_final_answer_contains
+    args:
+      required_terms: ["equivalent", "rationale"]
+
+failure_codes:
+  - artifact_missing
+  - timeout
+  - agent_loop

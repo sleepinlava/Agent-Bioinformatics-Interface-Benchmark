@@ -1,0 +1,73 @@
+# bench/tasks/T37_figure_diagnosis.yaml
+task_id: T37
+name: Figure diagnosis — identify and fix chart problems
+plugin: rnaseq_expression
+task_type: figure_diagnosis
+fixture: figure_validation
+max_score: 10
+timeout_minutes: 15
+max_agent_steps: 30
+
+prompt: |
+  You have an rnaseq_expression analysis workspace. The figures/ directory
+  contains charts, but some have intentional problems:
+  - One figure may be blank (0 bytes)
+  - One figure may have truncated title text
+  - One figure may use incorrect color scheme
+
+  Your task:
+  1. Examine all figures and identify which have problems
+  2. For each problem, diagnose the root cause:
+     - Data issue (missing/wrong source table)
+     - Rendering issue (sciplot bug or config error)
+     - Configuration issue (wrong figure_spec.yaml)
+  3. Propose fixes — can you modify the figure spec and re-render?
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "figure_diagnosis",
+    "figures_examined": <N>,
+    "problems_found": [
+      {
+        "path": "figures/<name>.png",
+        "problem": "<description>",
+        "root_cause": "data|rendering|configuration",
+        "fix_suggestion": "<specific fix>",
+        "fixable_in_place": true/false
+      }
+    ]
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  all_problems_identified:
+    points: 3
+    function: check_final_answer_has_structure
+  root_cause_accurate:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["root_cause", "data", "rendering"]
+      min_sections: 2
+  fix_suggestions_viable:
+    points: 3
+    function: check_final_answer_contains
+    args:
+      required_terms: ["fix", "spec", "render"]
+
+failure_codes:
+  - artifact_missing
+  - diagnosis_wrong
+  - diagnosis_incomplete
+  - timeout

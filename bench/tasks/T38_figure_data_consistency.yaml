@@ -1,0 +1,96 @@
+# bench/tasks/T38_figure_data_consistency.yaml
+task_id: T38
+name: Figure-data consistency — cross-validate charts against source tables
+plugin: amplicon_16s
+task_type: figure_data_consistency
+fixture: figure_validation
+max_score: 14
+timeout_minutes: 20
+max_agent_steps: 40
+
+prompt: |
+  You have an amplicon_16s analysis workspace with results including figures
+  and standard tables. Your task is to cross-validate:
+
+  1. alpha_diversity.png Shannon values == tables/alpha_diversity.tsv values
+  2. taxonomy_barplot.png genus names == tables/taxonomy.tsv genus column
+  3. pcoa.png sample clustering == tables/beta_diversity.tsv distance matrix
+  4. rarefaction_curve.png asymptote == actual observed features count
+
+  For each check:
+  - Extract the numerical value from the table
+  - Inspect the figure (read axis labels, legend text from the image metadata or by
+    grepping the source data used to render it)
+  - Report: "consistent" if values match, "discrepancy" with specifics if not
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "figure_data_consistency",
+    "checks": [
+      {
+        "check": "shannon_diversity",
+        "table_value": <float>,
+        "figure_value": <float>,
+        "consistent": true/false,
+        "evidence": "<how you verified — e.g., axis label, legend text>"
+      },
+      {
+        "check": "taxonomy_genera",
+        "table_genera": ["genus1", "genus2", ...],
+        "figure_genera": ["genus1", "genus2", ...],
+        "consistent": true/false,
+        "evidence": "..."
+      },
+      {
+        "check": "pcoa_clustering",
+        "table_clusters": "<description>",
+        "figure_clusters": "<description>",
+        "consistent": true/false,
+        "evidence": "..."
+      },
+      {
+        "check": "rarefaction_asymptote",
+        "table_observed": <int>,
+        "figure_asymptote": <int>,
+        "consistent": true/false,
+        "evidence": "..."
+      }
+    ],
+    "summary": {"total_checks": 4, "consistent": <N>, "discrepant": <N>}
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  shannon_check:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["shannon", "diversity", "alpha"]
+  taxonomy_check:
+    points: 5
+    function: check_final_answer_contains
+    args:
+      required_terms: ["taxonomy", "genus", "genera"]
+      min_sections: 2
+  pcoa_check:
+    points: 5
+    function: check_final_answer_contains
+    args:
+      required_terms: ["pcoa", "cluster", "beta"]
+      min_sections: 2
+
+failure_codes:
+  - artifact_missing
+  - diagnosis_incomplete
+  - timeout

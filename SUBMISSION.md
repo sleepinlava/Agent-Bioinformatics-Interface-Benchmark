@@ -15,8 +15,9 @@ ABI-Bench accepts results for:
 | **New ablation** | A1/A3/A4 variants with a specific model/harness | Ablation table |
 | **New plugin** | Add T13–T18 style tasks for a new bioinformatics analysis type | Plugin table |
 
-All submissions must include **all 8 MVP tasks** (T01, T02, T03, T05, T06, T08, T09, T10)
-across **all 3 main groups** (G1, G2, G3) with **at least 3 replicates** each.
+All submissions must include **at least the 8 MVP tasks** (T01, T02, T03, T05, T06, T08, T09, T10)
+across **all 4 main groups** (G1, G2, G3, G4) with **at least 3 replicates** each.
+Full v0.6 submissions should cover all 47 tasks (T01-T47) across all 4 groups.
 
 ---
 
@@ -203,22 +204,33 @@ bench/submissions/<your_submission_id>/
 
 ---
 
-## 4. Full 12-Task Submission (Optional)
+## 4. Extended Submissions (Optional)
 
-After MVP (8 tasks) is accepted, you may submit results for the full 12-task set:
+After MVP (8 tasks) is accepted, you may submit results for larger task sets:
 
 ```bash
-for group in G1 G2 G3; do
+# Full v0.5 set (T01-T35, 35 tasks)
+for group in G1 G2 G3 G4; do
   python bench/harness/run_group.py \
-    --group $group --tasks full --replicates 5 \
+    --group $group --tasks full_v0_5 --replicates 3 \
     --agent-mode direct --parallel --workers 4 \
     --experiment-set submission --fixture-set public \
-    --outdir bench/submissions/<your_submission_id>_full/$group
+    --outdir bench/submissions/<your_submission_id>_v0_5/$group
+done
+
+# Full v0.6 set (T01-T47, 47 tasks) — includes figure validation,
+# progressive repair, cross-platform, and multi-agent modules
+for group in G1 G2 G3 G4; do
+  python bench/harness/run_group.py \
+    --group $group --tasks full_v0_6 --replicates 3 \
+    --agent-mode direct --parallel --workers 4 \
+    --experiment-set submission --fixture-set public \
+    --outdir bench/submissions/<your_submission_id>_v0_6/$group
 done
 ```
 
-Full set includes T04 (inspect plasmid), T07 (tool-not-found), T11 (inspect transcriptomics),
-and T12 (interpret tables) in addition to the 8 MVP tasks.
+Available task sets: `mvp` (8 tasks), `full` (18 tasks), `full_v0_5` (35 tasks),
+`full_v0_6` (47 tasks), `extended_v0_6` (52 tasks).
 
 ---
 

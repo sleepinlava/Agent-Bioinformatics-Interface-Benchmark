@@ -18,8 +18,23 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import List
+
+
+class Provider(Enum):
+    """Supported LLM providers and their SDK routing."""
+
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    GOOGLE = "google"
+    DEEPSEEK = "deepseek"
+    QWEN = "qwen"
+    GLM = "glm"
+    KIMI = "kimi"
+    MIMO = "mimo"
+    OPENAI_COMPATIBLE = "openai-compatible"
 
 # ── Env var names (canonical constants) ─────────────────────────────────────
 
@@ -50,11 +65,27 @@ class BenchConfig:
     retry_base_delay_seconds: float = 2.0
     retry_max_delay_seconds: float = 60.0
 
-    # Informational / future-use fields (not consumed by OpenAI SDK path)
-    provider: str = ""
+    # Provider routing (v0.6: multi-provider native SDK support)
+    provider: Provider = Provider.DEEPSEEK
     reasoning: bool = False
     thinking_budget: int = 0
     reasoning_effort: str = ""
+
+    @property
+    def is_anthropic(self) -> bool:
+        return self.provider == Provider.ANTHROPIC
+
+    @property
+    def is_google(self) -> bool:
+        return self.provider == Provider.GOOGLE
+
+    @property
+    def uses_openai_sdk(self) -> bool:
+        return self.provider in (
+            Provider.OPENAI, Provider.DEEPSEEK, Provider.QWEN,
+            Provider.GLM, Provider.KIMI, Provider.MIMO,
+            Provider.OPENAI_COMPATIBLE,
+        )
 
 
 # ── Dotenv loader ───────────────────────────────────────────────────────────
@@ -81,6 +112,22 @@ def load_dotenv(path: str | Path) -> dict:
     except OSError:
         pass
     return result
+
+
+# ── Provider resolution ────────────────────────────────────────────────────
+
+def _resolve_provider(raw: str) -> Provider:
+    """Map a raw env/dotenv string to a Provider enum member.
+
+    Returns ``Provider.DEEPSEEK`` when *raw* is empty or unrecognised.
+    """
+    if not raw or not raw.strip():
+        return Provider.DEEPSEEK
+    raw_lower = raw.strip().lower()
+    try:
+        return Provider(raw_lower)
+    except ValueError:
+        return Provider.DEEPSEEK
 
 
 # ── Config loader ───────────────────────────────────────────────────────────
@@ -114,7 +161,7 @@ def load_bench_config(dotenv_path: str | Path | None = None) -> BenchConfig:
         max_retries=int(_get(ENV_MAX_RETRIES, "3")),
         retry_base_delay_seconds=float(_get(ENV_RETRY_BASE_DELAY, "2.0")),
         retry_max_delay_seconds=float(_get(ENV_RETRY_MAX_DELAY, "60.0")),
-        provider=_get(ENV_PROVIDER, ""),
+        provider=_resolve_provider(_get(ENV_PROVIDER, "")),
         reasoning=_get(ENV_REASONING, "").lower() == "true",
         thinking_budget=int(_get(ENV_THINKING_BUDGET, "0") or "0"),
         reasoning_effort=_get(ENV_REASONING_EFFORT, ""),
@@ -154,12 +201,12 @@ def validate_config(config: BenchConfig) -> List[str]:
             f"Consider at least 1024 for meaningful benchmark runs."
         )
 
-    if config.provider == "google" or config.provider == "anthropic":
-        warnings.append(
-            f"{ENV_PROVIDER}='{config.provider}' is set, but the harness "
-            f"currently uses only the OpenAI-compatible SDK. The provider "
-            f"name is informational — API calls always go to {ENV_API_BASE}."
-        )
+    if config.provider == Provider.GOOGLE or config.provider == Provider.ANTHROPIC:
+        if not config.api_key:
+            warnings.append(
+                f"{ENV_PROVIDER}='{config.provider.value}' requires {ENV_API_KEY} "
+                f"to be set. Native SDK calls will fail without an API key."
+            )
 
     if config.reasoning and not config.thinking_budget and not config.reasoning_effort:
         warnings.append(

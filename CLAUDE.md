@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**ABI-Bench v0.5** (Agent-Bioinformatics Interface Benchmark) evaluates whether a structured ABI control layer improves LLM agent operation of bioinformatics workflows — focusing on the **scaffolding effect** (weaker models benefit more from ABI) and **cross-plugin portability** (same ABI lifecycle works across metagenomic_plasmid, metatranscriptomics, amplicon_16s, rnaseq_expression, and wgs_bacteria).
+**ABI-Bench v0.6** (Agent-Bioinformatics Interface Benchmark) evaluates whether a structured ABI control layer improves LLM agent operation of bioinformatics workflows — focusing on the **scaffolding effect** (weaker models benefit more from ABI), **cross-plugin portability** (same ABI lifecycle works across metagenomic_plasmid, metatranscriptomics, amplicon_16s, rnaseq_expression, and wgs_bacteria), **figure validation**, **progressive repair**, **cross-platform equivalence**, and **multi-agent collaboration**.
 
 ### Core Narrative
 
@@ -99,7 +99,7 @@ python bench/scoring/claim_preflight.py --results bench/results --experiment-set
 python bench/scoring/compute_statistics.py --results bench/results --experiment-set main --fixture-set public --output bench/results/statistics.json
 ```
 
-**Task specs**: `mvp` (8 tasks), `full` (18 tasks), `full_v0_3` (19), `extended_v0_3` (24), `full_v0_4` (29), `extended_v0_4` (30), `full_v0_5` (34), `extended_v0_5` (35), `ablation` (6 tasks), or comma-separated IDs.
+**Task specs**: `mvp` (8 tasks), `full` (18 tasks), `full_v0_3` (19), `extended_v0_3` (24), `full_v0_4` (29), `extended_v0_4` (30), `full_v0_5` (34), `extended_v0_5` (35), `full_v0_6` (47), `extended_v0_6` (52), `ablation` (6 tasks), or comma-separated IDs.
 
 **Linting**: `ruff check bench/` (config in `pyproject.toml`; excludes `workspaces/`, `traces/`, `results/`)
 
@@ -119,7 +119,7 @@ The harness executes a 5-step pipeline per task run:
 4. **Trace collection** (`collect_trace.py`): Saves `agent_trace.jsonl`, `tool_calls.jsonl`, `commands.log`
 5. **Scoring** (`score_run.py`): Runs checks from `rubric.yaml` against artifacts and traces, writes `score.json`
 
-### Group Architecture (v0.5)
+### Group Architecture (v0.6)
 
 Each group controls what tools and information the agent receives:
 
@@ -177,6 +177,10 @@ Scoring is artifact-based and deterministic. Key scoring dimensions:
 - **Cross-plugin portability**: All 5 plugins plan/dry-run/report successfully
 - **Contract validation**: Lint, export, and violation detection (T27-T29)
 - **Report quality**: Completeness and structure validation (T30)
+- **Figure validation** (T36-T38, v0.6): Sciplot figure verification, diagnosis, data consistency
+- **Progressive repair** (T39-T41, v0.6): Single-fault and multi-fault recovery, resource self-configuration
+- **Cross-platform equivalence** (T42-T44, v0.6): Local/Nextflow/Docker output consistency, provenance audit
+- **Multi-agent collaboration** (T45-T47, v0.6): Planner-reviewer, cross-model verification, zero-shot transfer
 
 The `rubric.yaml` (765 lines) defines all scoring checks centrally. Each task YAML references checks by key. `checks.py` (1389 lines) implements the check functions.
 
@@ -196,11 +200,17 @@ This enables computation of **Scaffolding Gain** = (G3−G1)_weak − (G3−G1)_
 
 | Tier | Models | Purpose |
 |------|--------|---------|
-| **Strong** | GPT-4o, Claude Sonnet 4.6, DeepSeek v4-pro | Establish ABI benefit ceiling |
-| **Medium** | GPT-4o-mini, Qwen2.5-72B | Verify mid-tier gains |
-| **Weak** | Qwen2.5-7B, Llama 3.1-8B | Measure scaffolding effect |
+| **Strong** | GPT-4o, Claude Sonnet 4.6, DeepSeek v4-pro, Qwen3-30B-A3B-Instruct (MoE), Qwen2.5-Coder-32B-Instruct | Establish ABI benefit ceiling |
+| **Medium** | GPT-4o-mini, Qwen2.5-72B, Qwen3-14B, Mistral-Small-3.2-24B-Instruct | Verify mid-tier gains |
+| **Weak** | Qwen2.5-7B, Llama 3.1-8B, Qwen3-4B, Llama-3.1-8B-Instruct, DeepSeek-R1-Distill-Qwen-7B | Measure scaffolding effect |
 
-### Task Architecture (v0.5)
+> **Quantization note**: For local model benchmarking on RTX 4090 (24GB VRAM),
+> Medium and Strong tier models require 4-bit quantization. Prefer GGUF Q4_K_M
+> or GPTQ/AWQ over bitsandbytes — structured tool-calling benchmarks are
+> especially sensitive to quantization degradation. Weak-tier models run
+> natively without quantization. See `bench/model_tiers.yaml` for canonical tier definitions.
+
+### Task Architecture (v0.6)
 
 Tasks are organized into lifecycle modules:
 
@@ -218,15 +228,20 @@ Tasks are organized into lifecycle modules:
 | **Contract** | T27, T28, T29 | Contract lint, Nextflow export, violation detection |
 | **Report Quality** | T30 | Report completeness and structure |
 | **Real Execution** | T31, T32, T33, T34, T35 | Real bioinformatics execution (plasmid, rnaseq, amplicon, wgs, metatranscriptomics) |
+| **Figure Validation** | T36, T37, T38 | Figure verification, diagnosis, data consistency |
+| **Progressive Repair** | T39, T40, T41 | Single-fault, multi-fault recovery, resource self-config |
+| **Cross-Platform** | T42, T43, T44 | Local/Nextflow/Docker comparison, provenance audit |
+| **Multi-Agent** | T45, T46, T47 | Planner-reviewer, cross-model verify, zero-shot transfer |
 
-### v0.4/v0.5 New Tasks
+### v0.4/v0.5/v0.6 New Tasks
 
 **v0.4** added T25-T30 (inspection, contract, report quality modules).
 **v0.5** added T31-T35 (real execution tasks) — these are the first tasks that permit actual bioinformatics tool execution, gated behind explicit confirmation.
+**v0.6** added T36-T47 (12 tasks across 4 new modules) — Figure Validation (T36-T38), Progressive Repair (T39-T41), Cross-Platform (T42-T44), and Multi-Agent (T45-T47).
 
-### Claim Criteria (v0.5)
+### Claim Criteria (v0.6)
 
-The v0.5 claim criteria use a three-tier system:
+The v0.6 claim criteria extend the v0.5 three-tier system with four new modules:
 
 **Main Claim**: G3 > G1/G2 with CI-based significance
 **Scaffolding Claim**: 
@@ -240,6 +255,12 @@ The v0.5 claim criteria use a three-tier system:
 
 **Cross-Plugin Claim**: All 5 plugins (metagenomic_plasmid, metatranscriptomics, amplicon_16s, rnaseq_expression, wgs_bacteria) have successful dry-run by G3
 
+**v0.6 New Claims**:
+- **Figure Validation Claim**: G3 figure validation pass rate ≥ 0.70 across T36-T38
+- **Progressive Repair Claim**: G3 progressive repair success rate ≥ 0.60 across T39-T41
+- **Cross-Platform Claim**: G3 cross-platform equivalence rate ≥ 0.80 across T42-T44
+- **Multi-Agent Claim**: G3 multi-agent collaboration score ≥ 0.70 across T45-T47
+
 Ablation groups (A1/A3/A4) are reported in Appendix only.
 
 ### Fixture System
@@ -248,10 +269,38 @@ Ablation groups (A1/A3/A4) are reported in Appendix only.
 - `bench/fixtures_hidden/` — hidden fixtures for diagnosis tasks (prevent answer leakage)
 - `--fixture-set public|hidden` selects which set; hidden is only meaningful for T05/T06/T07/T22/T23 (falls back to public for others)
 
+## Local Model Benchmarking
+
+### vLLM Server
+
+```bash
+# Start vLLM server with bitsandbytes 4-bit quantization
+vllm serve /root/autodl-tmp/local_llms/models/Qwen3-14B \
+  --served-model-name Qwen3-14B \
+  --host 0.0.0.0 --port 8000 \
+  --quantization bitsandbytes --load-format bitsandbytes \
+  --max-model-len 8192 --gpu-memory-utilization 0.90 \
+  --dtype bfloat16
+```
+
+### Model Inventory
+
+See `/root/autodl-tmp/local_llms/llm.md` for model sizes, VRAM requirements, and tier assignments.
+
+### Known Issues
+
+- **4-bit bitsandbytes degrades structured instruction-following**: Qwen3-14B 4-bit G3−G2 = +1.8% vs Qwen3-4B native G3−G2 = +30.6%. Prefer GGUF or GPTQ for 4-bit quantization.
+- **Qwen3-30B-A3B-Instruct OOM on RTX 4090 24GB**: Even 4-bit quantization fails. MoE architecture has high KV cache overhead. May need tensor parallelism across multiple GPUs or CPU offloading.
+- **G1/G4 not yet run for Qwen3-14B**: Baseline groups missing — cannot compute full scaffolding effect for medium tier.
+
 ## Key Design Constraints
 
 - **Dry-run primary (T01-T30)**: v0.1-v0.4 evaluate via dry-run only; real bioinformatics execution is prohibited in scoring for these tasks
 - **Real execution (T31-T35, v0.5)**: Real bioinformatics tool execution is permitted for these tasks only, gated behind explicit confirmation
+- **Figure validation (T36-T38, v0.6)**: Sciplot figure validation tasks — verify, diagnose, check data consistency
+- **Progressive repair (T39-T41, v0.6)**: Failure recovery tasks — single-fault, multi-fault, resource self-configuration
+- **Cross-platform (T42-T44, v0.6)**: Platform equivalence tasks — Local/Nextflow/Docker comparison
+- **Multi-agent (T45-T47, v0.6)**: Collaboration tasks — planner-reviewer, cross-model verification, zero-shot transfer
 - **Network off**: All fixtures are self-contained; no external network access required
 - **Isolated workspaces**: Each task/group/replicate gets an independent workspace directory
 - **Fixed commit**: All benchmark runs use a fixed git commit; the entire benchmark is pinned

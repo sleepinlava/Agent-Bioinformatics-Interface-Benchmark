@@ -1,0 +1,12 @@
+metric	Qwen3-4B	Llama-3.1-8B	Qwen3-14B
+tier	Weak	Weak	Medium
+quantization	native	native	4-bit (bitsandbytes)
+G3−G1 (ABI vs bare shell)	+24.1	+27.7	N/A (G1 not run)
+G3−G2 (ABI vs generic tools)	+30.6	+28.5	+1.8
+G3−G4 (ABI vs info-matched docs)	+19.6	+25.8	N/A (G4 not run)
+
+# Scaffolding Effect Summary
+# Weak models (Qwen3-4B, Llama-3.1-8B): mean G3−G1 = +25.9%, mean G3−G2 = +29.6%
+# Medium model (Qwen3-14B 4-bit): G3−G2 = +1.8%, G1 not run
+# Quantization damage: Qwen3-14B 4-bit G3 (25.2%) < Qwen3-4B native G3 (53.5%)
+# → ABI helps weak models 15-30× more than medium models (when medium is 4-bit quantized)

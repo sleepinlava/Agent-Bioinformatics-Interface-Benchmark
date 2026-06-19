@@ -1,19 +1,19 @@
-# RNA-seq benchmark fixture — points to ABI benchmark data
-analysis:
-  type: rnaseq_expression
-  description: "Real execution benchmark with synthetic RNA-seq data"
+project_name: "bench-rnaseq"
+mode: local
+threads: 2
+outdir: results/bench-rnaseq
+log_dir: logs/bench-rnaseq
 
-benchmark:
-  assertions: expected_assertions.yaml
-  data_source: "ABI data/benchmarks/rnaseq_expression/"
+dry_run: false
 
-execution:
-  confirm_execution: true
-  timeout_minutes: 30
+input:
+  sample_sheet: sample_sheet.tsv
+
+comparisons:
+  - name: treatment_vs_control
+    numerator: treatment
+    denominator: control
 
 resources:
-  alignment:
-    tool: star
-  differential_expression:
-    comparison: "treatment_vs_control"
-    alpha: 0.05
+  star_index: resources/star_index/
+  gtf: resources/genes.gtf

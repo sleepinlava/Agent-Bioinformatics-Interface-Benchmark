@@ -1,0 +1,77 @@
+# bench/tasks/T36_figure_validation.yaml
+task_id: T36
+name: Figure validation — verify rendered scientific figures
+plugin: metagenomic_plasmid
+task_type: figure_validation
+fixture: figure_validation
+max_score: 12
+timeout_minutes: 15
+max_agent_steps: 30
+
+prompt: |
+  You have a metagenomic_plasmid analysis workspace with pre-generated results.
+  The figures/ directory contains scientific charts rendered by abi-sciplot.
+
+  Your task:
+  1. List all figure files in figures/ (PNG, SVG, PDF)
+  2. For each figure:
+     - Verify file is non-empty (> 0 bytes)
+     - Check resolution (≥ 150 DPI for raster formats)
+     - Run `abi-sciplot lint --spec <spec_file>` if spec file exists
+     - Verify the figure data matches the source table
+  3. Record all findings with specific paths and metric values
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "figure_validation",
+    "figures": [
+      {
+        "path": "figures/<name>.png",
+        "plot_type": "bar|volcano|pca|heatmap|...",
+        "file_size_bytes": <N>,
+        "dpi": <N>,
+        "lint_passed": true/false,
+        "data_consistent": true/false,
+        "issues": ["description of any problems found"]
+      }
+    ],
+    "summary": {"total": <N>, "valid": <N>, "issues_found": <N>}
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  figures_enumerated:
+    points: 2
+    function: check_final_answer_has_structure
+  dpi_verified:
+    points: 3
+    function: check_final_answer_contains
+    args:
+      required_terms: ["dpi", "resolution"]
+  lint_executed:
+    points: 3
+    function: check_final_answer_contains
+    args:
+      required_terms: ["lint", "sciplot"]
+  data_consistency_checked:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["consistent", "table", "match"]
+      min_sections: 2
+
+failure_codes:
+  - artifact_missing
+  - timeout
+  - agent_loop

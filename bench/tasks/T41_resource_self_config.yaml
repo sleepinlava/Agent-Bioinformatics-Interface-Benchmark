@@ -1,0 +1,77 @@
+# bench/tasks/T41_resource_self_config.yaml
+task_id: T41
+name: Resource self-configuration — detect and resolve missing resources
+plugin: rnaseq_expression
+task_type: resource_config
+fixture: missing_resources_rnaseq
+max_score: 14
+timeout_minutes: 20
+max_agent_steps: 40
+
+prompt: |
+  You have an rnaseq_expression workspace with config and data, but resources
+  (STAR genome index, GTF annotation) are MISSING.
+
+  Your task:
+  1. Run `abi query --type rnaseq_expression --what resources` to understand requirements
+  2. Check current conda environment: is STAR installed? `which STAR`
+  3. Determine if resources can be auto-generated:
+     - Small reference (E. coli): can generate STAR index (~10 min)
+     - Human genome: too large, must report as manual download
+  4. If auto-generatable, generate the resource
+  5. If not, produce a clear "Required Downloads" report
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "resource_config",
+    "required_resources": [
+      {"name": "star_index", "type": "genome_index", "auto_generatable": true/false},
+      {"name": "gtf", "type": "annotation", "auto_generatable": true/false}
+    ],
+    "tools_available": {"STAR": true/false, "featureCounts": true/false},
+    "auto_generated": ["star_index"],
+    "manual_required": [],
+    "assessment": "<summary of what's missing and how to resolve>"
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  resources_correctly_listed:
+    points: 3
+    function: check_final_answer_contains
+    args:
+      required_terms: ["star_index", "gtf", "resource"]
+      min_sections: 2
+  tools_detected:
+    points: 3
+    function: check_final_answer_contains
+    args:
+      required_terms: ["STAR", "installed", "tool"]
+  auto_generate_judgment:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["auto_generatable", "generate"]
+      min_sections: 2
+  manual_report_clear:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["manual", "download", "required"]
+
+failure_codes:
+  - artifact_missing
+  - diagnosis_incomplete
+  - overclaim_result
+  - timeout

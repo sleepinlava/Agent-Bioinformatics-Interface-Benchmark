@@ -1,4 +1,4 @@
-# ABI-Bench v0.1
+# ABI-Bench v0.6
 
 ## Agent-Bioinformatics Interface Benchmark
 
@@ -150,7 +150,7 @@ LLM agent 操作生信 workflow 面临五大特有困难：
 | T11 | Inspect metatranscriptomics | metatranscriptomics | inspection | 5 |
 | T12 | Interpret standard tables | both | interpretation | 4 |
 
-**总分：100 分**
+**v0.1 总分：100 分** | **v0.6 总分（47 任务）：~450 分**
 
 ### 6.2 任务生命周期链
 
@@ -175,6 +175,17 @@ T01 (discovery)
 | T07 | tool not found（工具不在 PATH） | 环境级 |
 
 难度递增：直接可检查 → 需理解 config→resource 映射 → 需理解 tool registry 和 env。
+
+### 6.4 v0.6 新增任务模块（T36-T47）
+
+v0.6 在 v0.1-v0.5 基础上新增 12 个任务，覆盖 4 个新模块：
+
+| 模块 | 任务 | 说明 |
+|---|---|---|
+| **Figure Validation** | T36, T37, T38 | Sciplot 科学图表验证、诊断、数据一致性检查 |
+| **Progressive Repair** | T39, T40, T41 | 单故障恢复、多故障恢复、资源自配置 |
+| **Cross-Platform** | T42, T43, T44 | Local/Nextflow/Docker 跨平台输出一致性、溯源审计 |
+| **Multi-Agent** | T45, T46, T47 | Planner-reviewer 协作、跨模型验证、零样本迁移 |
 
 ---
 

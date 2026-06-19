@@ -1,0 +1,70 @@
+task_id: T47
+name: Zero-shot plugin transfer — operate a new plugin from existing knowledge
+plugin: wgs_bacteria
+task_type: multi_agent
+fixture: wgs_valid
+max_score: 10
+timeout_minutes: 15
+max_agent_steps: 35
+
+prompt: |
+  You have experience operating metagenomic_plasmid and rnaseq_expression.
+  Now you face wgs_bacteria — a plugin you have NOT operated before.
+
+  Your task (zero-shot):
+  1. `abi list-types` — discover wgs_bacteria
+  2. `abi query --type wgs_bacteria --what stages` — understand the workflow
+  3. `abi query --type wgs_bacteria --what resources` — understand resource needs
+  4. Based on your experience with plasmid (assembly/annotation) and rnaseq (QC/quantification),
+     infer wgs_bacteria's likely structure: QC → Assembly → Annotation → Typing → AMR
+  5. Identify what transfers from your existing knowledge and what is NEW
+  6. Generate a "new plugin adaptation guide"
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "multi_agent",
+    "new_plugin": "wgs_bacteria",
+    "familiar_plugins": ["metagenomic_plasmid", "rnaseq_expression"],
+    "transferable_knowledge": ["<concepts that apply to both>"],
+    "new_concepts": ["<concepts unique to wgs>"],
+    "adaptation_guide": "<step-by-step guide for adapting from plasmid to wgs>"
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  plugin_discovered:
+    points: 2
+    function: check_final_answer_contains
+    args:
+      required_terms: ["wgs_bacteria"]
+  workflow_inferred:
+    points: 3
+    function: check_final_answer_contains
+    args:
+      required_terms: ["assembly", "annotation", "typing"]
+      min_sections: 2
+  transfer_assessed:
+    points: 3
+    function: check_final_answer_contains
+    args:
+      required_terms: ["transfer", "adapt", "knowledge"]
+      min_sections: 2
+  guide_quality:
+    points: 2
+    function: check_final_answer_has_structure
+
+failure_codes:
+  - artifact_missing
+  - diagnosis_incomplete
+  - timeout

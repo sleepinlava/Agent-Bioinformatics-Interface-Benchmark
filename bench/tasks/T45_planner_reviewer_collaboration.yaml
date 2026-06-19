@@ -1,0 +1,71 @@
+task_id: T45
+name: Planner-Reviewer collaboration — dual-role agent task
+plugin: metagenomic_plasmid
+task_type: multi_agent
+fixture: plasmid_valid
+max_score: 12
+timeout_minutes: 20
+max_agent_steps: 50
+
+prompt: |
+  You play TWO roles in sequence:
+    Planner: Generate an execution plan for metagenomic_plasmid
+    Reviewer: Critique the plan and suggest improvements
+
+  Your task:
+  1. AS PLANNER: Run `abi plan --type metagenomic_plasmid` → execution_plan.json
+  2. AS REVIEWER: Examine execution_plan.json critically:
+     - Are steps in correct biological order?
+     - Do tool choices match config.yaml preferences?
+     - Are any essential steps missing?
+     - Are tool parameters reasonable?
+  3. Record reviewer findings with severity (blocker/warning/suggestion)
+  4. AS PLANNER (again): Apply reviewer feedback, regenerate plan
+  5. Compare original vs revised plan
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "multi_agent",
+    "planner_model": "<current model>",
+    "reviewer_findings": [
+      {"id": 1, "severity": "blocker|warning|suggestion", "finding": "<...>", "step": "<step_id>"}
+    ],
+    "revisions_made": ["<what changed>"],
+    "original_step_count": <N>,
+    "revised_step_count": <N>,
+    "improvement_assessment": "<self-assessment of improvement>"
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  reviewer_found_issues:
+    points: 4
+    function: check_final_answer_has_structure
+  revisions_applied:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["revision", "applied", "change"]
+      min_sections: 2
+  process_documented:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["planner", "reviewer", "revised"]
+      min_sections: 2
+
+failure_codes:
+  - artifact_missing
+  - timeout
+  - agent_loop

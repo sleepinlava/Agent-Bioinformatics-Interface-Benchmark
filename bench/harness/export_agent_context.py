@@ -49,35 +49,19 @@ def load_agent_profile(group_id: str) -> dict:
 
 
 def load_task_definition(task_id: str) -> dict:
-    """Load the task YAML definition."""
-    task_files = {
-        "T01": "T01_list_types.yaml",
-        "T02": "T02_plan_plasmid.yaml",
-        "T03": "T03_dryrun_plasmid.yaml",
-        "T04": "T04_inspect_plasmid.yaml",
-        "T05": "T05_missing_input.yaml",
-        "T06": "T06_missing_resource.yaml",
-        "T07": "T07_tool_not_found.yaml",
-        "T08": "T08_permission_gated_run.yaml",
-        "T09": "T09_plan_metatranscriptomics.yaml",
-        "T10": "T10_dryrun_metatranscriptomics.yaml",
-        "T11": "T11_inspect_metatranscriptomics.yaml",
-        "T12": "T12_standard_tables_interpretation.yaml",
-        "T13": "T13_plan_rnaseq.yaml",
-        "T14": "T14_dryrun_rnaseq.yaml",
-        "T15": "T15_plan_amplicon.yaml",
-        "T16": "T16_dryrun_amplicon.yaml",
-        "T17": "T17_plan_wgs.yaml",
-        "T18": "T18_dryrun_wgs.yaml",
-    }
-    fname = task_files.get(task_id)
-    if not fname:
-        print(f"ERROR: Unknown task_id '{task_id}'", file=sys.stderr)
-        return None
+    """Load the task YAML definition.
 
-    task_path = PROJECT_ROOT / "bench" / "tasks" / fname
-    with open(task_path) as f:
-        return yaml.safe_load(f)
+    Auto-discovers task files from bench/tasks/ by matching the ``T{NN}_``
+    prefix, so new tasks are picked up without code changes.
+    """
+    tasks_dir = PROJECT_ROOT / "bench" / "tasks"
+    for fpath in sorted(tasks_dir.glob("*.yaml")):
+        if fpath.name.startswith(f"{task_id}_"):
+            with open(fpath) as f:
+                return yaml.safe_load(f)
+
+    print(f"ERROR: Unknown task_id '{task_id}'", file=sys.stderr)
+    return None
 
 
 def export_context(

@@ -1,0 +1,64 @@
+# Benchmark assertions for amplicon_16s plugin
+# Generated from synthetic 16S V4 data (3 bacterial references)
+#
+# These assertions validate that a real-tool execution produces
+# biologically plausible outputs. Ranges are wide enough to
+# accommodate synthetic data variability.
+
+amplicon_16s:
+  # ── QC / trimming ──
+  trim:
+    min_reads_retained: 50          # At least some reads survive trimming
+    min_samples_with_output: 3      # All 3 synthetic samples
+
+  # ── Merged reads ──
+  merge:
+    min_merged_reads_per_sample: 10
+    merged_fasta_exists: true
+
+  # ── Dereplication ──
+  derep:
+    min_unique_seqs_per_sample: 3
+    derep_fasta_exists: true
+
+  # ── Denoising (UNOISE3) ──
+  denoise:
+    min_asvs: 3                     # At least 3 ASVs across all samples
+    max_asvs: 30                    # Upper bound (200 reads with 1% error)
+    asv_fasta_exists: true
+
+  # ── Taxonomy (SINTAX) ──
+  taxonomy:
+    asvs_with_genus_pct: 50         # At least 50% of ASVs get genus-level assignment
+    expected_genera:                # Should include at least some of these
+      - Escherichia
+      - Bacillus
+      - Pseudomonas
+
+  # ── Phylogeny (MAFFT + FastTree) ──
+  phylogeny:
+    tree_exists: true
+    min_leaves: 3                   # At least one ASV per sample
+    valid_newick: true
+
+  # ── Alpha Diversity ──
+  alpha_diversity:
+    shannon_min: 0.1                # Shannon > 0 (some diversity)
+    shannon_max: 5.0                # Shannon < 5 (reasonable for synthetic)
+    observed_features_min: 1
+    simpson_min: 0.0
+    simpson_max: 1.0
+
+  # ── Beta Diversity ──
+  beta_diversity:
+    bray_curtis_min: 0.0
+    bray_curtis_max: 1.0
+    jaccard_min: 0.0
+    jaccard_max: 1.0
+
+  # ── Provenance ──
+  provenance:
+    min_commands: 7                 # cutadapt + merge + derep + UNOISE3 + SINTAX + phylo + diversity
+    max_commands: 24                # 3 samples × 5 per-sample steps + phylo + diversity + merge
+    checksums_exist: true
+    run_summary_exists: true

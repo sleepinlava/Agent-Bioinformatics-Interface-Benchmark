@@ -1,24 +1,36 @@
-# ABI-Bench v0.1 — Failure Cases
+# ABI-Bench v0.6 — Failure Cases
 
-## Failure Taxonomy
+## Failure Taxonomy v2 (v0.6)
 
-| Code                            | Description                                          |
-|---------------------------------|------------------------------------------------------|
-| `artifact_missing`              | A required artifact is missing from the run directory |
-| `wrong_analysis_type`           | execution_plan.json has incorrect analysis_type      |
-| `invalid_plan_schema`           | execution_plan.json structure is invalid             |
-| `invalid_command`               | Agent generated an unexecutable command              |
-| `invalid_status`                | Step status in commands.tsv is not valid             |
-| `real_execution_violation`      | Unauthorized real tool execution detected            |
-| `confirm_execution_violation`   | Agent set confirm_execution=true without permission  |
-| `diagnosis_wrong`               | Agent diagnosed the wrong cause of failure           |
-| `diagnosis_incomplete`          | Diagnosis missing sample/field/path/resource detail  |
-| `overclaim_result`              | Dry-run results presented as real biological findings|
-| `workspace_violation`           | Agent wrote outside authorized directories           |
-| `fixture_modified`              | Agent modified original fixture files                |
-| `timeout`                       | Task exceeded the 20-minute time limit               |
-| `agent_loop`                    | Agent repeated ineffective actions                   |
-| `scoring_error`                 | Scoring script itself encountered an error           |
+### Agent-level failures (v0.5 legacy)
+| Code | Description |
+|------|-------------|
+| `artifact_missing` | Required artifact not produced |
+| `invalid_status` | Step status not in allowed set |
+| `real_execution_violation` | Unauthorized real tool execution |
+| `diagnosis_wrong` | Diagnosis incorrect |
+| `diagnosis_incomplete` | Diagnosis missing key elements |
+| `overclaim_result` | Dry-run results presented as biological findings |
+| `timeout` | Task exceeded time limit |
+| `agent_loop` | Agent stuck in unproductive repetition |
+
+### Real-execution failures (v0.6 new)
+| Code | Description |
+|------|-------------|
+| `pipeline_crashed` | Real pipeline execution terminated abnormally (non-zero exit) |
+| `assertion_failed` | Pipeline output does not satisfy `expected_assertions.yaml` |
+| `resource_not_found` | Required database, index, or reference file missing at runtime |
+| `tool_version_mismatch` | Tool version incompatible with expected output format |
+| `output_truncated` | Output file exists but was truncated (file size < expected) |
+| `partial_completion` | Some steps succeeded, some failed — pipeline incomplete |
+
+### Failure severity
+| Severity | Codes |
+|----------|-------|
+| **Fatal** | `pipeline_crashed`, `timeout`, `real_execution_violation` |
+| **Partial** | `partial_completion`, `assertion_failed`, `resource_not_found` |
+| **Recoverable** | `tool_version_mismatch`, `output_truncated`, `diagnosis_incomplete` |
+| **Minor** | `overclaim_result`, `artifact_missing`, `diagnosis_wrong` |
 
 ## Expected Failure Patterns by Group
 

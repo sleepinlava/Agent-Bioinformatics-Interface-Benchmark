@@ -62,6 +62,198 @@ def resolve_check_args(task: dict, check_name: str, value) -> dict:
     return {}
 
 
+def _load_final_answer_json(trace_dir: Path, run_dir: Path = None) -> Optional[dict]:
+    """Load final_answer.json from trace_dir or run_dir for agent-behavior checks."""
+    candidates = [trace_dir / "final_answer.json"]
+    if run_dir is not None:
+        candidates.append(run_dir / "final_answer.json")
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text())
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, OSError):
+            continue
+    return None
+
+
+def _score_real_execution(
+    task: dict,
+    run_dir: Path,
+    trace_dir: Path,
+    experiment_set: str = None,
+    fixture_set: str = None,
+) -> dict:
+    """Score a real_execution task combining agent-behavior and output-assertion checks.
+
+    For ``task_type == "real_execution"``, this function:
+    1. Loads ``final_answer.json`` and runs agent-behavior checks (v0.5)
+    2. Loads ``expected_assertions.yaml`` and runs output-assertion checks (v0.6)
+    3. Returns a complete score dict in the same format as ``score_task()``
+    """
+    import inspect
+    import bench.scoring.checks as checks_mod
+
+    task_id = task["task_id"]
+    scoring = task.get("scoring", {})
+    max_points = task.get("max_score", 15)
+
+    total_points = 0.0
+    check_results = []
+    failure_codes = []
+    failure_reasons = []
+
+    # Load final_answer.json for agent-behavior checks (v0.5)
+    final_answer = _load_final_answer_json(trace_dir, run_dir) or {}
+
+    # v0.6 assertion check function names that return CheckResult objects
+    assertion_check_fns = {
+        "check_pipeline_outputs_match_assertions",
+        "check_per_category_breakdown",
+        "check_output_file_integrity",
+        "check_assertion_value_in_range",
+    }
+
+    for check_name, check_value in scoring.items():
+        if isinstance(check_value, dict):
+            points_possible = check_value.get("points", 0)
+        else:
+            points_possible = int(check_value)
+
+        check_fn_name = _resolve_function_name(check_name)
+        fn = getattr(checks_mod, check_fn_name, None)
+
+        if fn is None:
+            failure_codes.append(f"check_failed:{check_name}")
+            failure_reasons.append(
+                f"Unknown check function '{check_fn_name}' for check '{check_name}'"
+            )
+            check_results.append({
+                "check": check_name,
+                "function": check_fn_name,
+                "passed": False,
+                "earned": 0,
+                "possible": points_possible,
+            })
+            continue
+
+        try:
+            if check_fn_name in assertion_check_fns:
+                # v0.6: output-assertion checks return CheckResult with .score
+                result = fn(str(run_dir), task)
+                earned = result.score
+                passed = result.passed
+            else:
+                # v0.5 agent-behavior checks (and other standard checks)
+                sig = inspect.signature(fn)
+                extra_kwargs = {}
+                if "final_answer" in sig.parameters:
+                    extra_kwargs["final_answer"] = final_answer
+                result = run_check(check_fn_name, run_dir, trace_dir, **extra_kwargs)
+                if hasattr(result, "score"):
+                    earned = result.score
+                    passed = result.passed
+                else:
+                    earned = points_possible if result else 0
+                    passed = bool(result)
+        except Exception as exc:
+            failure_codes.append(f"check_failed:{check_name}")
+            failure_reasons.append(
+                f"Check '{check_name}' ({check_fn_name}) raised exception: {exc}"
+            )
+            check_results.append({
+                "check": check_name,
+                "function": check_fn_name,
+                "passed": False,
+                "earned": 0,
+                "possible": points_possible,
+            })
+            continue
+
+        total_points += earned
+        check_results.append({
+            "check": check_name,
+            "function": check_fn_name,
+            "passed": passed,
+            "earned": earned,
+            "possible": points_possible,
+        })
+        if not passed:
+            failure_codes.append(f"check_failed:{check_name}")
+            failure_reasons.append(
+                f"Check '{check_name}' ({check_fn_name}) returned False"
+            )
+
+    # Build artifact check map
+    artifacts_checked = {}
+    expected_artifacts = task.get("expected_artifacts", [])
+    for art in expected_artifacts:
+        p = trace_dir / art if art in ("final_answer.md", "final_answer.json") else run_dir / art
+        artifacts_checked[art] = p.exists()
+
+    # Determine passed threshold (>= 70% of max)
+    passed = total_points >= round(max_points * 0.7)
+
+    # Build metrics
+    agent_steps = _count_agent_steps(trace_dir)
+    elapsed = _elapsed_seconds(trace_dir)
+    metadata = _read_metadata(trace_dir)
+    group_id = metadata.get("group_id") or _discover_group_id(run_dir)
+    replicate = metadata.get("replicate") or _discover_replicate(run_dir)
+    abi_interface_used = _detect_abi_interface_usage(trace_dir)
+
+    task_type = task.get("task_type")
+
+    reasoning = _read_reasoning_metrics(trace_dir)
+
+    metrics = {
+        "task_success": passed,
+        "successful_dryrun": None,
+        "diagnostic_accuracy": _diagnostic_accuracy(check_results, task),
+        "artifact_completeness": _artifact_completeness(artifacts_checked),
+        "unsafe_execution": None,
+        "abi_interface_used": abi_interface_used,
+        "agent_steps": agent_steps,
+        "elapsed_seconds": elapsed,
+        "human_interventions": _count_human_interventions(trace_dir),
+        "thinking_tokens": reasoning.get("thinking_tokens", 0),
+        "thinking_tokens_per_step": (
+            reasoning["thinking_tokens"] / agent_steps
+            if reasoning["thinking_tokens"] and agent_steps > 0
+            else 0
+        ),
+    }
+    if reasoning.get("reasoning_used"):
+        metrics["reasoning_used"] = True
+
+    score = {
+        "benchmark": "ABI-Bench",
+        "version": "0.1",
+        "task_id": task_id,
+        "task_type": task_type,
+        "experiment_set": experiment_set or metadata.get("experiment_set", "unknown"),
+        "fixture_set": fixture_set or metadata.get("fixture_set", "public"),
+        "group_id": group_id,
+        "replicate": replicate,
+        "model_id": metadata.get("model_id", "LLM4"),
+        "agent_harness": metadata.get("agent_harness", "direct"),
+        "agent_mode": metadata.get("agent_mode", "unknown"),
+        "score": total_points,
+        "max_score": max_points,
+        "passed": passed,
+        "metrics": metrics,
+        "artifacts_checked": artifacts_checked,
+        "check_results": check_results,
+        "failure_codes": _simplify_failure_codes(failure_codes),
+        "failure_reasons": failure_reasons,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    return score
+
+
 def score_task(
     task: dict,
     run_dir: Path,
@@ -74,6 +266,16 @@ def score_task(
     Score a single task run. Returns the score.json dict.
     """
     task_id = task["task_id"]
+    task_type = task.get("task_type")
+
+    # Branch: real_execution tasks use combined agent-behavior + assertion scoring
+    if task_type == "real_execution":
+        return _score_real_execution(
+            task, run_dir, trace_dir,
+            experiment_set=experiment_set,
+            fixture_set=fixture_set,
+        )
+
     scoring = task.get("scoring", {})
 
     total_points = 0

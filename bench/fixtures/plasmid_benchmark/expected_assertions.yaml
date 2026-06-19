@@ -1,0 +1,60 @@
+# Benchmark assertions for metagenomic_plasmid plugin
+# Uses 3 RefSeq plasmids (NC_002127.1, NC_002483.1, NC_011977.1)
+# with a synthetic chromosome negative control.
+#
+# These assertions validate that a core-subset real-tool execution
+# produces biologically plausible outputs from known plasmid sequences.
+
+metagenomic_plasmid:
+  # ── QC (fastp) ──
+  qc:
+    min_reads_retained: 100          # At least some reads survive
+    clean_fastq_exists: true
+    qc_report_exists: true
+
+  # ── Assembly (metaSPAdes / MEGAHIT) ──
+  assembly:
+    min_contigs: 3                    # At least 3 contigs (3 plasmids)
+    max_contigs: 200                  # Reasonable upper bound
+    min_n50: 1000                     # Plasmids are 2-10 kb
+    assembly_dir_exists: true
+
+  # ── Gene prediction (Prodigal) ──
+  gene_prediction:
+    min_cds: 3                        # At least a few genes per plasmid
+    max_cds: 500                      # Upper bound for 3 small plasmids
+    protein_fasta_exists: true
+
+  # ── Plasmid detection (geNomad) ──
+  plasmid_detection:
+    min_plasmid_contigs: 1            # At least 1 contig flagged as plasmid
+    plasmid_report_exists: true
+    expected_plasmid_markers:         # Should find at least some of these
+      - rep
+      - mob
+      - mpf
+      - oriT
+
+  # ── Annotation (Bakta) ──
+  annotation:
+    min_annotated_cds: 3              # At least some annotated CDS
+    annotation_gff_exists: true
+
+  # ── Abundance estimation (coverM) ──
+  abundance:
+    coverage_table_exists: true
+    all_samples_have_coverage: true
+
+  # ── Report ──
+  report:
+    report_md_exists: true
+    report_html_exists: true
+    contains_tool_name: "genomad"
+    dryrun_disclosed: true
+
+  # ── Provenance ──
+  provenance:
+    min_commands: 5                   # fastp + assembly + prodigal + genomad + coverM
+    checksums_exist: true
+    run_summary_exists: true
+    commands_tsv_exists: true

@@ -9,12 +9,44 @@ Usage:
     from bench.scoring.checks import check_file_exists, check_json_field, ...
 """
 
-import json
 import csv
+import glob
+import json
 import re
 import sys
 from pathlib import Path
 from typing import Optional
+
+import yaml
+
+
+class CheckResult:
+    """Result of a scoring check with pass/fail, score, and details.
+
+    Supports boolean coercion so checks that return CheckResult can be used
+    interchangeably with checks that return bool in the scoring pipeline.
+    """
+
+    def __init__(
+        self,
+        check: str,
+        passed: bool,
+        score: float,
+        details: dict | None = None,
+    ):
+        self.check = check
+        self.passed = passed
+        self.score = score
+        self.details = details or {}
+
+    def __bool__(self) -> bool:
+        return self.passed
+
+    def __repr__(self) -> str:
+        return (
+            f"CheckResult(check={self.check!r}, passed={self.passed}, "
+            f"score={self.score})"
+        )
 
 
 # ── File existence & content ────────────────────────────────────────────────
@@ -876,8 +908,19 @@ def check_artifact_freshness(
 
 # ── Convenience runner ──────────────────────────────────────────────────────
 
-def run_check(function_name: str, run_dir: Path, trace_dir: Path, expected_answer: dict = None, **kwargs) -> bool:
-    """Run a named check function and return its result."""
+def run_check(
+    function_name: str,
+    run_dir: Path,
+    trace_dir: Path,
+    expected_answer: dict = None,
+    task: dict | None = None,
+    **kwargs,
+) -> bool:
+    """Run a named check function and return its result.
+
+    Supports both legacy bool-returning checks and v0.6+ checks that return
+    CheckResult objects (which coerce to bool via __bool__).
+    """
     if function_name not in _FUNCTION_REGISTRY:
         print(f"WARNING: Unknown check function '{function_name}', defaulting to False")
         return False
@@ -885,6 +928,7 @@ def run_check(function_name: str, run_dir: Path, trace_dir: Path, expected_answe
     try:
         # Determine which directory to pass based on the function signature
         import inspect
+
         sig = inspect.signature(fn)
         params = sig.parameters
         call_kwargs = {}
@@ -894,6 +938,8 @@ def run_check(function_name: str, run_dir: Path, trace_dir: Path, expected_answe
             call_kwargs["trace_dir"] = trace_dir
         if "expected_answer" in params:
             call_kwargs["expected_answer"] = expected_answer
+        if "task" in params:
+            call_kwargs["task"] = task or {}
         call_kwargs.update(kwargs)
         return fn(**call_kwargs)
     except Exception as e:
@@ -1382,6 +1428,448 @@ def check_provenance_quality(final_answer: dict) -> bool:
     if not isinstance(final_answer, dict):
         return False
     return final_answer.get("provenance_accessible") is True
+
+
+# ── v0.6: Real-execution assertion checks ───────────────────────────
+
+
+def check_pipeline_outputs_match_assertions(
+    run_dir: str, task: dict | None = None
+) -> CheckResult:
+    """Validate actual pipeline outputs against expected_assertions.yaml.
+
+    Walks each category (qc, assembly, annotation, etc.) and evaluates
+    individual assertions against real output files.
+
+    Returns a CheckResult with:
+      - passed: True if all assertions pass
+      - score: weighted by assertion pass rate (max from rubric)
+      - details: {assertions: {total, passed, failed, skipped}, failures: [...]}
+    """
+    task = task or {}
+    assertions_path = Path(run_dir) / "expected_assertions.yaml"
+    if not assertions_path.exists():
+        return CheckResult(
+            check="pipeline_outputs_match_assertions",
+            passed=False,
+            score=0,
+            details={"error": "expected_assertions.yaml not found"},
+        )
+
+    with open(assertions_path) as f:
+        spec = yaml.safe_load(f)
+
+    results_dir = _resolve_results_dir(Path(run_dir))
+
+    total = 0
+    passed = 0
+    failed = 0
+    failures = []
+
+    for plugin_name, categories in spec.items():
+        for category, assertions in categories.items():
+            for key, expected in assertions.items():
+                total += 1
+                try:
+                    actual = _evaluate_assertion(key, expected, results_dir)
+                    if actual is True:
+                        passed += 1
+                    else:
+                        failed += 1
+                        failures.append({
+                            "category": category,
+                            "assertion": key,
+                            "expected": str(expected),
+                            "actual": str(actual),
+                        })
+                except Exception as exc:
+                    failed += 1
+                    failures.append({
+                        "category": category,
+                        "assertion": key,
+                        "expected": str(expected),
+                        "error": str(exc),
+                    })
+
+    max_points = _get_max_points(task, "pipeline_outputs_match_assertions", 8)
+    pass_rate = passed / max(total, 1)
+    score = round(max_points * pass_rate, 1)
+
+    return CheckResult(
+        check="pipeline_outputs_match_assertions",
+        passed=(failed == 0),
+        score=score,
+        details={
+            "assertions": {"total": total, "passed": passed, "failed": failed},
+            "failures": failures,
+        },
+    )
+
+
+def check_per_category_breakdown(
+    run_dir: str, task: dict | None = None
+) -> CheckResult:
+    """Report per-category assertion pass rates.
+
+    Groups assertions by category (qc, assembly, annotation, etc.)
+    and reports individual pass rates.
+    """
+    task = task or {}
+    assertions_path = Path(run_dir) / "expected_assertions.yaml"
+    if not assertions_path.exists():
+        return CheckResult(
+            check="per_category_breakdown",
+            passed=False,
+            score=0,
+            details={"error": "expected_assertions.yaml not found"},
+        )
+
+    with open(assertions_path) as f:
+        spec = yaml.safe_load(f)
+
+    results_dir = _resolve_results_dir(Path(run_dir))
+
+    categories = {}
+    all_passed = True
+
+    for plugin_name, cats in spec.items():
+        for category, assertions in cats.items():
+            cat_total = 0
+            cat_passed = 0
+            for key, expected in assertions.items():
+                cat_total += 1
+                try:
+                    if _evaluate_assertion(key, expected, results_dir) is True:
+                        cat_passed += 1
+                    else:
+                        all_passed = False
+                except Exception:
+                    all_passed = False
+            categories[category] = {
+                "total": cat_total,
+                "passed": cat_passed,
+                "rate": round(cat_passed / max(cat_total, 1), 3),
+            }
+
+    max_points = _get_max_points(task, "per_category_breakdown", 2)
+    score = max_points if all_passed else round(max_points * 0.5, 1)
+
+    return CheckResult(
+        check="per_category_breakdown",
+        passed=all_passed,
+        score=score,
+        details={"categories": categories, "passed": all_passed},
+    )
+
+
+def check_output_file_integrity(
+    run_dir: str, task: dict | None = None
+) -> CheckResult:
+    """Verify that required output files exist and are non-empty.
+
+    Supports glob patterns in file paths (e.g. 'results/*/provenance/commands.tsv').
+    """
+    task = task or {}
+    required = task.get("required_output_files", [])
+    if not required:
+        return CheckResult(
+            check="output_file_integrity",
+            passed=True,
+            score=2,
+            details={"note": "no required files specified"},
+        )
+
+    missing = []
+    empty_files = []
+    for pattern in required:
+        full_pattern = str(Path(run_dir) / pattern)
+        matches = glob.glob(full_pattern)
+        if not matches:
+            missing.append(pattern)
+            continue
+        for match in matches:
+            if Path(match).stat().st_size == 0:
+                empty_files.append(str(Path(match).relative_to(run_dir)))
+
+    all_ok = len(missing) == 0 and len(empty_files) == 0
+    max_points = _get_max_points(task, "output_file_integrity", 2)
+    score = max_points if all_ok else (max_points * 0.5 if not missing else 0)
+
+    return CheckResult(
+        check="output_file_integrity",
+        passed=all_ok,
+        score=score,
+        details={"missing": missing, "empty": empty_files},
+    )
+
+
+def check_assertion_value_in_range(
+    run_dir: str, task: dict | None = None
+) -> CheckResult:
+    """Validate numeric assertions have actual values within [min, max] range.
+
+    Specialized for assertions with 'min_' and 'max_' keys.
+    """
+    task = task or {}
+    assertions_path = Path(run_dir) / "expected_assertions.yaml"
+    if not assertions_path.exists():
+        return CheckResult(
+            check="assertion_value_in_range",
+            passed=False,
+            score=0,
+            details={"error": "expected_assertions.yaml not found"},
+        )
+
+    with open(assertions_path) as f:
+        spec = yaml.safe_load(f)
+
+    results_dir = _resolve_results_dir(Path(run_dir))
+
+    range_checks = 0
+    range_passed = 0
+    failures = []
+
+    for plugin_name, categories in spec.items():
+        for category, assertions in categories.items():
+            for key, expected in assertions.items():
+                if isinstance(expected, (int, float)):
+                    range_checks += 1
+                    actual = _resolve_numeric_assertion(key, expected, results_dir)
+                    if actual is None:
+                        continue  # skip non-numeric checks
+                    is_max = str(key).startswith("max_")
+                    if is_max:
+                        ok = actual <= expected
+                    else:
+                        ok = actual >= expected
+                    if ok:
+                        range_passed += 1
+                    else:
+                        fail_entry = {
+                            "category": category,
+                            "assertion": key,
+                            "actual": actual,
+                        }
+                        if is_max:
+                            fail_entry["expected_max"] = expected
+                        else:
+                            fail_entry["expected_min"] = expected
+                        failures.append(fail_entry)
+
+    max_points = _get_max_points(task, "assertion_value_in_range", 4)
+    pass_rate = range_passed / max(range_checks, 1)
+    score = round(max_points * pass_rate, 1)
+
+    return CheckResult(
+        check="assertion_value_in_range",
+        passed=(len(failures) == 0),
+        score=score,
+        details={
+            "range_checks": range_checks,
+            "passed": range_passed,
+            "failures": failures,
+        },
+    )
+
+
+# ── Internal helpers for assertion evaluation ──────────────────────
+
+
+def _evaluate_assertion(key: str, expected, results_dir: Path) -> bool:
+    """Evaluate a single assertion against actual outputs.
+
+    Handles these assertion types:
+      - bool (True): check existence based on key name suffix
+      - int/float: check numeric minimum
+      - str: check string containment in relevant file
+      - list: check that at least N elements from the list are found
+    """
+    if isinstance(expected, bool):
+        if expected is True:
+            # Try to find a file corresponding to this assertion key
+            return _check_existence(key, results_dir)
+        return True  # False means "no assertion", always passes
+
+    if isinstance(expected, (int, float)):
+        return _check_numeric_min(key, expected, results_dir)
+
+    if isinstance(expected, str):
+        return _check_string_contains(key, expected, results_dir)
+
+    if isinstance(expected, list):
+        return _check_list_membership(key, expected, results_dir)
+
+    return True
+
+
+def _check_existence(key: str, results_dir: Path) -> bool:
+    """Check that a file or directory corresponding to the assertion key exists."""
+    # Map assertion keys to expected paths
+    key_to_glob = {
+        "clean_fastq_exists": "*/qc/*/clean/*.fastq*",
+        "qc_report_exists": "*/qc/*/report/*.json",
+        "assembly_dir_exists": "*/assembly/",
+        "protein_fasta_exists": "**/*.faa",
+        "plasmid_report_exists": "**/plasmid_report*",
+        "annotation_gff_exists": "**/*.gff*",
+        "coverage_table_exists": "**/coverage*.tsv",
+        "report_md_exists": "**/report.md",
+        "report_html_exists": "**/report.html",
+        "run_summary_exists": "**/provenance/run_summary.json",
+        "checksums_exist": "**/provenance/checksums.json",
+        "commands_tsv_exists": "**/provenance/commands.tsv",
+    }
+    pattern = key_to_glob.get(key, f"**/{key.replace('_', '*')}*")
+    matches = glob.glob(str(results_dir / pattern), recursive=True)
+    return len(matches) > 0
+
+
+def _check_numeric_min(key: str, expected: float, results_dir: Path) -> bool:
+    """Check that a numeric metric meets the minimum or maximum threshold.
+
+    Keys starting with ``min_`` are checked with ``actual >= expected``;
+    keys starting with ``max_`` are checked with ``actual <= expected``.
+    Unrecognised keys (without a recognised prefix) return ``False``.
+    """
+    # ── Specific handlers for complex parsing ──────────────────────────
+    if key == "min_reads_retained":
+        # Check fastp JSON output for total_reads after filtering
+        fastp_jsons = glob.glob(
+            str(results_dir / "**" / "fastp*.json"), recursive=True
+        )
+        for fj in fastp_jsons:
+            with open(fj) as f:
+                data = json.load(f)
+            if "summary" in data:
+                after = data["summary"].get("after_filtering", {})
+                if after.get("total_reads", 0) >= expected:
+                    return True
+        return False
+
+    # ── Generic min_ / max_ dispatch ───────────────────────────────────
+    if key.startswith("min_") or key.startswith("max_"):
+        actual = _resolve_numeric_assertion(key, expected, results_dir)
+        if actual is None:
+            return False
+        if key.startswith("max_"):
+            return actual <= expected
+        return actual >= expected
+
+    # Unrecognised numeric key — cannot verify
+    return False
+
+
+def _check_string_contains(key: str, expected: str, results_dir: Path) -> bool:
+    """Check that a string is found in relevant output files."""
+    if key == "contains_tool_name":
+        report_mds = glob.glob(
+            str(results_dir / "**" / "report.md"), recursive=True
+        )
+        for rm in report_mds:
+            with open(rm) as f:
+                if expected.lower() in f.read().lower():
+                    return True
+        return False
+    if key == "dryrun_disclosed":
+        report_mds = glob.glob(
+            str(results_dir / "**" / "report.md"), recursive=True
+        )
+        for rm in report_mds:
+            with open(rm) as f:
+                text = f.read().lower()
+                if "dry-run" in text or "dry_run" in text:
+                    return True
+        return False
+    # Unrecognised string-containment key — cannot verify
+    return False
+
+
+def _check_list_membership(key: str, expected: list, results_dir: Path) -> bool:
+    """Check that at least one element from the expected list is found."""
+    if key == "expected_plasmid_markers" or key == "expected_genera":
+        # Search all text files in results for at least one marker
+        all_text = ""
+        for ext in ["*.tsv", "*.md", "*.txt", "*.json"]:
+            for f in glob.glob(
+                str(results_dir / "**" / ext), recursive=True
+            ):
+                try:
+                    with open(f) as fh:
+                        all_text += fh.read().lower() + " "
+                except Exception:
+                    pass
+        found = [item for item in expected if item.lower() in all_text]
+        return len(found) > 0
+    # Unrecognised list-membership key — cannot verify
+    return False
+
+
+def _find_file(base: Path, pattern: str) -> Path | None:
+    """Find first matching file, return path or None."""
+    matches = glob.glob(str(base / pattern), recursive=True)
+    return Path(matches[0]) if matches else None
+
+
+def _resolve_results_dir(run_dir: Path) -> Path:
+    """Resolve the actual results directory from a run directory.
+
+    Handles the common ``results/*/`` glob pattern — when results/ contains a
+    subdirectory (e.g. ``results/bench-test/``) that subdirectory is returned.
+    Falls back to ``results/`` directly when no subdirectory exists.
+    """
+    results_glob = str(Path(run_dir) / "results" / "*")
+    results_dirs = sorted(glob.glob(results_glob))
+    if results_dirs:
+        return Path(results_dirs[0])
+    return Path(run_dir) / "results"
+
+
+def _resolve_numeric_assertion(
+    key: str, expected: float, results_dir: Path
+) -> int | None:
+    """Resolve a numeric assertion to an actual count/value.
+
+    Supports ``min_commands`` / ``max_commands`` (row count in
+    provenance/commands.tsv), ``min_contigs`` / ``max_contigs``
+    (``>`` lines in ``*.fasta``), and ``min_cds`` / ``max_cds``
+    (``>`` lines in ``*.faa``).
+    """
+    if key in ("min_commands", "max_commands"):
+        commands_path = _find_file(results_dir, "**/provenance/commands.tsv")
+        if not commands_path:
+            return 0
+        with open(commands_path) as f:
+            return len(f.readlines()) - 1
+
+    if key in ("min_contigs", "max_contigs"):
+        fasta_files = glob.glob(
+            str(results_dir / "**" / "*.fasta"), recursive=True
+        )
+        count = 0
+        for fa in fasta_files:
+            with open(fa) as f:
+                count += sum(1 for line in f if line.startswith(">"))
+        return count
+
+    if key in ("min_cds", "max_cds"):
+        faa_files = glob.glob(
+            str(results_dir / "**" / "*.faa"), recursive=True
+        )
+        count = 0
+        for fa in faa_files:
+            with open(fa) as f:
+                count += sum(1 for line in f if line.startswith(">"))
+        return count
+
+    return None
+
+
+def _get_max_points(task: dict, check_name: str, default: int) -> int:
+    """Extract max points for a check from the task's scoring section."""
+    scoring = task.get("scoring", {})
+    if check_name in scoring:
+        return scoring[check_name].get("points", default)
+    return default
 
 
 # ═══════════════════════════════════════════════════════════════════════

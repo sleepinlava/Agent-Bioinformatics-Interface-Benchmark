@@ -1,0 +1,84 @@
+# bench/tasks/T40_multi_step_recovery.yaml
+task_id: T40
+name: Multi-step failure recovery — fix two independent faults
+plugin: metagenomic_plasmid
+task_type: progressive_repair
+fixture: partial_failure_plasmid
+max_score: 15
+timeout_minutes: 25
+max_agent_steps: 50
+
+prompt: |
+  You have a metagenomic_plasmid workspace where the pipeline partially failed.
+  Two independent faults occurred:
+  1. geNomad failed with OOM (out of memory) — visible in step_logs/
+  2. Bakta failed because bakta_db path in config.yaml points to nonexistent dir
+
+  Your task:
+  1. Identify BOTH faults independently
+  2. Prioritize the fix order (Bakta path fix first — simpler, then geNomad)
+  3. Apply fixes: correct bakta_db path, reduce geNomad threads/memory
+  4. Re-run and verify all assertions pass
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "progressive_repair",
+    "faults": [
+      {
+        "step": "genomad",
+        "error_type": "OOM",
+        "root_cause": "memory too low for dataset size",
+        "fix": "reduce threads, increase --mem"
+      },
+      {
+        "step": "bakta",
+        "error_type": "config_error",
+        "root_cause": "bakta_db path does not exist",
+        "fix": "correct path to resources/mini_bakta_db"
+      }
+    ],
+    "fix_order": ["bakta", "genomad"],
+    "fix_order_rationale": "Fix simple config error first; then tune resource params",
+    "recovery_successful": true/false,
+    "output_validated": true/false
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: true
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  both_faults_identified:
+    points: 4
+    function: check_final_answer_has_structure
+  fix_order_correct:
+    points: 3
+    function: check_final_answer_contains
+    args:
+      required_terms: ["fix_order", "bakta", "genomad"]
+  fixes_reasonable:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["fix", "config", "threads"]
+      min_sections: 2
+  recovery_executed:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["recovery", "successful"]
+      min_sections: 2
+
+failure_codes:
+  - artifact_missing
+  - pipeline_crashed
+  - diagnosis_incomplete
+  - timeout

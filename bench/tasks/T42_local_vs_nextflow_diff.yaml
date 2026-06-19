@@ -1,0 +1,63 @@
+task_id: T42
+name: Cross-platform plan comparison — local vs Nextflow
+plugin: metagenomic_plasmid
+task_type: cross_platform
+fixture: plasmid_valid
+max_score: 10
+timeout_minutes: 15
+max_agent_steps: 30
+
+prompt: |
+  Generate execution plans for metagenomic_plasmid on two platforms and compare.
+
+  Your task:
+  1. Generate local plan: `abi plan --type metagenomic_plasmid --platform local`
+  2. Generate Nextflow export: `abi export-nextflow --type metagenomic_plasmid`
+  3. Compare:
+     - Step count: same number of steps?
+     - Tool order: same tool invocation sequence?
+     - Parameter mapping: local CLI flags → Nextflow process directives (cpus, memory, container)
+  4. Document all differences in final_answer.json
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "cross_platform",
+    "platforms": ["local", "nextflow"],
+    "step_count_match": true/false,
+    "tool_order_match": true/false,
+    "differences": [{"type": "<param|order|tool>", "local": "<...>", "nextflow": "<...>"}],
+    "equivalence_assessment": "equivalent|minor_differences|major_differences"
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  both_plans_generated:
+    points: 3
+    function: check_final_answer_has_structure
+  differences_identified:
+    points: 3
+    function: check_final_answer_contains
+    args:
+      required_terms: ["difference", "platform", "nextflow"]
+      min_sections: 2
+  equivalence_assessed:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["equivalent", "assess"]
+
+failure_codes:
+  - artifact_missing
+  - timeout
+  - agent_loop
