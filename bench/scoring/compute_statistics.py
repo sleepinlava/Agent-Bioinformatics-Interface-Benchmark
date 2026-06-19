@@ -968,3 +968,86 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# v0.6 Effect Size Matrix
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def compute_effect_size_matrix(results: dict) -> dict:
+    """Compute Cohen's d effect size for every (group_pair * task) combination.
+
+    Returns a dict suitable for abi-sciplot heatmap rendering:
+      {
+        "matrix": [[task_id, group_pair, cohens_d, ci_lower, ci_upper], ...],
+        "metadata": {"n_bootstrap": 10000, "confidence": 0.95}
+      }
+    """
+    import numpy as np
+
+    group_pairs = [("G3", "G1"), ("G3", "G2"), ("G3", "G4")]
+    tasks = sorted(set(
+        t for run in results.values()
+        for t in run.get("tasks", {}).keys()
+    ))
+
+    matrix = []
+    for task_id in tasks:
+        for g1, g2 in group_pairs:
+            scores_g1 = _collect_task_scores(results, g1, task_id)
+            scores_g2 = _collect_task_scores(results, g2, task_id)
+            if len(scores_g1) < 2 or len(scores_g2) < 2:
+                continue
+            d = _cohens_d(scores_g1, scores_g2)
+            ci = _bootstrap_ci(scores_g1, scores_g2, n=10000)
+            matrix.append({
+                "task_id": task_id,
+                "group_pair": f"{g1}_vs_{g2}",
+                "cohens_d": round(d, 3),
+                "ci_lower": round(ci[0], 3),
+                "ci_upper": round(ci[1], 3),
+            })
+
+    return {
+        "matrix": matrix,
+        "metadata": {"n_bootstrap": 10000, "confidence": 0.95},
+    }
+
+
+def _collect_task_scores(results: dict, group: str, task_id: str) -> list[float]:
+    """Collect all replicate scores for a given group/task."""
+    scores = []
+    for run_id, run_data in results.items():
+        if run_data.get("group") != group:
+            continue
+        tasks = run_data.get("tasks", {})
+        if task_id in tasks:
+            score = tasks[task_id].get("score", 0)
+            max_score = tasks[task_id].get("max_score", 1)
+            scores.append(score / max(max_score, 1) * 100)
+    return scores
+
+
+def _cohens_d(a: list[float], b: list[float]) -> float:
+    """Cohen's d effect size: (mean(a) - mean(b)) / pooled_std."""
+    import numpy as np
+    na, nb = len(a), len(b)
+    ma, mb = np.mean(a), np.mean(b)
+    va, vb = np.var(a, ddof=1), np.var(b, ddof=1)
+    pooled_std = np.sqrt(((na - 1) * va + (nb - 1) * vb) / (na + nb - 2))
+    if pooled_std == 0:
+        return 0.0
+    return (ma - mb) / pooled_std
+
+
+def _bootstrap_ci(a: list[float], b: list[float], n: int = 10000) -> tuple[float, float]:
+    """Bootstrap 95% CI for Cohen's d between two groups."""
+    import numpy as np
+    diffs = []
+    rng = np.random.RandomState(42)
+    for _ in range(n):
+        sa = rng.choice(a, size=len(a), replace=True)
+        sb = rng.choice(b, size=len(b), replace=True)
+        diffs.append(_cohens_d(sa, sb))
+    return float(np.percentile(diffs, 2.5)), float(np.percentile(diffs, 97.5))
