@@ -1,11 +1,14 @@
-# ABI-Bench v0.1 — Methods
+# ABI-Bench v0.6 — Methods
 
 ## Benchmark Design
 
-ABI-Bench v0.1 evaluates whether an Agent-Bioinformatics Interface (ABI)
+ABI-Bench v0.6 evaluates whether an Agent-Bioinformatics Interface (ABI)
 control layer improves LLM agent operation of bioinformatics workflows.
-The benchmark compares three conditions under the same model and agent
-harness:
+The benchmark compares four main groups (G1-G4) under the same model and agent
+harness, across 47 tasks spanning discovery, planning, dry-run, inspection,
+diagnosis, safety, interpretation, job control, cross-plugin transfer,
+contract validation, report quality, real execution, figure validation,
+progressive repair, cross-platform equivalence, and multi-agent collaboration.
 
 | Group | Name                    | Description                                               |
 |-------|-------------------------|-----------------------------------------------------------|
@@ -90,9 +93,11 @@ python bench/harness/run_group.py \
 All API keys are passed as environment variables and are never written
 to disk or tracked by git. The `bench/.env` file is in `.gitignore`.
 
-## Task Suite (v0.1)
+## Task Suite (v0.6)
 
-Twelve tasks cover the ABI lifecycle across two bioinformatics plugins:
+The v0.6 benchmark spans 47 tasks across 16 modules. Below is the v0.1 core (T01-T12) plus the expanded task modules added in v0.3-v0.6.
+
+### v0.1 Core Tasks (T01-T12)
 
 | Task | Type            | Plugin              | Description                       | Score |
 |------|-----------------|---------------------|-----------------------------------|-------|
@@ -109,15 +114,44 @@ Twelve tasks cover the ABI lifecycle across two bioinformatics plugins:
 | T11  | Inspection      | metatranscriptomics | Inspect transcriptomics dry-run   | 5     |
 | T12  | Interpretation  | both                | Interpret standard tables         | 4     |
 
-**Total: 100 points**
+**v0.1 core: 100 points**
+
+### v0.3-v0.5 Expanded Tasks (T13-T35)
+
+| Module | Tasks | Description |
+|--------|-------|-------------|
+| Planning (expanded) | T13, T15, T17 | amplicon, rnaseq, wgs plans |
+| Dry-run (expanded) | T14, T16, T18 | amplicon, rnaseq, wgs dry-runs |
+| Inspection (expanded) | T25, T26 | rnaseq, wgs inspection |
+| Complex Diagnosis | T22, T23 | Multi-fault and distractor diagnosis |
+| Safety (expanded) | T24 | Safety boundary stress test |
+| Interpretation (expanded) | T19 | Overclaim guard |
+| Job Control | T20 | Submit, monitor, cancel, retrieve |
+| Cross-plugin | T21 | Zero-shot new plugin operation |
+| Contract | T27, T28, T29 | Contract lint, Nextflow export, violation detection |
+| Report Quality | T30 | Report completeness and structure |
+| Real Execution | T31-T35 | Real bioinformatics tool execution (one per plugin) |
+
+### v0.6 New Task Modules (T36-T47)
+
+| Module | Tasks | Description |
+|--------|-------|-------------|
+| Figure Validation | T36, T37, T38 | Sciplot figure verification, diagnosis, data consistency |
+| Progressive Repair | T39, T40, T41 | Single-fault recovery, multi-fault recovery, resource self-configuration |
+| Cross-Platform | T42, T43, T44 | Local/Nextflow/Docker output equivalence, provenance audit |
+| Multi-Agent | T45, T46, T47 | Planner-reviewer collaboration, cross-model verification, zero-shot transfer |
+
+**v0.6 total: ~450 points across 47 tasks**
 
 ### Task Sets
 
-| Set       | Tasks                                    | Use case                           |
-|-----------|------------------------------------------|------------------------------------|
-| `mvp`     | T01–T03, T05–T06, T08–T10               | Main experiment (G1/G2/G3)         |
-| `ablation`| T03–T08                                  | Ablation experiments (A1/A3/A4)    |
-| `full`    | T01–T12                                  | Complete v0.1 benchmark            |
+| Set            | Tasks                                    | Use case                           |
+|----------------|------------------------------------------|------------------------------------|
+| `mvp`          | T01–T03, T05–T06, T08–T10               | Main experiment (G1/G2/G3)         |
+| `ablation`     | T03–T08                                  | Ablation experiments (A1/A3/A4)    |
+| `full`         | T01–T12                                  | Complete v0.1 benchmark            |
+| `full_v0_5`    | T01–T35 (34 tasks)                       | v0.5 benchmark                     |
+| `full_v0_6`    | T01–T47 (47 tasks)                       | Complete v0.6 benchmark            |
 
 ## Metrics
 
@@ -170,13 +204,22 @@ comparisons G3 vs G2 and ablation groups vs G3.
 
 ## Claim Support Criteria
 
-ABI-Bench v0.1 supports the main claim that ABI improves agent-operability when:
+ABI-Bench v0.6 supports the main claim that ABI improves agent-operability when
+the v0.1 baseline criteria are met, plus:
+
+**v0.1 Baseline Criteria**:
 1. G3 total score ≥ 80
 2. G3 - G1 total score ≥ 20 points
 3. G3 - G2 total score ≥ 12 points
 4. G3 diagnostic accuracy ≥ 0.75
 5. G3 unsafe execution rate = 0
 6. G3 completes successful dry-runs on both plugins
+
+**v0.6 Additional Criteria**:
+1. G3 figure validation pass rate ≥ 0.70 (T36-T38)
+2. G3 progressive repair success rate ≥ 0.60 (T39-T41)
+3. G3 cross-platform equivalence rate ≥ 0.80 (T42-T44)
+4. G3 multi-agent collaboration score ≥ 0.70 (T45-T47)
 
 ## Fixed Variables
 
@@ -243,5 +286,5 @@ python bench/scoring/aggregate_scores.py \
 # Generate paper tables
 python bench/scoring/make_tables.py \
   --results bench/results \
-  --outdir docs/experiments/abi_bench_v0_1
+  --outdir docs/experiments/abi_bench_v0_6
 ```

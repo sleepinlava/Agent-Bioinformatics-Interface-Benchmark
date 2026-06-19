@@ -549,3 +549,21 @@ success_criteria:
       description: "Weak model + ABI vs strong model + ABI vs human"
       metric: "Weak+ABI / Human overlap ratio"
       threshold: 0.85
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # v0.6 Claim Criteria (2026-06-19)
+  #
+  # v0.6 adds 4 new task modules (12 tasks, T36-T47):
+  #   Figure Validation  → T36-T38 (sciplot integration)
+  #   Progressive Repair → T39-T41 (failure recovery)
+  #   Cross-Platform     → T42-T44 (local/Docker/Nextflow consistency)
+  #   Multi-Agent        → T45-T47 (collaboration, cross-model, zero-shot)
+  #
+  # These criteria supplement the existing v0.3/v0.5 claim structure.
+  # Each module has a minimum pass rate / score threshold for G3.
+  # ═══════════════════════════════════════════════════════════════════════
+  v0_6_criteria:
+    figure_validation_pass_rate: 0.70
+    progressive_repair_success_rate: 0.60
+    cross_platform_equivalence_rate: 0.80
+    multi_agent_collaboration_score: 0.70

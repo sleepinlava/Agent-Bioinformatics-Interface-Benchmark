@@ -1,4 +1,4 @@
-# ABI-Bench v0.5
+# ABI-Bench v0.6
 
 > [中文版 (Chinese Version)](README.zh.md)
 
@@ -12,10 +12,12 @@
 
 **ABI-Bench** (Agent-Bioinformatics Interface Benchmark) evaluates whether
 a structured **ABI control layer** improves LLM agent operation of
-bioinformatics workflows. v0.5 focuses on the **scaffolding effect**:
+bioinformatics workflows. v0.6 focuses on the **scaffolding effect**:
 does ABI lower the model capability threshold required for reliable
 bioinformatics workflow operation, and extends evaluation to real
-bioinformatics tool execution (T31-T35).
+bioinformatics tool execution (T31-T35), figure validation (T36-T38),
+progressive repair (T39-T41), cross-platform equivalence (T42-T44),
+and multi-agent collaboration (T45-T47).
 
 ABI-Bench answers three core questions:
 
@@ -31,11 +33,11 @@ ABI-Bench answers three core questions:
 
 ---
 
-## 2. Key Claims (v0.3)
+## 2. Key Claims (v0.6)
 
 ### 2.1 Main Claim: ABI Improves Agent Operability
 
-Across multiple LLMs (Strong/Medium/Weak) and three workflow plugins, G3
+Across multiple LLMs (Strong/Medium/Weak) and five workflow plugins, G3
 (ABI Control Layer) consistently outperforms G1 (README + Shell) and G2
 (Plain Tool Calling). The effect is validated via sequential
 randomized-block experiments with bootstrap confidence intervals.
@@ -51,8 +53,8 @@ as a capability multiplier for already-strong models.
 ### 2.3 Cross-Plugin Claim: ABI Lifecycle is Portable
 
 The same ABI lifecycle (list-types → plan → dry-run → inspect → report)
-works across metagenomic_plasmid, metatranscriptomics, and amplicon_16s
-plugins without plugin-specific modifications.
+works across metagenomic_plasmid, metatranscriptomics, amplicon_16s,
+rnaseq_expression, and wgs_bacteria plugins without plugin-specific modifications.
 
 ### 2.4 G4 Control: Lifecycle API > Equivalent Documentation
 
@@ -60,6 +62,29 @@ G4 receives the same information volume as G3's ABI lifecycle but as
 static documentation without the lifecycle API. G3 > G4 demonstrates
 that the structured lifecycle interface (CLI + JSON envelopes + standard
 artifact paths) provides value beyond simply having more documentation.
+
+### 2.5 Figure Validation Claim: ABI Enables Scientific Figure Quality Control
+
+ABI's sciplot integration enables agents to validate, diagnose, and verify
+data consistency of publication-grade scientific figures (T36-T38). G3
+figure validation pass rate exceeds baseline.
+
+### 2.6 Progressive Repair Claim: ABI Enables Autonomous Error Recovery
+
+ABI's diagnostic hints and resource manifests enable agents to recover from
+single-fault and multi-fault failure scenarios, including autonomous resource
+self-configuration (T39-T41).
+
+### 2.7 Cross-Platform Claim: ABI Pipelines are Platform-Portable
+
+ABI workflows produce equivalent outputs across local, Docker, and Nextflow
+execution platforms with full provenance audit trail (T42-T44).
+
+### 2.8 Multi-Agent Claim: ABI Lifecycle Supports Agent Collaboration
+
+ABI's structured JSON envelopes and standard artifact paths enable effective
+planner-reviewer collaboration, cross-model verification, and zero-shot
+transfer between agent platforms (T45-T47).
 
 ---
 
@@ -163,6 +188,10 @@ python bench/scoring/compute_statistics.py \
 | Contract | T27, T28, T29 | Contract lint, Nextflow export, violation detection |
 | Report Quality | T30 | Report completeness and structure |
 | Real Execution | T31-T35 | Real bioinformatics tool execution (v0.5) |
+| Figure Validation | T36-T38 | Sciplot figure verification, diagnosis, data consistency (v0.6) |
+| Progressive Repair | T39-T41 | Single-fault and multi-fault recovery, resource self-config (v0.6) |
+| Cross-Platform | T42-T44 | Local/Nextflow/Docker comparison, provenance audit (v0.6) |
+| Multi-Agent | T45-T47 | Planner-reviewer, cross-model verify, zero-shot transfer (v0.6) |
 
 ---
 
@@ -202,11 +231,13 @@ For detailed architecture, see [CLAUDE.md](CLAUDE.md).
 If you use ABI-Bench in your research, please cite:
 
 ```bibtex
-@software{abi_bench_v0_5,
-  title = {ABI-Bench: Agent-Bioinformatics Interface Benchmark v0.3},
+@software{abi_bench_v0_6,
+  title = {ABI-Bench: Agent-Bioinformatics Interface Benchmark v0.6},
   author = {ABI-Bench Contributors},
   year = {2026},
   note = {Evaluates structured ABI control layer for LLM agent
-          bioinformatics workflow operation across model capability tiers},
+          bioinformatics workflow operation across model capability tiers.
+          v0.6 adds figure validation, progressive repair, cross-platform
+          equivalence, and multi-agent collaboration tasks (T36-T47).},
 }
 ```
