@@ -162,6 +162,7 @@ class TestValidateConfig:
         assert any("max_tokens" in w.lower() or "low" in w.lower() for w in warnings)
 
     def test_anthropic_provider_warns(self):
-        config = BenchConfig(model="test", provider="anthropic")
+        from bench.harness.config import Provider
+        config = BenchConfig(model="test", provider=Provider.ANTHROPIC)
         warnings = validate_config(config)
-        assert any("openai-compatible" in w.lower() or "sdk" in w.lower() for w in warnings)
+        assert any("api_key" in w.lower() or "api key" in w.lower() for w in warnings)

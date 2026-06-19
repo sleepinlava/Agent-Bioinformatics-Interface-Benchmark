@@ -45,7 +45,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from bench.harness.path_guard import PathGuard
-from bench.harness.config import load_bench_config, validate_config
+from bench.harness.config import BenchConfig, Provider, load_bench_config, validate_config
 
 # ── Tool builder is now _build_tools() below, invoked at agent startup ─────────
 
@@ -606,6 +606,252 @@ def _command_needs_shell(cmd: str) -> bool:
     return False
 
 
+# ── v0.6: Multi-provider LLM routing ─────────────────────────────────────────
+
+def _openai_tools_to_anthropic(tools: list[dict]) -> list[dict]:
+    """Convert OpenAI-format tool schemas to Anthropic tool format.
+
+    OpenAI: {"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}
+    Anthropic: {"name": ..., "description": ..., "input_schema": ...}
+    """
+    result = []
+    for tool in tools:
+        if tool.get("type") == "function":
+            func = tool["function"]
+            result.append({
+                "name": func["name"],
+                "description": func.get("description", ""),
+                "input_schema": func.get("parameters", {"type": "object", "properties": {}}),
+            })
+    return result
+
+
+def _anthropic_response_to_unified(blocks: list) -> list[dict]:
+    """Convert Anthropic tool_use blocks to unified tool call format.
+
+    Unified format: {"id": str, "name": str, "arguments": dict}
+    """
+    calls = []
+    for block in blocks:
+        if hasattr(block, "type") and block.type == "tool_use":
+            calls.append({
+                "id": block.id,
+                "name": block.name,
+                "arguments": block.input,
+            })
+    return calls
+
+
+def _call_anthropic(config: BenchConfig, system_prompt: str, messages: list[dict],
+                    tools: list[dict], max_tokens: int) -> tuple[str, list[dict], dict]:
+    """Call Anthropic API via native SDK.
+
+    Returns: (text_content, tool_calls, usage_metadata)
+    """
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=config.api_key)
+
+    anthropic_tools = _openai_tools_to_anthropic(tools) if tools else None
+
+    # Separate system message from messages list for Anthropic
+    anthropic_messages = [m for m in messages if m.get("role") != "system"]
+
+    response = client.messages.create(
+        model=config.model,
+        max_tokens=max_tokens,
+        system=system_prompt,
+        messages=anthropic_messages,
+        tools=anthropic_tools,
+    )
+
+    text = ""
+    tool_calls = []
+    for block in response.content:
+        if block.type == "text":
+            text += block.text
+        elif block.type == "tool_use":
+            tool_calls.append({
+                "id": block.id,
+                "name": block.name,
+                "arguments": block.input,
+            })
+
+    usage = {
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+    }
+
+    return text, tool_calls, usage
+
+
+def _call_google(config: BenchConfig, system_prompt: str, messages: list[dict],
+                 tools: list[dict], max_tokens: int) -> tuple[str, list[dict], dict]:
+    """Call Google Gemini API via native SDK.
+
+    Returns: (text_content, tool_calls, usage_metadata)
+    """
+    import google.genai as genai
+
+    client = genai.Client(api_key=config.api_key)
+
+    # Google uses a system_instruction parameter, not a system message
+    contents = []
+    system_instruction = system_prompt if system_prompt else None
+
+    for msg in messages:
+        if msg.get("role") == "system":
+            continue
+        role = "user" if msg["role"] == "user" else "model"
+        parts = []
+        if "content" in msg and msg["content"]:
+            parts.append({"text": msg["content"]})
+        contents.append({"role": role, "parts": parts})
+
+    # Convert tools to Google format
+    google_tools = None
+    if tools:
+        declarations = []
+        for tool in tools:
+            if tool.get("type") == "function":
+                func = tool["function"]
+                declarations.append({
+                    "name": func["name"],
+                    "description": func.get("description", ""),
+                    "parameters": func.get("parameters", {}),
+                })
+        if declarations:
+            google_tools = [{"function_declarations": declarations}]
+
+    response = client.models.generate_content(
+        model=config.model,
+        contents=contents,
+        config={
+            "system_instruction": system_instruction,
+            "tools": google_tools,
+        },
+    )
+
+    text = ""
+    tool_calls = []
+
+    if response.candidates:
+        candidate = response.candidates[0]
+        for part in candidate.content.parts:
+            if part.text:
+                text += part.text
+            if hasattr(part, "function_call") and part.function_call:
+                tool_calls.append({
+                    "id": f"call_{len(tool_calls)}",
+                    "name": part.function_call.name,
+                    "arguments": dict(part.function_call.args),
+                })
+
+    usage = {
+        "input_tokens": response.usage_metadata.prompt_token_count,
+        "output_tokens": response.usage_metadata.candidates_token_count,
+    }
+
+    return text, tool_calls, usage
+
+
+def _call_openai(config: BenchConfig, messages: list[dict],
+                 tools: list[dict], max_tokens: int) -> tuple:
+    """Call OpenAI-compatible API with retry logic.
+
+    Returns: (response_object_or_none, error_or_none)
+    """
+    client = OpenAI(api_key=config.api_key, base_url=config.api_base)
+
+    last_error = None
+    for attempt in range(config.max_retries + 1):
+        try:
+            response = client.chat.completions.create(
+                model=config.model,
+                messages=messages,
+                tools=tools,
+                temperature=config.temperature,
+                max_tokens=max_tokens,
+            )
+            return response, None
+        except AuthenticationError as e:
+            last_error = e
+            print(f"FAILED: {type(e).__name__}: {e}")
+            break
+        except (APIConnectionError, APITimeoutError, RateLimitError) as e:
+            last_error = e
+            if attempt < config.max_retries:
+                delay = min(
+                    config.retry_base_delay_seconds * (2 ** attempt)
+                    + random.uniform(0, 1),
+                    config.retry_max_delay_seconds,
+                )
+                print(
+                    f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
+                    f"{type(e).__name__} — waiting {delay:.1f}s",
+                    end=" ", flush=True,
+                )
+                time.sleep(delay)
+            else:
+                print(f"FAILED after {config.max_retries + 1} attempts: {type(e).__name__}: {e}")
+        except APIStatusError as e:
+            last_error = e
+            if e.status_code >= 500 and attempt < config.max_retries:
+                delay = min(
+                    config.retry_base_delay_seconds * (2 ** attempt)
+                    + random.uniform(0, 1),
+                    config.retry_max_delay_seconds,
+                )
+                print(
+                    f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
+                    f"HTTP {e.status_code} — waiting {delay:.1f}s",
+                    end=" ", flush=True,
+                )
+                time.sleep(delay)
+            else:
+                print(f"FAILED after {attempt + 1} attempts: HTTP {e.status_code}: {e}")
+                break
+        except APIError as e:
+            last_error = e
+            if attempt < 1:
+                delay = config.retry_base_delay_seconds + random.uniform(0, 1)
+                print(
+                    f"RETRY (attempt {attempt + 1}/2): "
+                    f"{type(e).__name__} — waiting {delay:.1f}s",
+                    end=" ", flush=True,
+                )
+                time.sleep(delay)
+            else:
+                print(f"FAILED after 2 attempts: {type(e).__name__}: {e}")
+                break
+        except Exception as e:
+            last_error = e
+            print(f"API ERROR: {type(e).__name__}: {e}")
+            break
+
+    return None, last_error
+
+
+def _call_llm(config: BenchConfig, system_prompt: str, messages: list[dict],
+              tools: list[dict], max_tokens: int) -> tuple[str, list[dict], dict, bool, object]:
+    """Route LLM call to the appropriate provider SDK.
+
+    Returns: (text, tool_calls, usage, is_native_response, raw_response)
+        - For OpenAI SDK path: (text, tool_calls, usage, False, response_object)
+        - For Anthropic/Google: (text, tool_calls, usage, True, None)
+    """
+    if config.is_anthropic:
+        text, tool_calls, usage = _call_anthropic(config, system_prompt, messages, tools, max_tokens)
+        return text, tool_calls, usage, True, None
+    elif config.is_google:
+        text, tool_calls, usage = _call_google(config, system_prompt, messages, tools, max_tokens)
+        return text, tool_calls, usage, True, None
+    else:
+        # OpenAI SDK path
+        response, error = _call_openai(config, messages, tools, max_tokens)
+        return "", [], {}, False, response if response else error
+
+
 def run_agent(
     workspace: Path,
     trace_dir: Path,
@@ -618,14 +864,18 @@ def run_agent(
     task_type: str = "",
     allowed_actions: dict = None,
 ) -> int:
-    """Run the agent loop with direct LLM API calls via the OpenAI SDK."""
+    """Run the agent loop with multi-provider LLM support (v0.6).
+
+    Routes calls through the appropriate SDK based on config.provider:
+        - Provider.ANTHROPIC → anthropic SDK
+        - Provider.GOOGLE → google-genai SDK
+        - All other providers → OpenAI-compatible SDK
+    """
 
     # ── Load config ───────────────────────────────────────────────────────
     config = load_bench_config(PROJECT_ROOT / "bench" / ".env")
     for warning in validate_config(config):
         print(f"  CONFIG WARNING: {warning}")
-
-    client = OpenAI(api_key=config.api_key, base_url=config.api_base)
 
     # ── Generate workspace nonce for artifact freshness ──────────────────
     nonce = secrets.token_hex(16)
@@ -714,87 +964,19 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
         step_count = step + 1
         print(f"  Step {step_count}/{max_steps} ({elapsed:.0f}s)...", end=" ", flush=True)
 
-        # ── API call with latency tracking and retry logic ──
+        # ── API call with latency tracking (v0.6: multi-provider routing) ──
         api_start = time.time()
-        response = None
-        last_error: Exception | None = None
 
-        for attempt in range(config.max_retries + 1):
-            try:
-                response = client.chat.completions.create(
-                    model=config.model,
-                    messages=messages,
-                    tools=tools,
-                    temperature=config.temperature,
-                    max_tokens=max_tokens,
-                )
-                last_error = None
-                break
-            except AuthenticationError as e:
-                # Auth failures are permanent — do not retry.
-                last_error = e
-                print(f"FAILED: {type(e).__name__}: {e}")
-                break
-            except (APIConnectionError, APITimeoutError, RateLimitError) as e:
-                last_error = e
-                if attempt < config.max_retries:
-                    delay = min(
-                        config.retry_base_delay_seconds * (2 ** attempt)
-                        + random.uniform(0, 1),
-                        config.retry_max_delay_seconds,
-                    )
-                    print(
-                        f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
-                        f"{type(e).__name__} — waiting {delay:.1f}s",
-                        end=" ", flush=True,
-                    )
-                    time.sleep(delay)
-                else:
-                    print(f"FAILED after {config.max_retries + 1} attempts: {type(e).__name__}: {e}")
-            except APIStatusError as e:
-                # Retry on server errors (5xx), fail on client errors (4xx except 429).
-                last_error = e
-                if e.status_code >= 500 and attempt < config.max_retries:
-                    delay = min(
-                        config.retry_base_delay_seconds * (2 ** attempt)
-                        + random.uniform(0, 1),
-                        config.retry_max_delay_seconds,
-                    )
-                    print(
-                        f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
-                        f"HTTP {e.status_code} — waiting {delay:.1f}s",
-                        end=" ", flush=True,
-                    )
-                    time.sleep(delay)
-                else:
-                    print(f"FAILED after {attempt + 1} attempts: HTTP {e.status_code}: {e}")
-                    break
-            except APIError as e:
-                # Catch-all for other API errors — one retry then fail.
-                last_error = e
-                if attempt < 1:
-                    delay = config.retry_base_delay_seconds + random.uniform(0, 1)
-                    print(
-                        f"RETRY (attempt {attempt + 1}/2): "
-                        f"{type(e).__name__} — waiting {delay:.1f}s",
-                        end=" ", flush=True,
-                    )
-                    time.sleep(delay)
-                else:
-                    print(f"FAILED after 2 attempts: {type(e).__name__}: {e}")
-                    break
-            except Exception as e:
-                # Unexpected errors — fail immediately.
-                last_error = e
-                print(f"API ERROR: {type(e).__name__}: {e}")
-                break
+        llm_text, llm_tool_calls, llm_usage, is_native, raw_response = _call_llm(
+            config, system_prompt, messages, tools, max_tokens,
+        )
 
-        if last_error is not None:
-            final_answer = f"# API Error\n\n{type(last_error).__name__}: {last_error}"
+        # ── Handle errors ──────────────────────────────────────────────
+        if is_native is False and isinstance(raw_response, Exception):
+            final_answer = f"# API Error\n\n{type(raw_response).__name__}: {raw_response}"
             break
 
-        if response is None:
-            # Should not happen, but be defensive.
+        if is_native is False and raw_response is None:
             final_answer = "# API Error\n\nNo response received after all retries."
             break
 
@@ -802,21 +984,34 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
         api_latencies_ms.append(api_latency_ms)
         # ── end latency tracking ──
 
-        msg = response.choices[0].message
-        finish = response.choices[0].finish_reason
+        # ── Extract content and tool calls ─────────────────────────────
+        if is_native:
+            # Anthropic / Google: already parsed by the native call functions
+            text_content = llm_text
+            tool_calls = llm_tool_calls
+            finish = "tool_calls" if tool_calls else "stop"
+            total_prompt_tokens += llm_usage.get("input_tokens", 0)
+            total_completion_tokens += llm_usage.get("output_tokens", 0)
+        else:
+            # OpenAI SDK path: use existing response parsing
+            response = raw_response
+            msg = response.choices[0].message
+            finish = response.choices[0].finish_reason
+            text_content = msg.content or ""
+            tool_calls = msg.tool_calls or []
 
-        # Track token usage
-        if response.usage:
-            total_prompt_tokens += response.usage.prompt_tokens or 0
-            total_completion_tokens += response.usage.completion_tokens or 0
-            details = getattr(response.usage, "completion_tokens_details", None)
-            if details and getattr(details, "reasoning_tokens", 0):
-                total_thinking_tokens += details.reasoning_tokens
+            if response.usage:
+                total_prompt_tokens += response.usage.prompt_tokens or 0
+                total_completion_tokens += response.usage.completion_tokens or 0
+                details = getattr(response.usage, "completion_tokens_details", None)
+                if details and getattr(details, "reasoning_tokens", 0):
+                    total_thinking_tokens += details.reasoning_tokens
 
         # If the model responds with content (final answer) and no tool calls
-        if msg.content and not msg.tool_calls:
-            final_answer = msg.content
-            print(f"DONE ({response.usage.completion_tokens} tokens)")
+        if text_content and not tool_calls:
+            final_answer = text_content
+            comp_tokens = total_completion_tokens
+            print(f"DONE ({comp_tokens} tokens)")
             agent_trace.append({
                 "step": step_count,
                 "action": "final_answer",
@@ -826,31 +1021,46 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
             break
 
         # If the model makes tool calls
-        if msg.tool_calls:
-            # Add assistant message with tool calls
-            assistant_msg = {
-                "role": "assistant",
-                "content": msg.content or "",
-                "tool_calls": [
+        if tool_calls:
+            # Normalise tool calls to unified format for message history
+            if is_native:
+                # Anthropic/Google: tool_calls already in unified format
+                unified_calls = tool_calls
+            else:
+                # OpenAI SDK: convert from SDK objects to dicts
+                unified_calls = [
                     {
                         "id": tc.id,
                         "type": "function",
                         "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                     }
-                    for tc in msg.tool_calls
-                ],
+                    for tc in tool_calls
+                ]
+
+            # Add assistant message with tool calls
+            assistant_msg = {
+                "role": "assistant",
+                "content": text_content or "",
+                "tool_calls": unified_calls,
             }
             messages.append(assistant_msg)
 
             # Execute each tool and add results
             tool_results = []
-            for tc in msg.tool_calls:
+            for tc in unified_calls:
+                fn = tc.get("function", {})
+                tool_name = fn.get("name", tc.get("name", ""))
+                args_str = fn.get("arguments", "{}")
+                tc_id = tc.get("id", "")
+
                 try:
-                    args = json.loads(tc.function.arguments)
+                    if isinstance(args_str, str):
+                        args = json.loads(args_str)
+                    else:
+                        args = args_str
                 except json.JSONDecodeError:
                     args = {}
 
-                tool_name = tc.function.name
                 result = execute_tool(tool_name, args, workspace, group_id)
 
                 print(f"tool={tool_name}", end=" ", flush=True)
@@ -872,17 +1082,18 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
 
                 tool_results.append({
                     "role": "tool",
-                    "tool_call_id": tc.id,
+                    "tool_call_id": tc_id,
                     "content": result[:4000],  # Truncate long results
                 })
 
             messages.extend(tool_results)
-            print(f"({len(msg.tool_calls)} calls)")
+            print(f"({len(unified_calls)} calls)")
             continue
 
         # finish_reason was "stop" or "length" without content — treat as final
-        final_answer = msg.content or "(no content)"
-        print(f"STOP (finish={finish}, {response.usage.completion_tokens} tokens)")
+        final_answer = text_content or "(no content)"
+        comp_tokens = total_completion_tokens
+        print(f"STOP (finish={finish}, {comp_tokens} tokens)")
         agent_trace.append({
             "step": step_count,
             "action": "stop",
