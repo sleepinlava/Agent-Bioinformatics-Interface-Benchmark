@@ -1,6 +1,6 @@
 benchmark:
   name: ABI-Bench
-  version: "0.5"
+  version: "0.6"
   benchmark_type: agent_bioinformatics_interface
   primary_claim: >
     ABI is a structured control layer that improves LLM agent operability
@@ -283,6 +283,96 @@ v0_5_new_tasks:
   - T33
   - T34
   - T35
+
+# ═══════════════════════════════════════════════════════════════════════
+# v0.6 Task Architecture (2026-06-19)
+#
+# Adds 12 new tasks spanning 4 new modules:
+#   Figure Validation  → T36-T38 (sciplot integration)
+#   Progressive Repair → T39-T41 (failure recovery)
+#   Cross-Platform     → T42-T44 (local/Docker/Nextflow consistency)
+#   Multi-Agent        → T45-T47 (collaboration, cross-model, zero-shot)
+# ═══════════════════════════════════════════════════════════════════════
+
+full_v0_6_tasks:
+  - T01
+  - T02
+  - T03
+  - T04
+  - T05
+  - T06
+  - T07
+  - T08
+  - T09
+  - T10
+  - T11
+  - T12
+  - T13
+  - T14
+  - T15
+  - T16
+  - T17
+  - T18
+  - T19
+  - T25
+  - T26
+  - T27
+  - T28
+  - T29
+  - T30
+  - T31
+  - T32
+  - T33
+  - T34
+  - T35
+  - T36
+  - T37
+  - T38
+  - T39
+  - T40
+  - T41
+  - T42
+  - T43
+  - T44
+  - T45
+  - T46
+  - T47
+
+v0_6_new_tasks:
+  - T36
+  - T37
+  - T38
+  - T39
+  - T40
+  - T41
+  - T42
+  - T43
+  - T44
+  - T45
+  - T46
+  - T47
+
+figure_validation_tasks:
+  - T36
+  - T37
+  - T38
+
+progressive_repair_tasks:
+  - T39
+  - T40
+  - T41
+
+cross_platform_tasks:
+  - T42
+  - T43
+  - T44
+
+multi_agent_tasks:
+  - T45
+  - T46
+  - T47
+
+# Note: T22, T23, T24 are not in full_v0_6 — they remain in extended sets
 
 ablation_tasks:
   - T03

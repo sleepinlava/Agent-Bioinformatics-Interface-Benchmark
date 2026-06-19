@@ -1,0 +1,66 @@
+task_id: T46
+name: Cross-model verification — audit results from another perspective
+plugin: metagenomic_plasmid
+task_type: multi_agent
+fixture: plasmid_valid
+max_score: 14
+timeout_minutes: 20
+max_agent_steps: 40
+
+prompt: |
+  You have metagenomic_plasmid results (results/ and provenance/).
+
+  Your task:
+  1. Perform a thorough audit of every step: input → output → logs
+  2. Now, imagine you are a DIFFERENT LLM (e.g., if you are GPT, think like Claude).
+     From this alternate perspective, would you reach the same conclusions?
+  3. Where the two perspectives diverge, flag as "model-dependent finding"
+  4. Produce a "confidence assessment report":
+     - Which conclusions are robust (either model agrees)?
+     - Which are model-dependent (perspective matters)?
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "multi_agent",
+    "primary_perspective": "<current model>",
+    "alternate_perspective": "<hypothetical model>",
+    "robust_findings": ["<finding that either model would confirm>"],
+    "model_dependent_findings": [
+      {"finding": "<...>", "primary_view": "<...>", "alternate_view": "<...>"}
+    ],
+    "uncertainty_sources": ["data_ambiguity", "tool_interpretation", "biological_assumption"],
+    "confidence_summary": "<overall confidence assessment>"
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  robust_findings_identified:
+    points: 5
+    function: check_final_answer_has_structure
+  model_dependent_flagged:
+    points: 5
+    function: check_final_answer_contains
+    args:
+      required_terms: ["model_dependent", "perspective", "uncertainty"]
+      min_sections: 2
+  confidence_assessed:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["confidence", "robust", "finding"]
+
+failure_codes:
+  - artifact_missing
+  - overclaim_result
+  - timeout

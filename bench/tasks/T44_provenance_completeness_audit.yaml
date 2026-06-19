@@ -1,0 +1,59 @@
+task_id: T44
+name: Provenance completeness audit — verify all tracking artifacts
+plugin: metagenomic_plasmid
+task_type: audit
+fixture: plasmid_valid
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 30
+
+prompt: |
+  You have metagenomic_plasmid results. Audit the provenance/ directory for completeness:
+
+  1. commands.tsv: every row has step_id, tool_id, status, exit_code
+  2. resolved_inputs.tsv: every input file path exists on disk
+  3. tool_versions.tsv: every tool has a version string
+  4. checksums.json: covers all output files from commands.tsv
+  5. progress.jsonl: continuous from start → end, no gaps
+  6. run_summary.json: counts match raw data (total_steps == rows in commands.tsv)
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "audit",
+    "checks": [
+      {"dimension": "commands", "valid": true/false, "issues": [...]},
+      {"dimension": "resolved_inputs", "valid": true/false, "issues": [...]},
+      {"dimension": "tool_versions", "valid": true/false, "issues": [...]},
+      {"dimension": "checksums", "valid": true/false, "issues": [...]},
+      {"dimension": "progress", "valid": true/false, "issues": [...]},
+      {"dimension": "run_summary", "valid": true/false, "issues": [...]}
+    ],
+    "overall_complete": true/false,
+    "score": "<N>/6 dimensions valid"
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  dimensions_checked:
+    points: 6
+    function: check_final_answer_has_structure
+  overall_assessment:
+    points: 2
+    function: check_final_answer_contains
+    args:
+      required_terms: ["complete", "valid", "dimension"]
+
+failure_codes:
+  - artifact_missing
+  - timeout
