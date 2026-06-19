@@ -1,0 +1,8 @@
+project_name: "bench-rnaseq-resources"
+mode: local
+threads: 2
+outdir: results/bench-rnaseq
+dry_run: false
+input:
+  sample_sheet: sample_sheet.tsv
+resources: {}

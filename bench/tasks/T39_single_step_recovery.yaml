@@ -1,0 +1,72 @@
+# bench/tasks/T39_single_step_recovery.yaml
+task_id: T39
+name: Single-step failure recovery — diagnose and fix SPAdes crash
+plugin: wgs_bacteria
+task_type: progressive_repair
+fixture: partial_failure_wgs
+max_score: 12
+timeout_minutes: 20
+max_agent_steps: 40
+
+prompt: |
+  You have a wgs_bacteria workspace where a pipeline run partially failed.
+  fastp completed successfully (QC passed), but SPAdes crashed with a k-mer error.
+  The provenance/ directory has complete logs and step_logs/.
+
+  Your task:
+  1. Read provenance/commands.tsv and step_logs/ to identify the failure
+  2. Diagnose the root cause (k-mer parameter incompatible with read length)
+  3. Fix config.yaml with corrected SPAdes parameters
+  4. Re-run from the failed step:
+     `abi run --type wgs_bacteria --confirm-execution --from-step assembly`
+  5. Verify the recovered output satisfies expected_assertions.yaml
+
+  Write to final_answer.json:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "progressive_repair",
+    "failed_step": "<step_id>",
+    "diagnosis": {"error_type": "<...>", "root_cause": "<...>"},
+    "fix_applied": {"file": "config.yaml", "change": "<...>"},
+    "recovery_successful": true/false,
+    "output_validated": true/false
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: true
+  network: false
+
+expected_artifacts:
+  - final_answer.md
+  - final_answer.json
+
+scoring:
+  failed_step_identified:
+    points: 2
+    function: check_final_answer_contains
+    args:
+      required_terms: ["spades", "assembly"]
+  diagnosis_correct:
+    points: 3
+    function: check_final_answer_contains
+    args:
+      required_terms: ["k-mer", "parameter", "error"]
+      min_sections: 2
+  fix_applied:
+    points: 3
+    function: check_final_answer_has_structure
+  recovery_executed:
+    points: 4
+    function: check_final_answer_contains
+    args:
+      required_terms: ["recovery", "rerun", "from-step"]
+      min_sections: 2
+
+failure_codes:
+  - artifact_missing
+  - pipeline_crashed
+  - diagnosis_wrong
+  - timeout
