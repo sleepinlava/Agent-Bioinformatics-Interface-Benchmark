@@ -27,6 +27,7 @@ tiers:
       - gpt-4o-mini
       - qwen2.5-72b
       - qwen3-14b
+      - mistral-small-3.2-24b-instruct
 
   weak:
     description: "Smaller models where the ABI scaffolding effect is most pronounced"
@@ -34,3 +35,5 @@ tiers:
       - qwen2.5-7b
       - llama-3.1-8b
       - qwen3-4b
+      - llama-3.1-8b-instruct
+      - deepseek-r1-distill-qwen-7b

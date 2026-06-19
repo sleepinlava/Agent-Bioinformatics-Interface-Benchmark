@@ -27,7 +27,8 @@ DEVELOPMENT.md
 
 # Experiment reports — track v0.1.1+ final reports, ignore old v0.1
 docs/experiments/
-docs/experiments/abi_bench_v0_1/
+!docs/experiments/abi_bench_v0_1/
+!docs/experiments/local_models_v0_6/
 docs/experiments/ABI_Bench_v0_1_Results_Report.md
 docs/experiments/ABI_Bench_v0_1_Results_Report_zh.md
 

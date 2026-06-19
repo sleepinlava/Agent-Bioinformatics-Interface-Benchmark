@@ -1,0 +1,4 @@
+model	tier	G1	G2	G3	G4	G3_G1_delta	G3_G2_delta	n_tasks	experiment_set	quantization
+Qwen3-4B	Weak	29.4	22.9	53.5	33.9	+24.1	+30.6	30	dev	native
+Llama-3.1-8B	Weak	18.3	17.6	46.1	20.3	+27.7	+28.5	25	dev	native
+Qwen3-14B	Medium	N/A	23.5	25.2	N/A	N/A	+1.8	30	main	4-bit (bitsandbytes)

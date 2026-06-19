@@ -17,8 +17,9 @@ ABI-Bench 接受以下类型的提交：
 | **新消融实验** | 针对特定模型/框架的 A1/A3/A4 变体 | 消融表 |
 | **新插件** | 为新的生物信息学分析类型添加 T13–T18 风格任务 | 插件表 |
 
-所有提交必须包含 **全部 8 个 MVP 任务**（T01, T02, T03, T05, T06, T08, T09, T10），
-覆盖 **全部 3 个主要实验组**（G1, G2, G3），每组 **至少 3 次重复**。
+所有提交必须包含 **至少 8 个 MVP 任务**（T01, T02, T03, T05, T06, T08, T09, T10），
+覆盖 **全部 4 个主要实验组**（G1, G2, G3, G4），每组 **至少 3 次重复**。
+完整的 v0.6 提交应覆盖全部 47 个任务 (T01-T47)，跨全部 4 个实验组。
 
 ---
 
@@ -205,22 +206,33 @@ bench/submissions/<your_submission_id>/
 
 ---
 
-## 4. 完整 12 任务提交（可选）
+## 4. 扩展提交（可选）
 
-在 MVP（8 任务）被接受后，你可以提交完整 12 任务集的结果：
+在 MVP（8 任务）被接受后，你可以提交更大任务集的结果：
 
 ```bash
-for group in G1 G2 G3; do
+# v0.5 完整集 (T01-T35, 35 任务)
+for group in G1 G2 G3 G4; do
   python bench/harness/run_group.py \
-    --group $group --tasks full --replicates 5 \
+    --group $group --tasks full_v0_5 --replicates 3 \
     --agent-mode direct --parallel --workers 4 \
     --experiment-set submission --fixture-set public \
-    --outdir bench/submissions/<your_submission_id>_full/$group
+    --outdir bench/submissions/<your_submission_id>_v0_5/$group
+done
+
+# v0.6 完整集 (T01-T47, 47 任务) — 包含图表验证、
+# 渐进式修复、跨平台和多智能体协作模块
+for group in G1 G2 G3 G4; do
+  python bench/harness/run_group.py \
+    --group $group --tasks full_v0_6 --replicates 3 \
+    --agent-mode direct --parallel --workers 4 \
+    --experiment-set submission --fixture-set public \
+    --outdir bench/submissions/<your_submission_id>_v0_6/$group
 done
 ```
 
-完整集在 8 个 MVP 任务基础上增加了 T04（检查质粒空运行结果）、T07（工具未找到诊断）、
-T11（检查宏转录组结果）和 T12（解读标准表格）。
+可用任务集：`mvp` (8 任务), `full` (18 任务), `full_v0_5` (35 任务),
+`full_v0_6` (47 任务), `extended_v0_6` (52 任务)。
 
 ---
 

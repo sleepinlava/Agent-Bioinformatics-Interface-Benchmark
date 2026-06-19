@@ -1,575 +1,274 @@
-# ABI-Bench v0.5
+# ABI-Bench v0.6
 
 > [English Version (英文版)](README.md)
 
 ## Agent-Bioinformatics Interface Benchmark · 智能体-生物信息学接口基准测试
 
+> 📋 **提交指南**: [English](SUBMISSION.md) | [中文版](SUBMISSION.zh.md)
+
 ---
 
 ## 1. 什么是 ABI-Bench
 
-**ABI-Bench**（Agent-Bioinformatics Interface Benchmark）用于评估：
-在相同 LLM、相同 agent harness、相同仓库、相同任务、相同 fixture 条件下，
-一个结构化的 **ABI control layer**（智能体-生物信息学接口中间层）是否能比
-**README + Shell** 或 **Plain Tool Calling** 让 agent 更稳定地完成
-生物信息学 workflow 的规划、dry-run、检查、诊断、恢复和报告生成。
+**ABI-Bench**（Agent-Bioinformatics Interface Benchmark）用于评估结构化的
+**ABI 控制层**是否能提升 LLM agent 操作生物信息学工作流的可靠性。v0.6 
+聚焦**脚手架效应**（scaffolding effect）：ABI 能否降低模型完成可靠生信操作
+所需的能力门槛，并将评估扩展到真实生信工具执行 (T31-T35)、科学图表验证
+(T36-T38)、渐进式修复 (T39-T41)、跨平台等价性 (T42-T44) 和多智能体协作
+(T45-T47)。
 
-ABI-Bench **不是**一个评测"哪个 LLM 最强"的 benchmark，**不是**一个评测
-"哪个生信流程生物学结果更好"的 benchmark，也**不是**一个评测"哪个 agent 
-框架最好"的 benchmark。
+ABI-Bench 回答三个核心问题：
 
----
+> 1. **ABI 控制层**能否比非结构化基线（README + Shell、Plain Tool Calling）
+>    更可靠地帮助 agent 完成生信工作流的规划、预演、检查、诊断和报告？
 
-## 2. 设计动机
+> 2. ABI 是否对**弱模型帮助更大**——作为领域脚手架降低能力门槛，
+>    而非对强模型的能力倍增器？
 
-### 2.1 为什么需要 ABI
-
-LLM agent 在操作生物信息学 workflow 时面临五类特有困难：
-
-1. **生命周期缺失**：生信分析有"发现→规划→预演→检查→诊断→报告"的明确
-   生命周期，但普通 shell 或 tool-calling 接口不提供这一语义层。
-
-2. **溯源信息缺失**：生信分析的可复现性依赖完整的 provenance——输入文件路径、
-   工具版本、资源数据库、命令序列、执行状态。没有结构化的 provenance artifact，
-   agent 无法有效检查结果或诊断故障。
-
-3. **结果解读困难**：生信 pipeline 输出大量表格（基因丰度表、表达矩阵等），
-   agent 需要理解标准表结构才能正确解读，而非把空表或中间产物当成最终生物学发现。
-
-4. **安全边界模糊**：生信工具涉及大量计算和数据库下载。agent 需要明确的
-   "plan→dry-run→确认→执行"权限边界，避免未经授权启动大规模真实计算。
-
-5. **跨领域复用性**：生物信息学包含众多分析类型（宏基因组质粒分析、宏转录组、
-   扩增子测序等），同一 control layer 应能跨类型复用。
-
-ABI-Bench 通过**固定所有其他变量**（模型、harness、仓库、fixture），只改变
-agent 可用的接口层，来**严格测量 ABI control layer 本身的贡献**。
-
-### 2.2 外部方法论吸收
-
-ABI-Bench 吸收了七个领域 benchmark 的方法论精华：
-
-| 外部 Benchmark | 核心理念 | ABI-Bench 对应做法 |
-|---|---|---|
-| **GAIA** | 任务接近真实需求，要求工具使用与多步推理 | 真实仓库、真实 CLI、真实 fixture，产出真实 artifact |
-| **SWE-bench** | 绑定固定 repository state，自动测试判定 | 固定 commit、独立 workspace、脚本判定 score.json |
-| **AgentBench** | 评估多轮交互中的推理、决策、工具调用和失败类型 | 保存 trace、记录 step 数、failure_code、分析失败类型 |
-| **StableToolBench** | 避免外部 API/工具状态漂移导致不可复现 | 以 dry-run 为主，不依赖大型数据库下载，不依赖联网 API |
-| **BioCoder** | 生物信息任务应有领域特异性 | 包含 sample sheet、FASTQ path、assembly、database、tool registry |
-| **LAB-Bench** | 面向 practical biology research capabilities | 测 workflow planning、数据库配置、结果表解释、避免过度生物学解释 |
-| **BixBench** | 覆盖真实数据分析场景、多步轨迹和结果解释 | 要求中间 artifact，评估 agent 是否知道下一步 |
+> 3. 同一套 ABI 生命周期能否**跨多个工作流插件**复用（宏基因组质粒、
+>    宏转录组、16S 扩增子、RNA-seq 表达、WGS 细菌）？
 
 ---
 
-## 3. 实验假设体系
+## 2. 核心声明 (v0.6)
 
-### 3.1 主假设
+### 2.1 主声明：ABI 提升 Agent 可操作性
 
-**H1：ABI control layer 能显著提高 LLM agent 对生物信息学 workflow 的 agent-operability。**
+跨多个 LLM（强/中/弱）和五种工作流插件，G3（ABI 控制层）一致性地
+优于 G1（README + Shell）和 G2（Plain Tool Calling）。效果通过顺序
+随机区组实验设计和 bootstrap 置信区间验证。
 
-### 3.2 次级假设
+### 2.2 脚手架声明：ABI 帮助弱模型更多
 
-| 假设 | 内容 | 验证方式 |
-|---|---|---|
-| **H2** | ABI 的优势不是来自"多给了工具"，而是来自 lifecycle-level control | G3 vs G2 |
-| **H3** | provenance artifacts 能显著提高错误诊断与恢复能力 | A1 消融实验 |
-| **H4** | standard tables 能显著提高结果结构理解能力 | A2 消融实验 (v0.2) |
-| **H5** | permission model 能降低未授权真实执行风险 | A4 消融实验 |
-| **H6** | 同一 ABI control layer 能跨分析类型复用 | T09/T10 跨插件任务 |
+**脚手架增益**（Scaffolding Gain）= (G3−G1)_weak − (G3−G1)_strong，
+量化弱模型比强模型多受益的程度。正增益表明 ABI 的主要价值在于降低
+模型推理负担，而非为已有强模型赋能。
 
----
+### 2.3 跨插件声明：ABI 生命周期可移植
 
-## 4. 实验组设计
+同一套 ABI 生命周期（list-types → plan → dry-run → inspect → report）
+在 metagenomic_plasmid、metatranscriptomics、amplicon_16s、rnaseq_expression
+和 wgs_bacteria 五个插件上无需修改即可工作。
 
-### 4.1 三组主实验
+### 2.4 G4 对照：生命周期 API > 等价文档
 
-| 组别 | 名称 | Agent 可用信息 | 核心目的 |
-|---|---|---|---|
-| **G1** | README + Shell Baseline | README、docs、CLI help、shell、文件读写 | 测试非结构化文档 + shell 的 agent 能力 |
-| **G2** | Plain Tool Calling Baseline | 普通工具函数、CLI wrapper、文件读写 | 测试只暴露工具接口是否足够（无 lifecycle 语义） |
-| **G3** | ABI Control Layer | ABI lifecycle、JSON envelope、provenance、standard tables、permission model | **ABI 中间层的完整贡献** |
+G4 获得与 G3 的 ABI 生命周期相同信息量的静态文档，但没有生命周期 API。
+G3 > G4 证明结构化的生命周期接口（CLI + JSON envelope + 标准 artifact 路径）
+的价值超出了单纯提供更多文档。
 
-**核心设计原则**：三组使用**完全相同的 LLM**、**相同的 agent harness**、
-**相同的仓库 commit**、**相同的 task fixture**。唯一变量是 agent 可用的接口层。
-ABI-Bench 支持两种 agent 执行模式：`direct`（Python 直连，推荐）、
-`simulated`（无 LLM，CI/测试用）。
+### 2.5 图表验证声明：ABI 赋能科学图表质量控制
 
-### 4.2 ABI 内部消融组
+ABI 的 sciplot 集成使 agent 能够验证、诊断和检查发表级科学图表的数据一致性
+(T36-T38)。G3 图表验证通过率超过基线。
 
-| 组别 | 名称 | 移除内容 | 主要影响 |
-|---|---|---|---|
-| **A0** | ABI-full | 无（完整 ABI） | 完整能力 |
-| **A1** | ABI-no-provenance | `commands.tsv`、`resolved_inputs.tsv`、`run_summary.json` | inspect、diagnosis、recovery |
-| **A3** | ABI-no-diagnostic-hints | 结构化 `error_code` / `diagnostic_hints` | fault localization |
-| **A4** | ABI-no-permission-model | `confirmation_required` gating | execution safety |
+### 2.6 渐进式修复声明：ABI 赋能自主错误恢复
 
-消融实验回答的核心问题："ABI 的优势到底是 lifecycle 设计整体起作用，还是某个
-具体组件（provenance、diagnostic hints、permission model）分别贡献了多少？"
+ABI 的诊断提示和资源清单使 agent 能够从单故障和多故障场景中恢复，包括自主
+资源配置 (T39-T41)。
 
-### 4.3 固定变量
+### 2.7 跨平台声明：ABI 流水线平台可移植
 
-| 变量 | 固定值 |
-|---|---|
-| Agent harness | Python 直连 agent（`direct_agent.py`） |
-| LLM | 同一版本，所有组相同 |
-| Temperature | 0（或最低可用值） |
-| Max agent steps | 50 |
-| Timeout | 每任务 20 分钟 |
-| Workspace | 每个 task/group/replicate 独立 |
-| Git commit | 固定 benchmark commit |
-| Network | v0.1 默认关闭 |
-| 真实生信执行 | v0.1 主评分禁止 |
-| 主运行模式 | dry-run / inspect / report |
+ABI 工作流在本地、Docker 和 Nextflow 执行平台上产生等价输出，拥有完整的
+溯源审计轨迹 (T42-T44)。
+
+### 2.8 多智能体声明：ABI 生命周期支持智能体协作
+
+ABI 的结构化 JSON envelope 和标准 artifact 路径使规划者-审查者协作、
+跨模型验证和零-shot 平台迁移成为可能 (T45-T47)。
 
 ---
 
-## 5. 八维能力评估模型
+## 3. 实验组架构
 
-ABI-Bench 通过 12 个具体任务评估 agent 的 8 个核心能力维度：
-
-| 能力维度 | 评估内容 | 对应任务 |
-|---|---|---|
-| **可发现性** (Discoverability) | agent 是否能发现可用的 analysis types | T01 |
-| **可规划性** (Plannability) | agent 是否能构建合法的 execution plan | T02, T09 |
-| **可预演性** (Dry-runnability) | agent 是否能完成 dry-run 并生成完整 artifact | T03, T10 |
-| **可诊断性** (Diagnosability) | agent 是否能定位 missing input / resource / tool | T05, T06, T07 |
-| **可检查性** (Inspectability) | agent 是否能正确读取 provenance 并给出下一步 | T04, T11 |
-| **安全性** (Safety) | agent 是否遵守执行确认边界 | T08 |
-| **可解释性** (Interpretability) | agent 是否能理解标准表结构但不做过度生物学解读 | T12 |
-| **可移植性** (Portability) | 同一 ABI 是否能驱动两类 bioinformatics 分析 | T09, T10, T11 |
+| 组 | 名称 | 核心差异 |
+|---|------|---------|
+| **G1** | README + Shell | 仅文档 + bash |
+| **G2** | Plain Tool Calling | 通用工具，无生命周期 |
+| **G3** | ABI Control Layer | 完整 ABI CLI + 生命周期 API |
+| **G4** | Info-Matched Docs | 与 G3 等量文档，无生命周期 API |
+| **A1** | No Provenance | G3 减去溯源信息（附录） |
+| **A3** | No Diagnostic Hints | G3 减去结构化错误码（附录） |
+| **A4** | No Permission Model | G3 减去确认门控（附录） |
 
 ---
 
-## 6. 任务设计
+## 4. 快速开始
 
-### 6.1 任务总览
+### 环境要求
 
-| 任务 | 名称 | 插件 | 类型 | 分值 |
-|---|---|---|---|---|
-| T01 | 列出分析类型 | both | discovery | 5 |
-| T02 | 规划宏基因组质粒分析 | metagenomic_plasmid | planning | 10 |
-| T03 | 预演宏基因组质粒分析 | metagenomic_plasmid | dry-run | 12 |
-| T04 | 检查质粒 dry-run 结果 | metagenomic_plasmid | inspection | 8 |
-| T05 | 诊断缺失输入 | metagenomic_plasmid | diagnosis | 10 |
-| T06 | 诊断缺失资源 | metagenomic_plasmid | diagnosis | 10 |
-| T07 | 诊断工具未找到 | metagenomic_plasmid | diagnosis | 8 |
-| T08 | 权限门控执行 | metagenomic_plasmid | safety | 10 |
-| T09 | 规划宏转录组分析 | metatranscriptomics | portability | 8 |
-| T10 | 预演宏转录组分析 | metatranscriptomics | portability | 10 |
-| T11 | 检查宏转录组 dry-run 结果 | metatranscriptomics | inspection | 5 |
-| T12 | 解读标准表格 | both | interpretation | 4 |
+- Python ≥ 3.10
+- `pip install pyyaml openai scipy`
+- 开发工具（可选）：`pip install pytest ruff`
 
-**总分：100 分**
+### 配置
 
-### 6.2 任务 Lifecycle 逻辑
-
-任务沿 agent lifecycle "发现 → 规划 → 预演 → 检查 → 诊断 → 报告" 设计：
-
-```
-T01 (发现)
-  └─→ T02 / T09 (规划)
-        └─→ T03 / T10 (预演)
-              ├─→ T04 / T11 (检查)
-              ├─→ T12 (解读表格)
-              └─→ T05 / T06 / T07 (诊断故障)
-                    └─→ T08 (安全门控)
-```
-
-### 6.3 诊断任务的三层故障注入
-
-三个诊断任务分别模拟真实生信场景中最常见的三种故障模式：
-
-- **T05 missing input**：sample sheet 中某样本的 FASTQ 路径不存在或错误
-- **T06 missing resource**：config 中引用的数据库路径无效
-- **T07 tool not found**：pipeline 依赖的工具在环境中不可用
-
-识别难度递增：missing input 是文件级别的（直接可检查），missing resource 是
-配置级别的（需理解 config→resource 映射），tool not found 是环境级别的
-（需理解 tool registry 和 env 映射）。
-
-### 6.4 跨插件设计
-
-T09/T10/T11 使用与 T02/T03/T04 完全不同的分析类型（宏转录组 vs 宏基因组质粒），
-但使用相同的 ABI lifecycle interface。这直接验证 **H6**：同一 control layer 
-能否跨分析类型复用。
-
----
-
-## 7. 评分体系
-
-### 7.1 设计原则
-
-1. **基于 artifact，不基于主观判断**：每个检查项检查具体文件是否存在、字段是否
-   正确、内容是否合法，而非人类审阅者的主观评价。
-2. **二进制检查，透明可复现**：每个评分项是 pass/fail，不引入模糊判断。
-3. **集中管理，任务引用**：所有检查定义在 `scoring/rubric.yaml` 中，任务 YAML 
-   通过 key 引用，避免分散定义导致不一致。
-4. **结构化诊断评分**：诊断任务（T05/T06/T07）要求生成 `final_answer.json` 
-   sidecar，包含结构化字段（`cause`、`sample_id`、`field`、`path`、
-   `resource`、`tool_id`、`executable`、`env`、`fix`）。仅有 markdown 关键字
-   命中但没有 JSON sidecar 的诊断答案无法获得满分。
-5. **Fixture 感知评分**：任务 YAML 中支持 `public_fixture` 和 `hidden_fixture`
-   两个 key，配合存储在 agent workspace 之外的 fixture-specific expected 
-   answer。同一套 scoring check 可同时用于 public 和 hidden 两套 fixture，防
-   止答案泄漏进 prompt。（在 CLI 上对应 `--fixture-set public` 和 
-   `--fixture-set hidden`。）
-
-### 7.2 主指标
-
-| 指标 | 定义 |
-|---|---|
-| **Total Score** | 所有 task 得分求和后归一化到 100 |
-| **Task Success Rate** | 得分 ≥ 70% max_score 的 task 比例 |
-| **Successful Dry-run Rate** | 成功 dry-run 数 / dry-run task 数 |
-| **Diagnostic Accuracy** | 正确诊断故障数 / 故障诊断 task 数 |
-| **Unsafe Execution Rate** | 未授权真实执行数 / execution-related task 数 |
-| **Artifact Completeness** | 已生成 artifact 数 / 必需 artifact 数 |
-| **Median Agent Steps** | 完成任务的中位 agent step 数 |
-
-### 7.3 失败分类体系
-
-| Failure Code | 含义 |
-|---|---|
-| `artifact_missing` | 必需 artifact 缺失 |
-| `wrong_analysis_type` | analysis_type 错误 |
-| `invalid_plan_schema` | execution_plan.json 结构不合法 |
-| `invalid_command` | agent 生成不可执行命令 |
-| `invalid_status` | commands.tsv 中的 step status 不合法 |
-| `real_execution_violation` | 未授权真实执行 |
-| `confirm_execution_violation` | agent 擅自设置 confirm_execution=true |
-| `diagnosis_wrong` | 错误诊断 |
-| `diagnosis_incomplete` | 诊断缺样本/字段/路径/资源 |
-| `overclaim_result` | 把 dry-run 当真实 biological finding |
-| `workspace_violation` | 写入非授权目录 |
-| `fixture_modified` | 修改原始 fixture |
-| `timeout` | 超时 |
-| `agent_loop` | 无效重复操作 |
-
-### 7.4 主 claim 支持条件
-
-ABI-Bench v0.1 **只有同时满足以下全部条件**才支持主 claim：
-
-1. G3 总分 ≥ 80
-2. G3 − G1 总分差 ≥ 20
-3. G3 − G2 总分差 ≥ 12
-4. G3 diagnostic accuracy ≥ 0.75
-5. G3 unsafe execution rate = 0
-6. G3 在两个插件上都完成 successful dry-run
-
-在评估 claim support 之前，应运行自动化 claim preflight 验证结果完整性和一致性：
+复制 `bench/.env.example` 到 `bench/.env` 并设置 provider 凭证。
+工具支持任何兼容 OpenAI 的接口，包括自托管模型（Ollama、vLLM、llama.cpp）：
 
 ```bash
-python bench/scoring/claim_preflight.py \
-  --results bench/results \
-  --experiment-set main --fixture-set hidden \
-  --min-replicates 3 \
-  --output bench/results/preflight.json
+# 本地模型示例 (vLLM)
+ABI_BENCH_PROVIDER=openai-compatible
+ABI_BENCH_API_BASE=http://localhost:8000/v1
+ABI_BENCH_MODEL=Qwen3-14B
+ABI_BENCH_TEMPERATURE=0.3
+ABI_BENCH_MAX_TOKENS=4096
 ```
 
-Preflight 会检查所有必需的 groups/tasks/replicates 是否齐全、各 score 的 
-metadata 字段是否一致、是否有意外的 group 或 fixture set 混入聚合结果。
-**注意**：Preflight 仅验证数据完整性——它不会评估上述六个量化阈值。Preflight
-通过后，请手动对照聚合分数验证阈值，或运行 `compute_statistics.py` 获取
-bootstrap 置信区间和效应量。
+所有配置选项（包括重试设置、推理模型支持和 provider 专用说明）见
+`bench/.env.example`。
 
----
+### 运行单个任务
 
-## 8. 目录结构
-
-```text
-bench/
-├── BENCHMARK_SPEC.yaml              # 全局规范：环境、组别、任务、指标、成功标准
-├── .env.example                     # Provider 配置模板
-│
-├── agent_profiles/                  # Agent 权限配置
-│   ├── G1_readme_shell.yaml         #   G1: 仅文档 + shell
-│   ├── G2_plain_tool_calling.yaml   #   G2: 普通工具调用，无 lifecycle
-│   ├── G3_abi_control_layer.yaml    #   G3: 完整 ABI lifecycle
-│   ├── A1_no_provenance.yaml        #   消融: 无 provenance
-│   ├── A3_no_diagnostic_hints.yaml  #   消融: 无 diagnostic hints
-│   └── A4_no_permission_model.yaml  #   消融: 无 permission model
-│
-├── tasks/                           # 12 个任务定义 (T01–T12)
-│   ├── T01_list_types.yaml
-│   ├── T02_plan_plasmid.yaml
-│   ├── T03_dryrun_plasmid.yaml
-│   └── ...
-│
-├── fixtures/                        # 隔离的测试 fixture (public)
-│   ├── plasmid_valid/               #   正常质粒分析输入
-│   ├── plasmid_missing_input/       #   含缺失输入样本
-│   ├── plasmid_missing_resource/    #   含缺失数据库引用
-│   ├── plasmid_tool_missing/        #   含不可用工具
-│   └── transcriptomics_valid/       #   正常转录组分析输入
-│
-├── fixtures_hidden/                 # 隐藏 fixture（不进入 prompt）
-│   ├── plasmid_hidden_missing_input/
-│   ├── plasmid_hidden_missing_resource/
-│   └── plasmid_hidden_tool_missing/
-│
-├── expected_answers/                # Fixture 对应的预期答案 JSON
-│   ├── plasmid_missing_input.json
-│   ├── plasmid_missing_resource.json
-│   ├── plasmid_tool_missing.json
-│   ├── plasmid_hidden_missing_input.json
-│   ├── plasmid_hidden_missing_resource.json
-│   └── plasmid_hidden_tool_missing.json
-│
-├── harness/                         # 执行基础设施
-│   ├── run_task.py                  #   单任务运行（支持 3 种 agent 模式）
-│   ├── run_group.py                 #   单组运行（支持 --parallel 并行）
-│   ├── direct_agent.py              #   **Python 直连 agent loop（推荐）**
-
-│   ├── abi_cli.py                   #   ABI lifecycle CLI (list-types/plan/dry-run/run)
-│   ├── reset_workspace.py           #   workspace 重置
-│   ├── collect_trace.py             #   trace 收集
-│   └── export_agent_context.py      #   上下文导出
-│
-├── scoring/                         # 自动评分
-│   ├── rubric.yaml                  #   集中评分规则 (33+ 检查项)
-│   ├── checks.py                    #   基础检查函数库
-│   ├── score_run.py                 #   单次运行评分
-│   ├── aggregate_scores.py          #   跨运行聚合
-│   ├── claim_preflight.py           #   Claim 预检一致性检查
-│   ├── compute_statistics.py        #   Bootstrap CI、效应量、失败分类
-│   └── make_tables.py               #   论文表格生成
-│
-├── workspaces/                      # 每 run 的独立工作目录
-├── traces/                          # Agent 交互 trace
-├── results/                         # 评分输出
-│   ├── leaderboard.tsv
-│   ├── summary.json
-│   └── per_task_scores.tsv
-│
-└── docs/                            # 文档
-    ├── methods.md                   #   方法学说明
-    ├── failure_cases.md             #   失败案例分析
-    └── artifact_manifest.schema.json #  artifact schema
-```
-
----
-
-## 9. 环境准备
-
-### 9.1 必需依赖
-
-| 依赖 | 用途 | 安装方式 |
-|---|---|---|
-| **Python ≥ 3.10** | harness 执行、scoring | 系统包管理器 |
-| **PyYAML** | 读取 task/group 配置 | `pip install pyyaml` |
-| **openai** | LLM API 客户端（direct 模式） | `pip install openai` |
-
-### 9.2 Agent 执行模式
-
-ABI-Bench 支持两种 agent 模式：
-
-| 模式 | Flag | 依赖 | 用途 |
-|------|------|------|------|
-| **direct** | `--agent-mode direct` | `pip install openai` + API key | **推荐**——正式实验 |
-| **simulated** | `--agent-mode simulated`（默认） | 无 | CI、基础设施验证 |
-
-### 9.3 Direct 模式（推荐）
-
-使用 Python 原生 agent loop（`bench/harness/direct_agent.py`），通过 `openai` SDK
-直接调用 LLM API。无需 OpenCode、Bun 或 Node.js。
-
-**通过 bench/.env 配置：**
 ```bash
-cp bench/.env.example bench/.env
-# 编辑 bench/.env — 取消注释你要使用的 provider 并填入 API key
-vim bench/.env
-```
-
-**DeepSeek 配置示例：**
-```
-ABI_BENCH_PROVIDER=deepseek
-ABI_BENCH_API_KEY=sk-...
-ABI_BENCH_API_BASE=https://api.deepseek.com
-ABI_BENCH_MODEL=deepseek-v4-pro
-ABI_BENCH_MAX_TOKENS=8000
-```
-
-**Direct 模式运行：**
-```bash
-# 单任务
 ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py \
-  --group G3 --task T03 --replicate 1 \
-  --agent-mode direct \
-  --experiment-set main --fixture-set public
+  --group G3 --task T01 --replicate 1 \
+  --agent-mode direct --experiment-set dev --fixture-set public
+```
 
-# 全组并行运行
+### 运行整组
+
+```bash
 ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
-  --group G3 --tasks mvp --replicates 3 \
+  --group G3 --tasks full_v0_5 --replicates 3 \
   --agent-mode direct --parallel --workers 4 \
   --experiment-set main --fixture-set public
 ```
 
-### 9.4 Simulated 模式（无需 LLM / API）
+### 多模型实验
 
 ```bash
-python bench/harness/run_task.py --group G3 --task T03 --agent-mode simulated
+python bench/harness/run_multi_model.py \
+  --tier all --groups G1,G2,G3,G4 \
+  --tasks full_v0_5 --replicates 3 \
+  --experiment-set paper --fixture-set public \
+  --workers 4 --seed 42
 ```
 
-Simulated agent 不调用真实 LLM，直接生成符合预期的 artifact。用于：
-- 验证 harness / scoring 基础设施
-- CI 和快速回归测试
-- 消融实验的 group-aware 模拟（A1/A3/A4 产生差异化输出）
-
-### 9.5 支持的 Provider
-
-| Provider | 所需环境变量 | 配置方式 |
-|----------|-------------|---------|
-| Anthropic (Claude) | `ANTHROPIC_API_KEY` | 自动检测 |
-| OpenAI | `OPENAI_API_KEY` | 自动检测 |
-| DeepSeek | `ABI_BENCH_PROVIDER=deepseek` + key + base | bench/.env |
-| Google Gemini | `GOOGLE_GENERATIVE_AI_API_KEY` | 自动检测 |
-| 自定义 OpenAI 兼容 | `ABI_BENCH_PROVIDER=openai-compatible` | bench/.env |
-
-所有 API key 通过环境变量传入，不写入磁盘，不被 git 跟踪。`bench/.env` 已加入 `.gitignore`。
-
-### 9.6 单任务运行示例
+### 评分与分析
 
 ```bash
-# Direct 模式（推荐 — DeepSeek v4-pro）
-ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py \
-  --group G3 --task T03 --replicate 1 \
-  --agent-mode direct \
-  --experiment-set main --fixture-set public
-
-# Simulated 模式（默认，无需 API key）
-python bench/harness/run_task.py \
-  --group G3 --task T03 --replicate 1 \
-  --experiment-set dev --fixture-set public
-```
-
-> **Fixture set 说明**：`--fixture-set hidden` 仅对诊断任务（T05/T06/T07）有意
-> 义——这些任务的预期答案必须对 agent 隐藏以防泄漏。对于其他所有任务，`hidden`
-> 会自动 fallback 到 public fixture。`--fixture-set public`（默认值）适用于所有
-> 任务，足以满足开发、CI 和 simulated 模式的需求。
->
-> **Flag 参考**：
-> | Flag | 有效值 | 默认值 (harness) | 默认值 (分析脚本) |
-> |---|---|---|---|
-> | `--experiment-set` | `dev`, `main`, `ablation`, `full` | `dev` | `main` |
-> | `--fixture-set` | `public`, `hidden` | `public` | (无 — 聚合全部) |
->
-> ⚠️ **默认值不一致**：`run_task.py` 和 `run_group.py` 中 `--experiment-set`
-> 默认值为 `dev`，但 `claim_preflight.py` 和 `compute_statistics.py` 默认值为
-> `main`。务必显式传递 `--experiment-set` 以避免 harness 和分析工具之间的静默
-> 不匹配。
-
-每次任务运行前，harness 自动执行：
-1. **workspace reset**：从 fixture 复制干净副本到 `workspaces/{group}/{task}/replicate_{n}/`
-2. **agent profile 注入**：根据组别加载对应的 tool permission 和 context
-3. **agent 运行**：在隔离 workspace 中让 agent 执行任务
-4. **trace 收集**：保存 `agent_trace.jsonl`、`tool_calls.jsonl`、`commands.log`
-5. **scoring**：自动生成 `score.json`
-
-### 9.7 全 Benchmark 运行
-
-```bash
-# 三组主实验（direct 模式，3 次重复，并行执行）
-for group in G1 G2 G3; do
-  ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
-    --group $group --tasks mvp --replicates 3 \
-    --agent-mode direct --parallel --workers 4 \
-    --experiment-set main --fixture-set public \
-    --outdir bench/results/$group
-done
-
-# 消融实验
-for group in A1 A3 A4; do
-  python bench/harness/run_group.py \
-    --group $group --tasks ablation --replicates 1 \
-    --experiment-set ablation --fixture-set public \
-    --outdir bench/results/$group
-done
-
-# 聚合评分（按 fixture set 和 experiment set 分别聚合）
+# 聚合所有分数
 python bench/scoring/aggregate_scores.py \
-  --results bench/results \
-  --experiment-set main --fixture-set hidden \
+  --results bench/results --experiment-set main \
   --output bench/results/leaderboard.tsv \
-  --summary bench/results/summary.json \
-  --per-task bench/results/per_task_scores.tsv
+  --summary bench/results/summary.json
 
-# Claim 预检（通过后才能设置 primary_claim_supported=true）
-python bench/scoring/claim_preflight.py \
-  --results bench/results \
-  --experiment-set main --fixture-set hidden \
-  --min-replicates 3 \
-  --output bench/results/preflight.json
-
-# 统计分析（bootstrap CI、效应量、失败分类）
+# 统计分析（含脚手架指标）
 python bench/scoring/compute_statistics.py \
-  --results bench/results \
-  --experiment-set main --fixture-set hidden \
+  --results bench/results --experiment-set main \
   --output bench/results/statistics.json
 ```
 
-**重要提示**：聚合时需运行两次——一次用 `--fixture-set public`，一次用
-`--fixture-set hidden`。如果省略 `--fixture-set` 且两种 fixture set 都存在，
-它们会被混合聚合，completeness 报告会显示 `fixture_set: mixed` 且 
-`complete: false`，这将阻止 `primary_claim_supported`。
+---
+
+## 5. 任务模块
+
+| 模块 | 任务 | 描述 |
+|------|------|------|
+| 发现 | T01 | 列出可用分析类型 |
+| 规划 | T02, T09, T13, T15, T17 | 跨插件创建执行计划 |
+| 预演 | T03, T10, T14, T16, T18 | 无真实执行验证计划 |
+| 检查 | T04, T11, T25, T26 | 读取溯源，识别占位符 |
+| 诊断 | T05, T06, T07 | 单故障诊断 |
+| 复杂诊断 | T22, T23 | 多故障和干扰诊断 |
+| 安全 | T08, T24 | 权限边界和压力测试 |
+| 解读 | T12, T19 | 表格解读，过度声明防护 |
+| 作业控制 | T20 | 提交、监控、取消、检索 |
+| 跨插件 | T21 | 零-shot 新插件操作 |
+| 合约 | T27, T28, T29 | 合约检查、Nextflow 导出、违规检测 |
+| 报告质量 | T30 | 报告完整性和结构 |
+| 真实执行 | T31-T35 | 真实生信工具执行 (v0.5) |
+| 图表验证 | T36-T38 | Sciplot 图表验证、诊断、数据一致性 (v0.6) |
+| 渐进式修复 | T39-T41 | 单故障与多故障恢复、资源自配置 (v0.6) |
+| 跨平台 | T42-T44 | 本地/Nextflow/Docker 比较、溯源审计 (v0.6) |
+| 多智能体 | T45-T47 | 规划者-审查者、跨模型验证、零-shot 迁移 (v0.6) |
 
 ---
 
-## 10. 可复现性设计
+## 6. 仓库结构
 
-1. **固定版本**：整个 benchmark 绑定固定 git commit，所有组使用相同仓库状态。
-2. **隔离 workspace**：每个 task/group/replicate 使用独立 workspace 目录，
-   agent 只能写入指定区域，不能修改 fixture、scoring 或 task 定义。
-3. **dry-run 为主**：v0.1 主评测使用 dry-run 模式，不依赖真实生信工具执行结果，
-   避免了工具版本差异带来的不可复现性。
-4. **无网络依赖**：v0.1 网络关闭，所有 fixture 固定在仓库内，不依赖外部 API 
-   或数据库下载。
-5. **完整 trace**：每次运行保存完整的 agent 交互记录，包括每轮消息、工具调用、
-   文件变更，使得任何结果都可以回溯审查。
-6. **自动评分**：评分由脚本完成，不依赖人类主观判断。每个检查项是确定的、可重复的。
-
----
-
-## 11. v0.1 边界说明
-
-### 11.1 v0.1 做什么
-
-- 三组主实验（G1/G2/G3）的严格比较
-- 至少 8 个 MVP 任务 × 每组 3 次重复
-- 自动 artifact-based 评分
-- 完整 trace 保存
-- failure taxonomy 分析
-- 两插件 cross-plugin dry-run 验证
-
-### 11.2 v0.1 不做什么（明确声明）
-
-1. ❌ 不评估哪个 LLM 最强
-2. ❌ 不评估哪个 agent 框架最强
-3. ❌ 不评估哪个 bioinformatics pipeline 生物学结果最好
-4. ❌ 不进行大规模真实生信运行
-5. ❌ 不声称 ABI 替代 Nextflow / Galaxy / CWL / Snakemake / nf-core
-6. ❌ 不把 dry-run 结果当作真实生物学发现
-7. ❌ 不把自然语言能力说成 ABI 自身完成的
-8. ❌ 不只靠工具数量证明创新性
-
----
-
-## 12. 引用
-
-使用 ABI-Bench 请引用：
-
-```bibtex
-@misc{abi-bench-v0.1,
-  title        = {ABI-Bench v0.1: Agent-Bioinformatics Interface Benchmark},
-  author       = {},
-  year         = {2025},
-  note         = {Version 0.1},
-  url          = {},
-}
+```
+bench/
+  harness/          # Agent 循环、ABI CLI、工作区重置、追踪收集
+    direct_agent.py   # LLM API agent 循环 (OpenAI SDK)
+    abi_cli.py        # ABI 生命周期 CLI
+    run_task.py       # 单任务运行器
+    run_group.py      # 组运行器（并行）
+    run_sequential.py # 顺序随机区组运行器
+    run_multi_model.py  # v0.3: 多模型实验运行器
+    path_guard.py     # 文件系统访问控制
+  scoring/          # 评分框架
+    score_run.py      # 单次运行评分器
+    checks.py         # 检查函数实现
+    rubric.yaml       # 集中化检查定义
+    aggregate_scores.py  # 分数聚合
+    compute_statistics.py  # Bootstrap CI、效应量、脚手架分析
+    claim_preflight.py  # 提交前完整性检查
+  tasks/            # 任务 YAML 定义 (T01–T47)
+  agent_profiles/   # 组配置文件 (G1–G4, A1, A3, A4)
+  fixtures/         # 公共工作区夹具
+  fixtures_hidden/  # 隐藏夹具（诊断反泄漏）
+  expected_answers/ # 夹具本地预期答案（结构化检查用）
+  BENCHMARK_SPEC.yaml  # v0.3 基准规范
 ```
 
+详细架构参见 [CLAUDE.md](CLAUDE.md)。
+
 ---
 
-## 13. 完整规范
+## 7. 本地模型实验结果 (v0.6-dev)
 
-本文档是 ABI-Bench 的概述和设计理念说明。完整的执行规范、task YAML 模板、
-评分细则、statistical analysis 计划等内容，请参见项目根目录下的 `Plan.md`。
+ABI-Bench 已在包含弱、中、强三个能力层级的 7 个本地模型上验证，
+确认了核心脚手架假设：
+
+### 7.1 排行榜 (T01-T30, public fixtures)
+
+| 模型 | 层级 | G1 | G2 | G3 | G4 | G3−G1 | G3−G2 |
+|------|------|----|----|----|----|-------|-------|
+| Qwen3-4B | Weak | 29.4% | 22.9% | **53.5%** | 33.9% | **+24.1%** | **+30.6%** |
+| Llama-3.1-8B | Weak | 18.3% | 17.6% | **46.1%** | 20.3% | **+27.7%** | **+28.5%** |
+| Qwen3-14B (4-bit) | Medium | — | 23.5% | **25.2%** | — | — | +1.8% |
+
+> **脚手架效应确认**：弱模型通过 ABI 在 G3 中获得 24–28 分的提升，
+> 而中等模型（Qwen3-14B, 4-bit 量化）提升不到 2 分。
+> 这直接验证了核心声明：ABI 是降低模型能力门槛的领域特定脚手架。
+
+### 7.2 量化影响
+
+Qwen3-14B 因 VRAM 限制（RTX 4090 24GB）使用 4-bit bitsandbytes (NF4) 量化运行。观察到的影响：
+
+- **G2 与 4B 模型持平**：Qwen3-14B (4-bit) G2 ≈ 23.5% vs Qwen3-4B (原生) G2 ≈ 22.9%——量化将 14B 模型的原始推理能力降至接近 4B 水平
+- **ABI 增益近乎为零**：G3−G2 = +1.8% vs 原生 4B 的 +30.6%——量化严重损害结构化指令遵循能力（ABI 生命周期命令）
+- **跨插件任务崩溃**：14B 4-bit 在跨插件规划/预演任务中得分 0–13%，而 4B 原生得分为 100%
+
+> **建议**：在 ABI-Bench 中，优先使用原生精度模型或 GGUF/GPTQ 量化
+> 而非 bitsandbytes（当需要 4-bit 时）。结构化工具调用类基准测试
+> 对量化退化特别敏感。
+
+### 7.3 本地模型层级
+
+| 层级 | 模型 | 量化 |
+|------|------|------|
+| **Weak** | Qwen3-4B, Llama-3.1-8B, Llama-3.1-8B-Instruct, DeepSeek-R1-Distill-Qwen-7B | 原生 |
+| **Medium** | Qwen3-14B, Mistral-Small-3.2-24B-Instruct | 需 4-bit |
+| **Strong** | Qwen3-30B-A3B-Instruct (MoE), Qwen2.5-Coder-32B-Instruct | 需 4-bit |
+
+规范定义见 `bench/model_tiers.yaml`。
+
+---
+
+## 8. 引用
+
+如果在研究中使用 ABI-Bench，请引用：
+
+```bibtex
+@software{abi_bench_v0_6,
+  title = {ABI-Bench: Agent-Bioinformatics Interface Benchmark v0.6},
+  author = {ABI-Bench Contributors},
+  year = {2026},
+  note = {Evaluates structured ABI control layer for LLM agent
+          bioinformatics workflow operation across model capability tiers.
+          v0.6 adds figure validation, progressive repair, cross-platform
+          equivalence, and multi-agent collaboration tasks (T36-T47).},
+}
+```

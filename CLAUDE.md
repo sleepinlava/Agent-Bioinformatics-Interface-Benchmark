@@ -200,9 +200,15 @@ This enables computation of **Scaffolding Gain** = (G3−G1)_weak − (G3−G1)_
 
 | Tier | Models | Purpose |
 |------|--------|---------|
-| **Strong** | GPT-4o, Claude Sonnet 4.6, DeepSeek v4-pro | Establish ABI benefit ceiling |
-| **Medium** | GPT-4o-mini, Qwen2.5-72B | Verify mid-tier gains |
-| **Weak** | Qwen2.5-7B, Llama 3.1-8B | Measure scaffolding effect |
+| **Strong** | GPT-4o, Claude Sonnet 4.6, DeepSeek v4-pro, Qwen3-30B-A3B-Instruct (MoE), Qwen2.5-Coder-32B-Instruct | Establish ABI benefit ceiling |
+| **Medium** | GPT-4o-mini, Qwen2.5-72B, Qwen3-14B, Mistral-Small-3.2-24B-Instruct | Verify mid-tier gains |
+| **Weak** | Qwen2.5-7B, Llama 3.1-8B, Qwen3-4B, Llama-3.1-8B-Instruct, DeepSeek-R1-Distill-Qwen-7B | Measure scaffolding effect |
+
+> **Quantization note**: For local model benchmarking on RTX 4090 (24GB VRAM),
+> Medium and Strong tier models require 4-bit quantization. Prefer GGUF Q4_K_M
+> or GPTQ/AWQ over bitsandbytes — structured tool-calling benchmarks are
+> especially sensitive to quantization degradation. Weak-tier models run
+> natively without quantization. See `bench/model_tiers.yaml` for canonical tier definitions.
 
 ### Task Architecture (v0.6)
 
@@ -262,6 +268,30 @@ Ablation groups (A1/A3/A4) are reported in Appendix only.
 - `bench/fixtures/` — public fixtures: plasmid_valid, plasmid_missing_input, plasmid_missing_resource, plasmid_tool_missing, transcriptomics_valid, rnaseq_valid, amplicon_valid, wgs_valid
 - `bench/fixtures_hidden/` — hidden fixtures for diagnosis tasks (prevent answer leakage)
 - `--fixture-set public|hidden` selects which set; hidden is only meaningful for T05/T06/T07/T22/T23 (falls back to public for others)
+
+## Local Model Benchmarking
+
+### vLLM Server
+
+```bash
+# Start vLLM server with bitsandbytes 4-bit quantization
+vllm serve /root/autodl-tmp/local_llms/models/Qwen3-14B \
+  --served-model-name Qwen3-14B \
+  --host 0.0.0.0 --port 8000 \
+  --quantization bitsandbytes --load-format bitsandbytes \
+  --max-model-len 8192 --gpu-memory-utilization 0.90 \
+  --dtype bfloat16
+```
+
+### Model Inventory
+
+See `/root/autodl-tmp/local_llms/llm.md` for model sizes, VRAM requirements, and tier assignments.
+
+### Known Issues
+
+- **4-bit bitsandbytes degrades structured instruction-following**: Qwen3-14B 4-bit G3−G2 = +1.8% vs Qwen3-4B native G3−G2 = +30.6%. Prefer GGUF or GPTQ for 4-bit quantization.
+- **Qwen3-30B-A3B-Instruct OOM on RTX 4090 24GB**: Even 4-bit quantization fails. MoE architecture has high KV cache overhead. May need tensor parallelism across multiple GPUs or CPU offloading.
+- **G1/G4 not yet run for Qwen3-14B**: Baseline groups missing — cannot compute full scaffolding effect for medium tier.
 
 ## Key Design Constraints
 
