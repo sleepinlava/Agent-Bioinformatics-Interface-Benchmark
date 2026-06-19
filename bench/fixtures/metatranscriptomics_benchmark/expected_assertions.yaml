@@ -1,0 +1,34 @@
+# Benchmark assertions for metatranscriptomics plugin
+# Uses synthetic RNA-seq reads against a reference transcriptome.
+#
+# Pipeline: fastp → STAR (or HISAT2) → featureCounts
+# These assertions validate that a real-tool execution produces
+# biologically plausible outputs from synthetic transcriptomic data.
+
+metatranscriptomics:
+  # ── QC (fastp) ──
+  qc:
+    min_reads_retained: 50          # At least some reads survive trimming
+    min_samples_with_output: 2
+    clean_fastq_exists: true
+
+  # ── Alignment (STAR / HISAT2) ──
+  alignment:
+    min_mapping_rate: 0.50          # At least 50% uniquely mapped
+    alignment_dir_exists: true
+
+  # ── Expression quantification (featureCounts) ──
+  expression:
+    gene_counts_rows_min: 1         # At least one gene/feature has counts
+    expression_dir_exists: true
+
+  # ── Report ──
+  report:
+    report_md_exists: true
+    contains_tool_name: "featurecounts"
+
+  # ── Provenance ──
+  provenance:
+    min_commands: 3                 # fastp + STAR/hisat2 + featureCounts
+    run_summary_exists: true
+    checksums_exist: true

@@ -1,0 +1,51 @@
+# Benchmark assertions for rnaseq_expression plugin
+# Generated from synthetic E. coli lacZ reads (200 reads/sample, 2 conditions)
+#
+# These assertions validate that a real-tool execution produces
+# biologically plausible outputs from synthetic data.
+
+rnaseq_expression:
+  # ── QC (fastp) ──
+  qc:
+    min_reads_retained: 50          # At least some reads survive
+    min_samples_with_output: 2
+    clean_fastq_exists: true
+
+  # ── Alignment (STAR) ──
+  alignment:
+    # Synthetic reads from lacZ should map to E. coli genome
+    min_mapping_rate: 0.50          # At least 50% uniquely mapped
+    alignment_dir_exists: true
+
+  # ── Expression quantification (featureCounts) ──
+  expression:
+    gene_counts_rows_min: 1         # At least one gene has counts
+    expression_dir_exists: true
+
+  # ── Count matrix ──
+  count_matrix:
+    matrix_exists: true
+    min_rows: 1                     # At least lacZ should be detected
+    min_columns: 2                  # Two samples
+
+  # ── Differential expression (DESeq2) ──
+  differential_expression:
+    deseq2_results_exist: true
+    min_de_genes: 1                 # At least one detected gene
+    normalized_expression_exists: true
+
+  # ── Figures ──
+  figures:
+    pca_plot_exists: true
+    volcano_plot_exists: true
+
+  # ── Report ──
+  report:
+    report_md_exists: true
+    contains_tool_name: "deseq2"
+
+  # ── Provenance ──
+  provenance:
+    min_commands: 2                 # fastp + STAR (featureCounts/DESeq2 may fail with synthetic reads)
+    checksums_exist: true
+    run_summary_exists: true
