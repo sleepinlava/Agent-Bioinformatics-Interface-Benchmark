@@ -1,0 +1,2 @@
+sample_id	read1	read2	assembly
+sample1	data/sample1_R1.fastq.gz	data/sample1_R2.fastq.gz

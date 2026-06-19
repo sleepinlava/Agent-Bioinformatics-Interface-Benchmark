@@ -1,17 +1,14 @@
-# Amplicon benchmark fixture — points to ABI benchmark data
-analysis:
-  type: amplicon_16s
-  description: "Real execution benchmark with synthetic 16S V4 data"
+project_name: "bench-amplicon"
+mode: local
+threads: 2
+outdir: results/bench-amplicon
+log_dir: logs/bench-amplicon
 
-benchmark:
-  assertions: expected_assertions.yaml
-  data_source: "ABI data/benchmarks/amplicon_16s/"
+dry_run: false
 
-execution:
-  confirm_execution: true
-  timeout_minutes: 30
+input:
+  sample_sheet: sample_sheet.tsv
 
 resources:
-  primers:
-    forward: "GTGCCAGCMGCCGCGGTAA"
-    reverse: "GGACTACHVGGGTWTCTAAT"
+  sintax_db: resources/sintax.fasta
+  reference_alignment: resources/reference_alignment.fasta
