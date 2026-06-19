@@ -1,9 +1,0 @@
-project_name: "bench-wgs-recovery"
-mode: local
-threads: 2
-outdir: results/bench-wgs
-dry_run: false
-input:
-  sample_sheet: sample_sheet.tsv
-spades:
-  kmers: "21,33,55,77,99"  # Intentionally wrong — reads are 150bp

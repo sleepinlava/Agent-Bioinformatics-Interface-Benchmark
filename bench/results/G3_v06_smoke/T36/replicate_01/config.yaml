@@ -1,5 +1,0 @@
-# bench/fixtures/figure_validation/config.yaml
-project_name: "bench-figure-validation"
-mode: local
-threads: 1
-outdir: results/bench-figure

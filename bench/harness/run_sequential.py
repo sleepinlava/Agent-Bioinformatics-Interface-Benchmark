@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def _resolve_tasks_for_count(task_spec: str) -> list[str]:
@@ -44,6 +45,14 @@ def _resolve_tasks_for_count(task_spec: str) -> list[str]:
         return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19"]
     elif spec == "extended_v0_3":
         return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T20", "T21", "T22", "T23", "T24"]
+    elif spec == "full_v0_4":
+        return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T25", "T26", "T27", "T28", "T29", "T30"]
+    elif spec == "extended_v0_4":
+        return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T20", "T21", "T22", "T23", "T24", "T25", "T26", "T27", "T28", "T29", "T30"]
+    elif spec == "full_v0_5":
+        return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T25", "T26", "T27", "T28", "T29", "T30", "T31", "T32", "T33", "T34", "T35"]
+    elif spec == "extended_v0_5":
+        return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T20", "T21", "T22", "T23", "T24", "T25", "T26", "T27", "T28", "T29", "T30", "T31", "T32", "T33", "T34", "T35"]
     elif spec == "ablation":
         return ["T03", "T04", "T05", "T06", "T07", "T08"]
     else:

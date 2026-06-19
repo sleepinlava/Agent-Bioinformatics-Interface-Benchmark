@@ -1,3 +1,0 @@
-sample_id	read1	read2
-community1	data/community1_R1.fastq.gz	data/community1_R2.fastq.gz
-community2	data/community2_R1.fastq.gz	data/community2_R2.fastq.gz

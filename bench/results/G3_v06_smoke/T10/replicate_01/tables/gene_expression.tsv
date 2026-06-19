@@ -1,3 +1,0 @@
-gene_id	gene_name	count_control	count_treatment	log2fc	pvalue
-GENE001	tetA	150	45	-1.74	0.001
-GENE002	blaTEM	220	210	-0.07	0.850

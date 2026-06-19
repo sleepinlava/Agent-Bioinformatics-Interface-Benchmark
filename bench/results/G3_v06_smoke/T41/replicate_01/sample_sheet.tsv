@@ -1,2 +1,0 @@
-sample_id	condition	read1	read2
-control	control	data/control_R1.fastq.gz	data/control_R2.fastq.gz

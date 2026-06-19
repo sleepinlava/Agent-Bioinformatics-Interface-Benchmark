@@ -32,6 +32,9 @@ docs/experiments/
 docs/experiments/ABI_Bench_v0_1_Results_Report.md
 docs/experiments/ABI_Bench_v0_1_Results_Report_zh.md
 
+# Claude worktrees (ephemeral)
+.claude/worktrees/
+
 # OpenCode agent harness (install globally or clone into agent/)
 agent/
 opencodebench/results/paper_*
