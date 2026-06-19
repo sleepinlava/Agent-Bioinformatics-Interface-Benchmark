@@ -642,9 +642,98 @@ def _anthropic_response_to_unified(blocks: list) -> list[dict]:
     return calls
 
 
+def _openai_messages_to_anthropic(messages: list[dict]) -> list[dict]:
+    """Convert OpenAI-format message history to Anthropic native format.
+
+    OpenAI format uses:
+      - role: "user" / "assistant" / "tool"
+      - content: str
+      - tool_calls: list of {id, type, function: {name, arguments}} (assistant)
+      - tool_call_id: str (tool)
+
+    Anthropic format uses:
+      - role: "user" / "assistant"
+      - content: list of content blocks (text, tool_use, tool_result)
+
+    Consecutive tool messages are merged into a single user message with
+    multiple tool_result blocks, which is required by the Anthropic API.
+    tool_calls within an assistant message are accepted in either OpenAI
+    format ({"function": {"name": ..., "arguments": ...}}) or the
+    Anthropic unified format (direct "name"/"arguments" keys).
+    """
+    result: list[dict] = []
+    for msg in messages:
+        role = msg.get("role", "")
+        if role == "system":
+            continue
+
+        content = msg.get("content", "")
+        tool_calls = msg.get("tool_calls")
+
+        if role == "user":
+            if isinstance(content, list):
+                blocks = content
+            else:
+                blocks = [{"type": "text", "text": str(content or "")}]
+            # Merge consecutive user blocks (belt-and-suspenders;
+            # normal usage should not produce back-to-back user messages)
+            if result and result[-1]["role"] == "user":
+                result[-1]["content"].extend(blocks)
+            else:
+                result.append({"role": "user", "content": blocks})
+
+        elif role == "assistant":
+            blocks: list[dict] = []
+            if content:
+                blocks.append({"type": "text", "text": content})
+            if tool_calls:
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    name = fn.get("name", tc.get("name", ""))
+                    raw_args = fn.get("arguments", tc.get("arguments", {}))
+                    if isinstance(raw_args, str):
+                        try:
+                            args = json.loads(raw_args)
+                        except (json.JSONDecodeError, TypeError):
+                            args = {}
+                    else:
+                        args = raw_args
+                    blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id", ""),
+                        "name": name,
+                        "input": args,
+                    })
+            result.append({"role": "assistant", "content": blocks})
+
+        elif role == "tool":
+            block = {
+                "type": "tool_result",
+                "tool_use_id": msg.get("tool_call_id", ""),
+                "content": str(content or ""),
+            }
+            # Merge consecutive tool-result user messages — the Anthropic API
+            # expects a single user message containing all tool_result blocks
+            # that correspond to the preceding assistant tool_use turn.
+            if result and result[-1]["role"] == "user":
+                result[-1]["content"].append(block)
+            else:
+                result.append({"role": "user", "content": [block]})
+
+        else:
+            # Unknown role — pass through as a user text block.
+            block = {"type": "text", "text": str(msg)}
+            if result and result[-1]["role"] == "user":
+                result[-1]["content"].append(block)
+            else:
+                result.append({"role": "user", "content": [block]})
+
+    return result
+
+
 def _call_anthropic(config: BenchConfig, system_prompt: str, messages: list[dict],
                     tools: list[dict], max_tokens: int) -> tuple[str, list[dict], dict]:
-    """Call Anthropic API via native SDK.
+    """Call Anthropic API via native SDK with retry logic.
 
     Returns: (text_content, tool_calls, usage_metadata)
     """
@@ -654,16 +743,78 @@ def _call_anthropic(config: BenchConfig, system_prompt: str, messages: list[dict
 
     anthropic_tools = _openai_tools_to_anthropic(tools) if tools else None
 
-    # Separate system message from messages list for Anthropic
-    anthropic_messages = [m for m in messages if m.get("role") != "system"]
+    # Convert OpenAI-format message history to Anthropic native format
+    anthropic_messages = _openai_messages_to_anthropic(messages)
 
-    response = client.messages.create(
-        model=config.model,
-        max_tokens=max_tokens,
-        system=system_prompt,
-        messages=anthropic_messages,
-        tools=anthropic_tools,
-    )
+    last_error = None
+    for attempt in range(config.max_retries + 1):
+        try:
+            response = client.messages.create(
+                model=config.model,
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=anthropic_messages,
+                tools=anthropic_tools,
+            )
+            break
+        except anthropic.AuthenticationError as e:
+            last_error = e
+            print(f"FAILED: {type(e).__name__}: {e}")
+            break
+        except (anthropic.RateLimitError, anthropic.APITimeoutError,
+                anthropic.APIConnectionError) as e:
+            last_error = e
+            if attempt < config.max_retries:
+                delay = min(
+                    config.retry_base_delay_seconds * (2 ** attempt)
+                    + random.uniform(0, 1),
+                    config.retry_max_delay_seconds,
+                )
+                print(
+                    f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
+                    f"{type(e).__name__} — waiting {delay:.1f}s",
+                    end=" ", flush=True,
+                )
+                time.sleep(delay)
+            else:
+                print(f"FAILED after {config.max_retries + 1} attempts: {type(e).__name__}: {e}")
+        except anthropic.APIStatusError as e:
+            last_error = e
+            if e.status_code >= 500 and attempt < config.max_retries:
+                delay = min(
+                    config.retry_base_delay_seconds * (2 ** attempt)
+                    + random.uniform(0, 1),
+                    config.retry_max_delay_seconds,
+                )
+                print(
+                    f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
+                    f"HTTP {e.status_code} — waiting {delay:.1f}s",
+                    end=" ", flush=True,
+                )
+                time.sleep(delay)
+            else:
+                print(f"FAILED after {attempt + 1} attempts: HTTP {e.status_code}: {e}")
+                break
+        except anthropic.APIError as e:
+            last_error = e
+            if attempt < 1:
+                delay = config.retry_base_delay_seconds + random.uniform(0, 1)
+                print(
+                    f"RETRY (attempt {attempt + 1}/2): "
+                    f"{type(e).__name__} — waiting {delay:.1f}s",
+                    end=" ", flush=True,
+                )
+                time.sleep(delay)
+            else:
+                print(f"FAILED after 2 attempts: {type(e).__name__}: {e}")
+                break
+        except Exception as e:
+            last_error = e
+            print(f"API ERROR: {type(e).__name__}: {e}")
+            break
+    else:
+        # Exhausted all retries — last_error is guaranteed set
+        raise last_error  # type: ignore[misc]
 
     text = ""
     tool_calls = []
@@ -685,9 +836,95 @@ def _call_anthropic(config: BenchConfig, system_prompt: str, messages: list[dict
     return text, tool_calls, usage
 
 
+def _openai_messages_to_google(messages: list[dict]) -> list[dict]:
+    """Convert OpenAI-format message history to Google Gemini native format.
+
+    OpenAI format uses:
+      - role: "user" / "assistant" / "tool"
+      - content: str
+      - tool_calls: list of {id, type, function: {name, arguments}} (assistant)
+      - tool_call_id: str (tool)
+
+    Google Gemini format uses:
+      - role: "user" / "model"
+      - parts: list of part dicts (text, function_call, function_response)
+
+    A lookup is built from tool_call_id → function name so that
+    ``function_response`` parts carry the correct ``name`` field.
+    tool_calls within an assistant message are accepted in either OpenAI
+    format ({"function": {"name": ...}}) or the Anthropic unified format
+    (direct "name"/"arguments" keys).
+    """
+    result: list[dict] = []
+    call_id_to_name: dict[str, str] = {}
+
+    for msg in messages:
+        role = msg.get("role", "")
+        if role == "system":
+            continue
+
+        content = msg.get("content", "")
+        tool_calls = msg.get("tool_calls")
+
+        if role == "user":
+            if isinstance(content, list):
+                parts = content
+            else:
+                parts = [{"text": str(content or "")}]
+            result.append({"role": "user", "parts": parts})
+
+        elif role == "assistant":
+            parts: list[dict] = []
+            if content:
+                parts.append({"text": content})
+            if tool_calls:
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    name = fn.get("name", tc.get("name", ""))
+                    tc_id = tc.get("id", "")
+                    raw_args = fn.get("arguments", tc.get("arguments", {}))
+                    if isinstance(raw_args, str):
+                        try:
+                            args = json.loads(raw_args)
+                        except (json.JSONDecodeError, TypeError):
+                            args = {}
+                    else:
+                        args = raw_args
+                    call_id_to_name[tc_id] = name
+                    parts.append({
+                        "function_call": {
+                            "name": name,
+                            "args": args,
+                        }
+                    })
+            result.append({"role": "model", "parts": parts})
+
+        elif role == "tool":
+            tc_id = msg.get("tool_call_id", "")
+            name = call_id_to_name.get(tc_id, "unknown")
+            result.append({
+                "role": "user",
+                "parts": [{
+                    "function_response": {
+                        "name": name,
+                        "response": {"content": str(content or "")},
+                    }
+                }],
+            })
+
+        else:
+            # Unknown role — pass through as a user text part.
+            result.append({
+                "role": "user",
+                "parts": [{"text": str(msg)}],
+            })
+
+    return result
+
+
 def _call_google(config: BenchConfig, system_prompt: str, messages: list[dict],
                  tools: list[dict], max_tokens: int) -> tuple[str, list[dict], dict]:
-    """Call Google Gemini API via native SDK.
+    """Call Google Gemini API via native SDK with retry logic.
 
     Returns: (text_content, tool_calls, usage_metadata)
     """
@@ -695,18 +932,10 @@ def _call_google(config: BenchConfig, system_prompt: str, messages: list[dict],
 
     client = genai.Client(api_key=config.api_key)
 
-    # Google uses a system_instruction parameter, not a system message
-    contents = []
     system_instruction = system_prompt if system_prompt else None
 
-    for msg in messages:
-        if msg.get("role") == "system":
-            continue
-        role = "user" if msg["role"] == "user" else "model"
-        parts = []
-        if "content" in msg and msg["content"]:
-            parts.append({"text": msg["content"]})
-        contents.append({"role": role, "parts": parts})
+    # Convert OpenAI-format message history to Google native format
+    contents = _openai_messages_to_google(messages)
 
     # Convert tools to Google format
     google_tools = None
@@ -723,14 +952,55 @@ def _call_google(config: BenchConfig, system_prompt: str, messages: list[dict],
         if declarations:
             google_tools = [{"function_declarations": declarations}]
 
-    response = client.models.generate_content(
-        model=config.model,
-        contents=contents,
-        config={
-            "system_instruction": system_instruction,
-            "tools": google_tools,
-        },
-    )
+    last_error = None
+    for attempt in range(config.max_retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=config.model,
+                contents=contents,
+                config={
+                    "system_instruction": system_instruction,
+                    "tools": google_tools,
+                },
+            )
+            break
+        except genai.errors.ClientError as e:
+            last_error = e
+            # Client errors (4xx) are not retryable
+            print(f"FAILED: {type(e).__name__}: {e}")
+            break
+        except genai.errors.APIError as e:
+            last_error = e
+            if attempt < config.max_retries:
+                delay = min(
+                    config.retry_base_delay_seconds * (2 ** attempt)
+                    + random.uniform(0, 1),
+                    config.retry_max_delay_seconds,
+                )
+                print(
+                    f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
+                    f"{type(e).__name__} — waiting {delay:.1f}s",
+                    end=" ", flush=True,
+                )
+                time.sleep(delay)
+            else:
+                print(f"FAILED after {config.max_retries + 1} attempts: {type(e).__name__}: {e}")
+        except Exception as e:
+            last_error = e
+            if attempt < 1:
+                delay = config.retry_base_delay_seconds + random.uniform(0, 1)
+                print(
+                    f"RETRY (attempt {attempt + 1}/2): "
+                    f"{type(e).__name__} — waiting {delay:.1f}s",
+                    end=" ", flush=True,
+                )
+                time.sleep(delay)
+            else:
+                print(f"FAILED after 2 attempts: {type(e).__name__}: {e}")
+                break
+    else:
+        # Exhausted all retries
+        raise last_error  # type: ignore[misc]
 
     text = ""
     tool_calls = []
