@@ -1459,14 +1459,7 @@ def check_pipeline_outputs_match_assertions(
     with open(assertions_path) as f:
         spec = yaml.safe_load(f)
 
-    # Find results directory — resolve glob pattern
-    results_glob = str(Path(run_dir) / "results" / "*")
-    results_dirs = sorted(glob.glob(results_glob))
-    if not results_dirs:
-        # Fallback: check for results/ directly
-        results_dir = Path(run_dir) / "results"
-    else:
-        results_dir = Path(results_dirs[0])
+    results_dir = _resolve_results_dir(Path(run_dir))
 
     total = 0
     passed = 0
@@ -1534,11 +1527,7 @@ def check_per_category_breakdown(
     with open(assertions_path) as f:
         spec = yaml.safe_load(f)
 
-    results_glob = str(Path(run_dir) / "results" / "*")
-    results_dirs = sorted(glob.glob(results_glob))
-    results_dir = (
-        Path(results_dirs[0]) if results_dirs else Path(run_dir) / "results"
-    )
+    results_dir = _resolve_results_dir(Path(run_dir))
 
     categories = {}
     all_passed = True
@@ -1634,11 +1623,7 @@ def check_assertion_value_in_range(
     with open(assertions_path) as f:
         spec = yaml.safe_load(f)
 
-    results_glob = str(Path(run_dir) / "results" / "*")
-    results_dirs = sorted(glob.glob(results_glob))
-    results_dir = (
-        Path(results_dirs[0]) if results_dirs else Path(run_dir) / "results"
-    )
+    results_dir = _resolve_results_dir(Path(run_dir))
 
     range_checks = 0
     range_passed = 0
@@ -1652,15 +1637,24 @@ def check_assertion_value_in_range(
                     actual = _resolve_numeric_assertion(key, expected, results_dir)
                     if actual is None:
                         continue  # skip non-numeric checks
-                    if actual >= expected:
+                    is_max = str(key).startswith("max_")
+                    if is_max:
+                        ok = actual <= expected
+                    else:
+                        ok = actual >= expected
+                    if ok:
                         range_passed += 1
                     else:
-                        failures.append({
+                        fail_entry = {
                             "category": category,
                             "assertion": key,
-                            "expected_min": expected,
                             "actual": actual,
-                        })
+                        }
+                        if is_max:
+                            fail_entry["expected_max"] = expected
+                        else:
+                            fail_entry["expected_min"] = expected
+                        failures.append(fail_entry)
 
     max_points = _get_max_points(task, "assertion_value_in_range", 4)
     pass_rate = range_passed / max(range_checks, 1)
@@ -1731,17 +1725,13 @@ def _check_existence(key: str, results_dir: Path) -> bool:
 
 
 def _check_numeric_min(key: str, expected: float, results_dir: Path) -> bool:
-    """Check that a numeric metric meets the minimum threshold."""
-    # For most numeric assertions, we check the count/size indirectly
-    # Key-specific logic for reliable checks
-    if key == "min_commands":
-        commands_path = _find_file(results_dir, "**/provenance/commands.tsv")
-        if not commands_path:
-            return False
-        with open(commands_path) as f:
-            lines = f.readlines()
-            # Subtract 1 for header
-            return (len(lines) - 1) >= expected
+    """Check that a numeric metric meets the minimum or maximum threshold.
+
+    Keys starting with ``min_`` are checked with ``actual >= expected``;
+    keys starting with ``max_`` are checked with ``actual <= expected``.
+    Unrecognised keys (without a recognised prefix) return ``False``.
+    """
+    # ── Specific handlers for complex parsing ──────────────────────────
     if key == "min_reads_retained":
         # Check fastp JSON output for total_reads after filtering
         fastp_jsons = glob.glob(
@@ -1755,8 +1745,18 @@ def _check_numeric_min(key: str, expected: float, results_dir: Path) -> bool:
                 if after.get("total_reads", 0) >= expected:
                     return True
         return False
-    # Generic: try to find a TSV/JSON and count rows
-    return True  # Default pass — numeric checks are best-effort
+
+    # ── Generic min_ / max_ dispatch ───────────────────────────────────
+    if key.startswith("min_") or key.startswith("max_"):
+        actual = _resolve_numeric_assertion(key, expected, results_dir)
+        if actual is None:
+            return False
+        if key.startswith("max_"):
+            return actual <= expected
+        return actual >= expected
+
+    # Unrecognised numeric key — cannot verify
+    return False
 
 
 def _check_string_contains(key: str, expected: str, results_dir: Path) -> bool:
@@ -1780,8 +1780,8 @@ def _check_string_contains(key: str, expected: str, results_dir: Path) -> bool:
                 if "dry-run" in text or "dry_run" in text:
                     return True
         return False
-    # Generic: search in provenance logs
-    return True
+    # Unrecognised string-containment key — cannot verify
+    return False
 
 
 def _check_list_membership(key: str, expected: list, results_dir: Path) -> bool:
@@ -1800,7 +1800,8 @@ def _check_list_membership(key: str, expected: list, results_dir: Path) -> bool:
                     pass
         found = [item for item in expected if item.lower() in all_text]
         return len(found) > 0
-    return True
+    # Unrecognised list-membership key — cannot verify
+    return False
 
 
 def _find_file(base: Path, pattern: str) -> Path | None:
@@ -1809,16 +1810,57 @@ def _find_file(base: Path, pattern: str) -> Path | None:
     return Path(matches[0]) if matches else None
 
 
+def _resolve_results_dir(run_dir: Path) -> Path:
+    """Resolve the actual results directory from a run directory.
+
+    Handles the common ``results/*/`` glob pattern — when results/ contains a
+    subdirectory (e.g. ``results/bench-test/``) that subdirectory is returned.
+    Falls back to ``results/`` directly when no subdirectory exists.
+    """
+    results_glob = str(Path(run_dir) / "results" / "*")
+    results_dirs = sorted(glob.glob(results_glob))
+    if results_dirs:
+        return Path(results_dirs[0])
+    return Path(run_dir) / "results"
+
+
 def _resolve_numeric_assertion(
     key: str, expected: float, results_dir: Path
 ) -> int | None:
-    """Resolve a numeric assertion to an actual count/value."""
-    if key == "min_commands":
+    """Resolve a numeric assertion to an actual count/value.
+
+    Supports ``min_commands`` / ``max_commands`` (row count in
+    provenance/commands.tsv), ``min_contigs`` / ``max_contigs``
+    (``>`` lines in ``*.fasta``), and ``min_cds`` / ``max_cds``
+    (``>`` lines in ``*.faa``).
+    """
+    if key in ("min_commands", "max_commands"):
         commands_path = _find_file(results_dir, "**/provenance/commands.tsv")
         if not commands_path:
             return 0
         with open(commands_path) as f:
             return len(f.readlines()) - 1
+
+    if key in ("min_contigs", "max_contigs"):
+        fasta_files = glob.glob(
+            str(results_dir / "**" / "*.fasta"), recursive=True
+        )
+        count = 0
+        for fa in fasta_files:
+            with open(fa) as f:
+                count += sum(1 for line in f if line.startswith(">"))
+        return count
+
+    if key in ("min_cds", "max_cds"):
+        faa_files = glob.glob(
+            str(results_dir / "**" / "*.faa"), recursive=True
+        )
+        count = 0
+        for fa in faa_files:
+            with open(fa) as f:
+                count += sum(1 for line in f if line.startswith(">"))
+        return count
+
     return None
 
 

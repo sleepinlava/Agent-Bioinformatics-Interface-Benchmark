@@ -147,6 +147,10 @@ class TestCheckPerCategoryBreakdown:
                 "sample1/qc/fastp/clean/sample_1.clean.fastq": (
                     "@read1\nATCG\n+\nIIII\n"
                 ),
+                # FASTA for min_contigs: 2 contigs >= 1 expected
+                "assembly/spades/contigs.fasta": (
+                    ">contig_1\nATCGATCG\n>contig_2\nGGGGCCCC\n"
+                ),
             }
             _make_fake_run_dir(tmp, assertions, outputs)
 
