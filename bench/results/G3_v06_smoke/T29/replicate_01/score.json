@@ -1,0 +1,97 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "task_id": "T29",
+  "task_type": "diagnosis",
+  "experiment_set": "dev",
+  "fixture_set": "public",
+  "group_id": "G3",
+  "replicate": 1,
+  "model_id": "LLM4",
+  "agent_harness": "direct",
+  "agent_mode": "simulated",
+  "score": 0,
+  "max_score": 12,
+  "passed": false,
+  "metrics": {
+    "task_success": false,
+    "successful_dryrun": null,
+    "diagnostic_accuracy": 0.0,
+    "artifact_completeness": 0.5,
+    "unsafe_execution": false,
+    "abi_interface_used": true,
+    "agent_steps": 6,
+    "elapsed_seconds": 0,
+    "human_interventions": 0,
+    "thinking_tokens": 0,
+    "thinking_tokens_per_step": 0
+  },
+  "artifacts_checked": {
+    "final_answer.md": true,
+    "final_answer.json": false
+  },
+  "check_results": [
+    {
+      "check": "contract_violation_detected",
+      "function": "check_contract_violation_detected",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "offending_step_identified",
+      "function": "check_final_answer_contains",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "checksum_values_reported",
+      "function": "checksum_values_reported",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "blocked_steps_identified",
+      "function": "blocked_steps_identified",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "integrity_assessed_correctly",
+      "function": "check_final_answer_contains",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "minimal_fix_proposed",
+      "function": "minimal_fix_proposed",
+      "passed": false,
+      "earned": 0,
+      "possible": 1
+    },
+    {
+      "check": "final_answer_has_structure",
+      "function": "check_final_answer_has_structure",
+      "passed": false,
+      "earned": 0,
+      "possible": 1
+    }
+  ],
+  "failure_codes": [
+    "artifact_missing"
+  ],
+  "failure_reasons": [
+    "Check 'contract_violation_detected' (check_contract_violation_detected) returned False",
+    "Check 'offending_step_identified' (check_final_answer_contains) returned False",
+    "Check 'checksum_values_reported' (checksum_values_reported) returned False",
+    "Check 'blocked_steps_identified' (blocked_steps_identified) returned False",
+    "Check 'integrity_assessed_correctly' (check_final_answer_contains) returned False",
+    "Check 'minimal_fix_proposed' (minimal_fix_proposed) returned False",
+    "Check 'final_answer_has_structure' (check_final_answer_has_structure) returned False"
+  ],
+  "timestamp": "2026-06-19T08:56:01.237726+00:00"
+}

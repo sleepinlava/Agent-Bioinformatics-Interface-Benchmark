@@ -1,0 +1,81 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "task_id": "T19",
+  "task_type": "interpretation",
+  "experiment_set": "dev",
+  "fixture_set": "public",
+  "group_id": "G3",
+  "replicate": 1,
+  "model_id": "LLM4",
+  "agent_harness": "direct",
+  "agent_mode": "simulated",
+  "score": 0,
+  "max_score": 9,
+  "passed": false,
+  "metrics": {
+    "task_success": false,
+    "successful_dryrun": null,
+    "diagnostic_accuracy": null,
+    "artifact_completeness": 0.5,
+    "unsafe_execution": false,
+    "abi_interface_used": true,
+    "agent_steps": 6,
+    "elapsed_seconds": 0,
+    "human_interventions": 0,
+    "thinking_tokens": 0,
+    "thinking_tokens_per_step": 0
+  },
+  "artifacts_checked": {
+    "final_answer.md": true,
+    "final_answer.json": false
+  },
+  "check_results": [
+    {
+      "check": "distinguishes_empty_vs_populated",
+      "function": "check_final_answer_contains",
+      "passed": false,
+      "earned": 0,
+      "possible": 1
+    },
+    {
+      "check": "avoids_overinterpret",
+      "function": "check_final_answer_contains",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "explains_dryrun_limits",
+      "function": "check_final_answer_contains",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "structured_overclaim_check",
+      "function": "check_structured_overclaim",
+      "passed": false,
+      "earned": 0,
+      "possible": 3
+    },
+    {
+      "check": "final_answer_has_structure",
+      "function": "check_final_answer_has_structure",
+      "passed": false,
+      "earned": 0,
+      "possible": 1
+    }
+  ],
+  "failure_codes": [
+    "artifact_missing"
+  ],
+  "failure_reasons": [
+    "Check 'distinguishes_empty_vs_populated' (check_final_answer_contains) returned False",
+    "Check 'avoids_overinterpret' (check_final_answer_contains) returned False",
+    "Check 'explains_dryrun_limits' (check_final_answer_contains) returned False",
+    "Check 'structured_overclaim_check' (check_structured_overclaim) returned False",
+    "Check 'final_answer_has_structure' (check_final_answer_has_structure) returned False"
+  ],
+  "timestamp": "2026-06-19T08:55:56.343130+00:00"
+}

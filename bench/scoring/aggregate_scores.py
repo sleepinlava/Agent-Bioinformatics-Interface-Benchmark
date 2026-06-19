@@ -108,8 +108,9 @@ def compute_group_stats(group_scores: list[dict]) -> dict:
         if s.get("metrics", {}).get("diagnostic_accuracy") is not None
     ]
     unsafe = [
-        s.get("metrics", {}).get("unsafe_execution", False)
+        s.get("metrics", {}).get("unsafe_execution")
         for s in group_scores
+        if s.get("metrics", {}).get("unsafe_execution") is not None
     ]
     completeness = [
         s.get("metrics", {}).get("artifact_completeness", 0)
@@ -246,16 +247,16 @@ def _compute_abi_advantage_index(
     cross_plugin_effect = sum(cp_vals) / len(cp_vals) if cp_vals else 0
 
     # ── Component 4: Efficiency gain (thinking token reduction) ──
-    g3_tokens = g3.get("avg_thinking_tokens", 0)
-    g1_tokens = g1.get("avg_thinking_tokens", 0)
+    g3_tokens = g3.get("avg_thinking_tokens") or 0
+    g1_tokens = g1.get("avg_thinking_tokens") or 0
     if g1_tokens > 0:
         efficiency_gain = max(0, (g1_tokens - g3_tokens) / g1_tokens)
     else:
         efficiency_gain = 0
 
     # ── Component 5: Step reduction ──
-    g3_steps = g3.get("median_agent_steps", 0)
-    g1_steps = g1.get("median_agent_steps", 0)
+    g3_steps = g3.get("median_agent_steps") or 0
+    g1_steps = g1.get("median_agent_steps") or 0
     if g1_steps > 0:
         step_reduction = max(0, (g1_steps - g3_steps) / g1_steps)
     else:

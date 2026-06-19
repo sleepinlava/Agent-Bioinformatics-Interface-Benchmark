@@ -1,0 +1,4 @@
+sample_id	read1	read2	condition	group
+SAMPLE_001	data/read1.fastq.gz	data/read2.fastq.gz	soil	soil
+SAMPLE_002	data/read1.fastq.gz	data/read2.fastq.gz	soil	soil
+SAMPLE_003	data/read1.fastq.gz	data/read2.fastq.gz	water	water

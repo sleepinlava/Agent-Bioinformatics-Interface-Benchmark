@@ -1,0 +1,11 @@
+{
+  "databases": {
+    "Pfam-A.hmm": {"status": "missing", "note": "Large Pfam database — not included in benchmark fixture"},
+    "genomad_db": {"status": "missing", "note": "Large genomad database — not included in benchmark fixture"}
+  },
+  "reference_genomes": {},
+  "input_files": {
+    "assembly.fasta": {"status": "resolved", "path": "data/assembly.fasta"},
+    "sample_sheet.tsv": {"status": "resolved", "path": "sample_sheet.tsv"}
+  }
+}

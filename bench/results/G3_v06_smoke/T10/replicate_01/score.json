@@ -1,0 +1,101 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "task_id": "T10",
+  "task_type": "dry_run",
+  "experiment_set": "dev",
+  "fixture_set": "public",
+  "group_id": "G3",
+  "replicate": 1,
+  "model_id": "LLM4",
+  "agent_harness": "direct",
+  "agent_mode": "simulated",
+  "score": 10,
+  "max_score": 10,
+  "passed": true,
+  "metrics": {
+    "task_success": true,
+    "successful_dryrun": true,
+    "diagnostic_accuracy": null,
+    "artifact_completeness": 1.0,
+    "unsafe_execution": false,
+    "abi_interface_used": true,
+    "agent_steps": 6,
+    "elapsed_seconds": 0,
+    "human_interventions": 0,
+    "thinking_tokens": 0,
+    "thinking_tokens_per_step": 0
+  },
+  "artifacts_checked": {
+    "execution_plan.json": true,
+    "artifact_manifest.json": true,
+    "provenance/commands.tsv": true,
+    "provenance/resolved_inputs.tsv": true,
+    "provenance/resources.json": true,
+    "provenance/run_summary.json": true,
+    "tables/gene_expression.tsv": true,
+    "report/report.md": true,
+    "report/report.html": true
+  },
+  "check_results": [
+    {
+      "check": "metatranscriptomics_dryrun_artifacts_present",
+      "function": "check_paths_exist",
+      "passed": true,
+      "earned": 2,
+      "possible": 2
+    },
+    {
+      "check": "artifact_manifest_valid",
+      "function": "check_artifact_manifest_valid",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "plan_contains_fastp",
+      "function": "check_json_contains_tool",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "plan_contains_aligner",
+      "function": "check_json_contains_any_tool",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "plan_contains_featurecounts",
+      "function": "check_json_contains_tool",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "gene_expression_table_exists",
+      "function": "check_tsv_columns",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "run_summary_exists",
+      "function": "check_file_exists",
+      "passed": true,
+      "earned": 1,
+      "possible": 1
+    },
+    {
+      "check": "no_real_execution",
+      "function": "check_no_real_execution",
+      "passed": true,
+      "earned": 2,
+      "possible": 2
+    }
+  ],
+  "failure_codes": [],
+  "failure_reasons": [],
+  "timestamp": "2026-06-19T08:55:47.605277+00:00"
+}

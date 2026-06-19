@@ -1,0 +1,65 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "task_id": "T46",
+  "task_type": "multi_agent",
+  "experiment_set": "dev",
+  "fixture_set": "public",
+  "group_id": "G3",
+  "replicate": 1,
+  "model_id": "LLM4",
+  "agent_harness": "direct",
+  "agent_mode": "simulated",
+  "score": 0,
+  "max_score": 14,
+  "passed": false,
+  "metrics": {
+    "task_success": false,
+    "successful_dryrun": null,
+    "diagnostic_accuracy": null,
+    "artifact_completeness": 0.5,
+    "unsafe_execution": false,
+    "abi_interface_used": true,
+    "agent_steps": 6,
+    "elapsed_seconds": 0,
+    "human_interventions": 0,
+    "thinking_tokens": 0,
+    "thinking_tokens_per_step": 0
+  },
+  "artifacts_checked": {
+    "final_answer.md": true,
+    "final_answer.json": false
+  },
+  "check_results": [
+    {
+      "check": "robust_findings_identified",
+      "function": "robust_findings_identified",
+      "passed": false,
+      "earned": 0,
+      "possible": 5
+    },
+    {
+      "check": "model_dependent_flagged",
+      "function": "model_dependent_flagged",
+      "passed": false,
+      "earned": 0,
+      "possible": 5
+    },
+    {
+      "check": "confidence_assessed",
+      "function": "confidence_assessed",
+      "passed": false,
+      "earned": 0,
+      "possible": 4
+    }
+  ],
+  "failure_codes": [
+    "artifact_missing"
+  ],
+  "failure_reasons": [
+    "Check 'robust_findings_identified' (robust_findings_identified) returned False",
+    "Check 'model_dependent_flagged' (model_dependent_flagged) returned False",
+    "Check 'confidence_assessed' (confidence_assessed) returned False"
+  ],
+  "timestamp": "2026-06-19T08:56:11.621977+00:00"
+}

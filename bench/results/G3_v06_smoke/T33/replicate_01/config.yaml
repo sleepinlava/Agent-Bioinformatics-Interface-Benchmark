@@ -1,0 +1,14 @@
+project_name: "bench-amplicon"
+mode: local
+threads: 2
+outdir: results/bench-amplicon
+log_dir: logs/bench-amplicon
+
+dry_run: false
+
+input:
+  sample_sheet: sample_sheet.tsv
+
+resources:
+  sintax_db: resources/sintax.fasta
+  reference_alignment: resources/reference_alignment.fasta

@@ -1,0 +1,31 @@
+{
+  "analysis_type": "wgs_bacteria",
+  "description": "Plasmid identification from metagenomic assemblies",
+  "steps": [
+    {
+      "step_id": "qc_fastp",
+      "tool_id": "fastp",
+      "status": "dry_run"
+    },
+    {
+      "step_id": "assembly_spades",
+      "tool_id": "spades",
+      "status": "dry_run"
+    },
+    {
+      "step_id": "annotation_prokka",
+      "tool_id": "prokka",
+      "status": "dry_run"
+    },
+    {
+      "step_id": "mlst",
+      "tool_id": "mlst",
+      "status": "dry_run"
+    },
+    {
+      "step_id": "amr",
+      "tool_id": "amrfinderplus",
+      "status": "dry_run"
+    }
+  ]
+}

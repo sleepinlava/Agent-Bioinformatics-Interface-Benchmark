@@ -1,0 +1,43 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "task_id": "T37",
+  "group_id": "G3",
+  "experiment_set": "dev",
+  "fixture_set": "public",
+  "replicate": 1,
+  "artifacts": {
+    "execution_plan": {
+      "path": "execution_plan.json",
+      "required": true,
+      "schema_version": "abi-bench.plan.v1"
+    },
+    "provenance": {
+      "commands_tsv": true,
+      "resolved_inputs_tsv": true,
+      "tool_versions_tsv": true,
+      "resources_json": true,
+      "run_summary_json": true,
+      "progress_jsonl": true
+    },
+    "tables": {
+      "directory": "tables/",
+      "has_headers": true,
+      "table_names": [
+        "plasmid_annotations.tsv"
+      ]
+    },
+    "report": {
+      "markdown": true,
+      "html": true
+    }
+  },
+  "trace": {
+    "agent_trace_jsonl": true,
+    "tool_calls_jsonl": true,
+    "commands_log": true,
+    "final_answer_md": true,
+    "final_answer_json": false,
+    "metadata_json": false
+  }
+}

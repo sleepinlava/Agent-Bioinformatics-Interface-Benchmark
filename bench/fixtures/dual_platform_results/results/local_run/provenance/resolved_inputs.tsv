@@ -1,0 +1,5 @@
+input_id	step_id	path	status
+assembly	all	data/assembly.fasta	resolved
+sample_sheet	all	sample_sheet.tsv	resolved
+pfam_db	annotate_domains	PLACEHOLDER:databases/Pfam-A.hmm	missing
+genomad_db	classify_plasmids	PLACEHOLDER:databases/genomad_db	missing

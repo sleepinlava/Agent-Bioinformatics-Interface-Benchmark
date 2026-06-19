@@ -1,0 +1,3 @@
+sample_id	read1	read2	condition
+SAMPLE_001	data/read1.fastq.gz	data/read2.fastq.gz	clinical
+SAMPLE_002	data/read1.fastq.gz	data/read2.fastq.gz	clinical

@@ -1,0 +1,4 @@
+sample_id	read1	read2	assembly	condition
+SAMPLE_001	data/read1.fastq.gz	data/read2.fastq.gz	data/assembly.fasta	control
+SAMPLE_002	data/read1.fastq.gz	data/read2.fastq.gz	data/assembly.fasta	treatment
+SAMPLE_003	data/read1.fastq.gz	data/read2.fastq.gz	data/assembly.fasta	treatment

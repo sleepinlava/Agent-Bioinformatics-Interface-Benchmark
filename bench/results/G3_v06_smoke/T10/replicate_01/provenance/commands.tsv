@@ -1,0 +1,4 @@
+step_id	command	status	exit_code
+predict_genes	prodigal -i assembly.fasta -a genes.faa	dry_run	None
+annotate_domains	hmmscan --domtblout domain_annotations.tsv pfam.hmm genes.faa	dry_run	None
+classify_plasmids	genomad run assembly.fasta genomad_output genomad_db	dry_run	None

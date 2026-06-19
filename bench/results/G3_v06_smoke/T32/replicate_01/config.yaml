@@ -1,0 +1,19 @@
+project_name: "bench-rnaseq"
+mode: local
+threads: 2
+outdir: results/bench-rnaseq
+log_dir: logs/bench-rnaseq
+
+dry_run: false
+
+input:
+  sample_sheet: sample_sheet.tsv
+
+comparisons:
+  - name: treatment_vs_control
+    numerator: treatment
+    denominator: control
+
+resources:
+  star_index: resources/star_index/
+  gtf: resources/genes.gtf

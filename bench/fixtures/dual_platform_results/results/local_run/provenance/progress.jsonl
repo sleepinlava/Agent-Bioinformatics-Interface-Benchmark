@@ -1,0 +1,4 @@
+{"step_id": "predict_genes", "status": "dry_run", "timestamp": null}
+{"step_id": "annotate_domains", "status": "dry_run", "timestamp": null}
+{"step_id": "classify_plasmids", "status": "dry_run", "timestamp": null}
+{"step_id": "similarity_search", "status": "dry_run", "timestamp": null}

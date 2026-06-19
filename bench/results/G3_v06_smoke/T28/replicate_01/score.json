@@ -1,0 +1,83 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "task_id": "T28",
+  "task_type": "export",
+  "experiment_set": "dev",
+  "fixture_set": "public",
+  "group_id": "G3",
+  "replicate": 1,
+  "model_id": "LLM4",
+  "agent_harness": "direct",
+  "agent_mode": "simulated",
+  "score": 0,
+  "max_score": 10,
+  "passed": false,
+  "metrics": {
+    "task_success": false,
+    "successful_dryrun": null,
+    "diagnostic_accuracy": null,
+    "artifact_completeness": 0.25,
+    "unsafe_execution": false,
+    "abi_interface_used": true,
+    "agent_steps": 6,
+    "elapsed_seconds": 0,
+    "human_interventions": 0,
+    "thinking_tokens": 0,
+    "thinking_tokens_per_step": 0
+  },
+  "artifacts_checked": {
+    "nf_export/main.nf": false,
+    "nf_export/nextflow.config": false,
+    "final_answer.md": true,
+    "final_answer.json": false
+  },
+  "check_results": [
+    {
+      "check": "main_nf_generated_and_valid",
+      "function": "check_main_nf_valid",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "all_steps_included_in_nf",
+      "function": "check_all_steps_in_nf",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "resource_directives_present",
+      "function": "check_resource_directives_present",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "docker_image_references_correct",
+      "function": "check_docker_references_correct",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "final_answer_has_structure",
+      "function": "check_final_answer_has_structure",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    }
+  ],
+  "failure_codes": [
+    "artifact_missing"
+  ],
+  "failure_reasons": [
+    "Check 'main_nf_generated_and_valid' (check_main_nf_valid) returned False",
+    "Check 'all_steps_included_in_nf' (check_all_steps_in_nf) returned False",
+    "Check 'resource_directives_present' (check_resource_directives_present) returned False",
+    "Check 'docker_image_references_correct' (check_docker_references_correct) returned False",
+    "Check 'final_answer_has_structure' (check_final_answer_has_structure) returned False"
+  ],
+  "timestamp": "2026-06-19T08:56:00.183414+00:00"
+}

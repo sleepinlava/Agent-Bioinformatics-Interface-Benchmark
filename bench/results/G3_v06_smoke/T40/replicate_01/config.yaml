@@ -1,0 +1,13 @@
+project_name: "bench-plasmid-recovery"
+mode: local
+threads: 2
+outdir: results/bench-plasmid
+dry_run: false
+input:
+  sample_sheet: sample_sheet.tsv
+plasmid_detection:
+  tools: [genomad]
+  strategy: single_tool
+resources:
+  bakta_db: /nonexistent/path/to/bakta_db  # Intentionally wrong
+  genomad_db: resources/mini_genomad_db/

@@ -1,0 +1,73 @@
+{
+  "benchmark": "ABI-Bench",
+  "version": "0.1",
+  "task_id": "T36",
+  "task_type": "figure_validation",
+  "experiment_set": "dev",
+  "fixture_set": "public",
+  "group_id": "G3",
+  "replicate": 1,
+  "model_id": "LLM4",
+  "agent_harness": "direct",
+  "agent_mode": "simulated",
+  "score": 0,
+  "max_score": 12,
+  "passed": false,
+  "metrics": {
+    "task_success": false,
+    "successful_dryrun": null,
+    "diagnostic_accuracy": null,
+    "artifact_completeness": 0.5,
+    "unsafe_execution": false,
+    "abi_interface_used": true,
+    "agent_steps": 6,
+    "elapsed_seconds": 0,
+    "human_interventions": 0,
+    "thinking_tokens": 0,
+    "thinking_tokens_per_step": 0
+  },
+  "artifacts_checked": {
+    "final_answer.md": true,
+    "final_answer.json": false
+  },
+  "check_results": [
+    {
+      "check": "figures_enumerated",
+      "function": "figures_enumerated",
+      "passed": false,
+      "earned": 0,
+      "possible": 2
+    },
+    {
+      "check": "dpi_verified",
+      "function": "dpi_verified",
+      "passed": false,
+      "earned": 0,
+      "possible": 3
+    },
+    {
+      "check": "lint_executed",
+      "function": "lint_executed",
+      "passed": false,
+      "earned": 0,
+      "possible": 3
+    },
+    {
+      "check": "data_consistency_checked",
+      "function": "data_consistency_checked",
+      "passed": false,
+      "earned": 0,
+      "possible": 4
+    }
+  ],
+  "failure_codes": [
+    "artifact_missing"
+  ],
+  "failure_reasons": [
+    "Check 'figures_enumerated' (figures_enumerated) returned False",
+    "Check 'dpi_verified' (dpi_verified) returned False",
+    "Check 'lint_executed' (lint_executed) returned False",
+    "Check 'data_consistency_checked' (data_consistency_checked) returned False"
+  ],
+  "timestamp": "2026-06-19T08:56:05.853692+00:00"
+}
