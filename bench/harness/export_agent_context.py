@@ -30,6 +30,7 @@ def load_agent_profile(group_id: str) -> dict:
         "G1": "G1_readme_shell.yaml",
         "G2": "G2_plain_tool_calling.yaml",
         "G3": "G3_abi_control_layer.yaml",
+        "G4": "G4_information_matched_docs.yaml",
         "A1": "A1_no_provenance.yaml",
         "A3": "A3_no_diagnostic_hints.yaml",
         "A4": "A4_no_permission_model.yaml",
@@ -214,8 +215,8 @@ def build_abi_interface(group_id: str, profile: dict, task_id: str, experiment_s
             "reason": "This group does not receive ABI lifecycle commands.",
         }
 
-    # Use relative path to avoid leaking absolute filesystem layout to the agent.
-    cli_rel = "bench/harness/abi_cli.py"
+    # Use absolute path so the agent can find the ABI CLI regardless of CWD.
+    cli_rel = str(PROJECT_ROOT / "bench" / "harness" / "abi_cli.py")
     workspace_token = "{workspace}"
     analysis_token = "{analysis_type}"
     base = f"python {cli_rel}"

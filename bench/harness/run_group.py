@@ -118,6 +118,21 @@ def _run_single_task(
     """Run a single task and return its result.  This is the worker function
     called by both sequential and parallel paths."""
     run_outdir = outdir / task_id / f"replicate_{replicate:02d}"
+    score_file = run_outdir / "score.json"
+
+    if score_file.exists():
+        _ts_print(f"  SKIP [{group_id}/{task_id}/rep_{replicate:02d}] "
+                  f"(already completed)")
+        return {
+            "group": group_id,
+            "task": task_id,
+            "replicate": replicate,
+            "exit_code": 0,
+            "elapsed": 0.0,
+            "stdout": "",
+            "stderr": "",
+            "skipped": True,
+        }
 
     _ts_print(f"\n{'─'*70}")
     _ts_print(f"[{run_number}/{total_runs}] Group={group_id} Task={task_id} "
