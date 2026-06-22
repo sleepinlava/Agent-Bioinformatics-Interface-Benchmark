@@ -53,6 +53,10 @@ def _resolve_tasks_for_count(task_spec: str) -> list[str]:
         return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T25", "T26", "T27", "T28", "T29", "T30", "T31", "T32", "T33", "T34", "T35"]
     elif spec == "extended_v0_5":
         return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T20", "T21", "T22", "T23", "T24", "T25", "T26", "T27", "T28", "T29", "T30", "T31", "T32", "T33", "T34", "T35"]
+    elif spec == "full_v0_6":
+        return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T25", "T26", "T27", "T28", "T29", "T30", "T31", "T32", "T33", "T34", "T35", "T36", "T37", "T38", "T39", "T40", "T41", "T42", "T43", "T44", "T45", "T46", "T47"]
+    elif spec == "extended_v0_6":
+        return ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19", "T20", "T21", "T22", "T23", "T24", "T25", "T26", "T27", "T28", "T29", "T30", "T31", "T32", "T33", "T34", "T35", "T36", "T37", "T38", "T39", "T40", "T41", "T42", "T43", "T44", "T45", "T46", "T47"]
     elif spec == "ablation":
         return ["T03", "T04", "T05", "T06", "T07", "T08"]
     else:
@@ -67,6 +71,8 @@ def run_group(
     experiment_set: str,
     fixture_set: str,
     workers: int,
+    randomize_tasks: bool = False,
+    seed: int = 42,
 ) -> dict:
     """Run a single group. Returns timing and result info."""
     start = time.time()
@@ -84,6 +90,8 @@ def run_group(
         "--parallel",
         "--workers", str(workers),
     ]
+    if randomize_tasks:
+        cmd.extend(["--randomize-tasks", "--seed", str(seed)])
 
     from bench.harness.config import load_bench_config
     _cfg = load_bench_config()
@@ -126,9 +134,11 @@ def main():
     parser.add_argument("--fixture-set", default="public")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42,
-                        help="Random seed for group order (use 0 for fixed order)")
+                        help="Random seed for group order and task order (use 0 for fixed order)")
     parser.add_argument("--order", default=None,
                         help="Explicit group order, comma-separated (overrides seed)")
+    parser.add_argument("--randomize-tasks", action="store_true",
+                        help="Randomize task order per replicate to eliminate fixed-order confound")
     args = parser.parse_args()
 
     groups = [g.strip() for g in args.groups.split(",") if g.strip()]
@@ -172,6 +182,8 @@ def main():
             experiment_set=args.experiment_set,
             fixture_set=args.fixture_set,
             workers=args.workers,
+            randomize_tasks=args.randomize_tasks,
+            seed=args.seed,
         )
         results.append(result)
 

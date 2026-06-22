@@ -52,6 +52,11 @@ from bench.harness.config import BenchConfig, Provider, load_bench_config, valid
 # ── Group classification ───────────────────────────────────────────────────────
 
 ABI_GROUPS = {"G3", "A1", "A3", "A4"}
+
+# ABI CLI command — resolved once at module load via PROJECT_ROOT.
+# System prompts use {ABI_CLI_CMD} placeholder, substituted at agent startup
+# (Fix 17: avoids leaking repository directory structure into agent context).
+_ABI_CLI_CMD = f"python {PROJECT_ROOT / 'bench' / 'harness' / 'abi_cli.py'}"
 G4_GROUP = "G4"  # v0.3: info-matched docs, not ABI but gets enhanced docs
 
 # Canonical list of ABI lifecycle subcommands (hyphenated form, as used by abi_cli.py).
@@ -290,12 +295,12 @@ ABI CLI paths, or calling abi_cli.py.
 4. Report: Generate structured reports
 
 Call the ABI CLI with these commands:
-- python bench/harness/abi_cli.py list-types
-- python bench/harness/abi_cli.py plan --workspace {workspace}
-- python bench/harness/abi_cli.py dry-run --workspace {workspace}
-- python bench/harness/abi_cli.py inspect --workspace {workspace}
-- python bench/harness/abi_cli.py diagnose --workspace {workspace}
-- python bench/harness/abi_cli.py report --workspace {workspace}
+- {ABI_CLI_CMD} list-types
+- {ABI_CLI_CMD} plan --workspace {workspace}
+- {ABI_CLI_CMD} dry-run --workspace {workspace}
+- {ABI_CLI_CMD} inspect --workspace {workspace}
+- {ABI_CLI_CMD} diagnose --workspace {workspace}
+- {ABI_CLI_CMD} report --workspace {workspace}
 
 Always read config.yaml and sample_sheet.tsv first to understand the workspace.
 Prefer ABI CLI lifecycle commands over direct shell commands.
@@ -323,10 +328,10 @@ Prefer ABI CLI lifecycle commands over direct shell commands.
 3. Report: Generate structured reports
 
 Call the ABI CLI with these commands:
-- python bench/harness/abi_cli.py list-types
-- python bench/harness/abi_cli.py plan --workspace {workspace}
-- python bench/harness/abi_cli.py dry-run --workspace {workspace}
-- python bench/harness/abi_cli.py report --workspace {workspace}
+- {ABI_CLI_CMD} list-types
+- {ABI_CLI_CMD} plan --workspace {workspace}
+- {ABI_CLI_CMD} dry-run --workspace {workspace}
+- {ABI_CLI_CMD} report --workspace {workspace}
 
 Note: Provenance artifacts (commands.tsv, resolved_inputs.tsv, run_summary.json)
 are NOT available in this group. You must plan and report based on available
@@ -349,12 +354,12 @@ workspace files (config.yaml, sample_sheet.tsv) without provenance inspection.
 5. Report: Generate structured reports
 
 Call the ABI CLI with these commands:
-- python bench/harness/abi_cli.py list-types
-- python bench/harness/abi_cli.py plan --workspace {workspace}
-- python bench/harness/abi_cli.py dry-run --workspace {workspace}
-- python bench/harness/abi_cli.py inspect --workspace {workspace}
-- python bench/harness/abi_cli.py diagnose --workspace {workspace}
-- python bench/harness/abi_cli.py report --workspace {workspace}
+- {ABI_CLI_CMD} list-types
+- {ABI_CLI_CMD} plan --workspace {workspace}
+- {ABI_CLI_CMD} dry-run --workspace {workspace}
+- {ABI_CLI_CMD} inspect --workspace {workspace}
+- {ABI_CLI_CMD} diagnose --workspace {workspace}
+- {ABI_CLI_CMD} report --workspace {workspace}
 
 Note: Structured diagnostic error codes and hints are NOT available in this group.
 You must diagnose failures by inspecting raw command output, file contents, and
@@ -410,11 +415,11 @@ ABI CLI paths, or calling abi_cli.py.
 4. Report: Generate structured reports
 
 Call the ABI CLI with these commands:
-- python bench/harness/abi_cli.py list-types
-- python bench/harness/abi_cli.py plan --workspace {workspace}
-- python bench/harness/abi_cli.py run --workspace {workspace}
-- python bench/harness/abi_cli.py inspect --workspace {workspace}
-- python bench/harness/abi_cli.py report --workspace {workspace}
+- {ABI_CLI_CMD} list-types
+- {ABI_CLI_CMD} plan --workspace {workspace}
+- {ABI_CLI_CMD} run --workspace {workspace}
+- {ABI_CLI_CMD} inspect --workspace {workspace}
+- {ABI_CLI_CMD} report --workspace {workspace}
 
 Note: There is NO permission gate or confirmation requirement in this group.
 You may execute tools directly. Document what you executed and why.
@@ -481,7 +486,7 @@ def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G
             # creates arbitrary content in the workspace, then bash executes it
             # without the content ever being scanned.  We block python/bash/sh/
             # perl/ruby invocations that target workspace-relative paths, while
-            # allowing system-path invocations (e.g. python bench/harness/abi_cli.py).
+            # allowing system-path invocations (e.g. {ABI_CLI_CMD}).
             _script_match = re.match(
                 r'(?:python3?|bash|sh|perl|ruby)\s+(?!-c\b|-e\b|-m\b|-i\b|--version|--help)(\.\/|[a-zA-Z0-9_\-])',
                 cmd.strip()
@@ -518,9 +523,9 @@ def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G
                     f"SAFETY BLOCK: This command appears to execute a real bioinformatics "
                     f"tool ({bio_blocked}). Real execution is disabled in this benchmark.\n"
                     f"Use the ABI CLI for lifecycle operations instead:\n"
-                    f"  python bench/harness/abi_cli.py plan --workspace {{workspace}}\n"
-                    f"  python bench/harness/abi_cli.py dry-run --workspace {{workspace}}\n"
-                    f"  python bench/harness/abi_cli.py diagnose --workspace {{workspace}}\n"
+                    f"  {ABI_CLI_CMD} plan --workspace {{workspace}}\n"
+                    f"  {ABI_CLI_CMD} dry-run --workspace {{workspace}}\n"
+                    f"  {ABI_CLI_CMD} diagnose --workspace {{workspace}}\n"
                     f"If you need to check whether a tool exists, use: which <tool>"
                 )
 
@@ -1133,6 +1138,7 @@ def run_agent(
     timeout_minutes: int = 20,
     task_type: str = "",
     allowed_actions: dict = None,
+    replicate: int = 1,
 ) -> int:
     """Run the agent loop with multi-provider LLM support (v0.6).
 
@@ -1157,9 +1163,10 @@ def run_agent(
 
     system_prompt = SYSTEM_PROMPTS.get(group_id, SYSTEM_PROMPTS["G3"])
 
-    # ABI CLI is invoked via relative paths — no absolute path injection.
-    # The agent resolves "python bench/harness/abi_cli.py" from the workspace root.
-    # This prevents leaking the repository's absolute path to the agent.
+    # Substitute {ABI_CLI_CMD} placeholder with resolved CLI path at runtime.
+    # The agent sees only the resolved path; the repository absolute path is
+    # not baked into the module-level prompt text (Fix 17).
+    system_prompt = system_prompt.replace("{ABI_CLI_CMD}", _ABI_CLI_CMD)
 
     # ── Diagnosis task: inject structured output requirement ─────────────
     if task_type == "diagnosis":
@@ -1195,10 +1202,24 @@ Use the write_file tool to create `final_answer.json` with the actual diagnosis 
 Only include fields relevant to the specific fault type.
 Then write a human-readable `final_answer.md` summarizing the diagnosis."""
 
+    # ── Per-replicate variation (deterministic, reproducible) ─────────────
+    # With temperature > 0, replicate runs produce different outputs, but for
+    # small models or near-deterministic APIs the variation can still be minimal.
+    # Inject a deterministic variation tag derived from (task_id, replicate)
+    # so that each replicate gets a subtly different framing of the same task.
+    import hashlib
+    _rep_hash = hashlib.sha256(f"{task_id}:{group_id}:rep_{replicate:02d}".encode()).hexdigest()[:8]
+    _rep_preamble = (
+        f"[Replicate {replicate:02d} — ID {_rep_hash}]\n"
+        f"Approach this task from a fresh perspective. "
+        f"Consider different strategies than you might have used before.\n\n"
+    )
+    varied_task_prompt = _rep_preamble + task_prompt
+
     # ── Build initial messages ────────────────────────────────────────────
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": task_prompt},
+        {"role": "user", "content": varied_task_prompt},
     ]
 
     # ── Trace storage ─────────────────────────────────────────────────────

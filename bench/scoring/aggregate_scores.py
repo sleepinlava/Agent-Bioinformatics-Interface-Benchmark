@@ -77,6 +77,50 @@ def group_by(scores: list[dict], key: str) -> dict:
     return dict(grouped)
 
 
+def _compute_per_plugin_breakdown(scores: list[dict]) -> dict:
+    """Compute per-plugin statistics across all groups (Fix 5)."""
+    from collections import defaultdict as _dd
+    plugin_scores: dict[str, dict[str, list[float]]] = _dd(lambda: _dd(list))
+    for s in scores:
+        plugin = s.get("plugin", "unknown")
+        gid = s.get("group_id", "unknown")
+        if s.get("total_score", -1) >= 0 and s.get("max_score", 0) > 0:
+            normalized = s["total_score"] / s["max_score"] * 100
+            plugin_scores[plugin][gid].append(normalized)
+
+    breakdown = {}
+    for plugin, groups in sorted(plugin_scores.items()):
+        breakdown[plugin] = {}
+        for gid, vals in sorted(groups.items()):
+            if len(vals) >= 1:
+                breakdown[plugin][gid] = {
+                    "mean": round(sum(vals) / len(vals), 2),
+                    "std": round(
+                        (sum((v - sum(vals)/len(vals))**2 for v in vals) / (len(vals)-1))**0.5, 2
+                    ) if len(vals) >= 2 else 0.0,
+                    "n": len(vals),
+                }
+    return breakdown
+
+
+def _compute_hidden_fixture_coverage(scores: list[dict]) -> dict:
+    """Report which plugins have hidden fixture coverage (Fix 15)."""
+    plugins_seen = set()
+    hidden_seen = set()
+    for s in scores:
+        plugin = s.get("plugin", "")
+        if plugin:
+            plugins_seen.add(plugin)
+            if s.get("fixture_set") == "hidden":
+                hidden_seen.add(plugin)
+    return {
+        "plugins_with_hidden": sorted(hidden_seen),
+        "plugins_without_hidden": sorted(plugins_seen - hidden_seen),
+        "note": "Hidden fixtures currently limited to metagenomic_plasmid diagnosis tasks. "
+                "Non-plasmid plugins fall back to public fixtures when --fixture-set hidden is used."
+    }
+
+
 def compute_group_stats(group_scores: list[dict]) -> dict:
     """Compute aggregate statistics for a group's scores."""
     if not group_scores:
@@ -88,6 +132,7 @@ def compute_group_stats(group_scores: list[dict]) -> dict:
             "successful_dryrun_rate": None,
             "diagnostic_accuracy": None,
             "unsafe_execution_rate": None,
+            "abi_leakage_rate": None,
             "artifact_completeness_mean": None,
             "median_agent_steps": None,
             "score_count": 0,
@@ -129,6 +174,14 @@ def compute_group_stats(group_scores: list[dict]) -> dict:
         1 for s in group_scores
         if s.get("metrics", {}).get("reasoning_used", False)
     )
+    abi_leakage = [
+        s.get("metrics", {}).get("abi_interface_used", False)
+        for s in group_scores
+    ]
+    trace_incomplete = [
+        s.get("metrics", {}).get("trace_incomplete", False)
+        for s in group_scores
+    ]
 
     return {
         "total_score_mean": round(statistics.mean(normalized), 2) if normalized else None,
@@ -138,11 +191,13 @@ def compute_group_stats(group_scores: list[dict]) -> dict:
         "successful_dryrun_rate": round(sum(dryrun_successes) / len(dryrun_successes), 3) if dryrun_successes else None,
         "diagnostic_accuracy": round(statistics.mean(diag_accs), 3) if diag_accs else None,
         "unsafe_execution_rate": round(sum(unsafe) / len(unsafe), 3) if unsafe else None,
+        "abi_leakage_rate": round(sum(abi_leakage) / len(abi_leakage), 3) if abi_leakage else None,
         "artifact_completeness_mean": round(statistics.mean(completeness), 3) if completeness else None,
         "median_agent_steps": int(statistics.median(agent_steps)) if agent_steps else None,
         "score_count": len(group_scores),
         "reasoning_used_count": reasoning_used_count,
         "avg_thinking_tokens": round(statistics.mean(thinking_tokens), 0) if thinking_tokens else 0,
+        "trace_incomplete_count": sum(trace_incomplete) if trace_incomplete else 0,
     }
 
 
@@ -474,9 +529,37 @@ def build_summary(scores: list[dict], experiment_set: str | None = None, fixture
     if not (ci_enabled and n_reps >= ci_min_reps):
         base_criteria.append(claim_support.get("G3_unsafe_execution_zero"))
 
+    # Post-hoc thresholds: the primary_claim_supported flag uses whichever
+    # thresholds are active (post-hoc revised if present, else pre-registered).
     claim_support["primary_claim_supported"] = all(c is True for c in base_criteria)
-    # Also report CI-enhanced claim: requires CI lower > 0 for all deltas
-    claim_support["ci_enhanced_claim_applicable"] = ci_enabled and n_reps >= ci_min_reps
+
+    # Pre-registered thresholds: always compute for transparent reporting
+    pre_reg_base = [
+        claim_support.get("G3_min_total_score"),
+        claim_support.get("G3_beats_G1_pre_registered"),
+        claim_support.get("G3_beats_G2_pre_registered"),
+        claim_support.get("G3_min_diagnostic_accuracy"),
+        claim_support.get("cross_plugin_dryrun_success"),
+    ]
+    if not (ci_enabled and n_reps >= ci_min_reps):
+        unsafe_pre_reg = claim_support.get("G3_unsafe_execution_zero_pre_registered")
+        pre_reg_base.append(unsafe_pre_reg)
+    claim_support["primary_claim_supported_pre_registered"] = all(c is True for c in pre_reg_base)
+
+    # ── Threshold revision notice ──
+    if revised_meta:
+        claim_support["threshold_revision_notice"] = (
+            f"Pre-registered thresholds (G3-G1 >= {pre_reg_delta_g1}, "
+            f"G3-G2 >= {pre_reg_delta_g2}) from {claim_support['pre_registered_thresholds']['date']} "
+            f"were not met in observed data. Post-hoc revised thresholds "
+            f"(G3-G1 >= {g3_vs_g1_threshold}, G3-G2 >= {g3_vs_g2_threshold}) from "
+            f"{revised_meta.get('date', 'unknown')} are used for primary_claim_supported. "
+            f"See BENCHMARK_SPEC.yaml success_criteria.revised for rationale."
+        )
+    else:
+        claim_support["threshold_revision_notice"] = (
+            "Using pre-registered thresholds. No post-hoc revision applied."
+        )
 
     return {
         "benchmark": "ABI-Bench",
@@ -488,6 +571,13 @@ def build_summary(scores: list[dict], experiment_set: str | None = None, fixture
         "fixture_set": fixture_set or _common_value(scores, "fixture_set", "mixed"),
         "replicates": _estimate_replicates(scores),
         "groups": groups_stats,
+        "per_plugin_breakdown": _compute_per_plugin_breakdown(scores),
+        "ablation_note": (
+            "Ablation groups (A1/A3/A4) are Appendix-only. "
+            "Strong LLMs compensate for ~98% of removed ABI components through "
+            "chain-of-thought reasoning. See BENCHMARK_SPEC.yaml ablation_status."
+        ) if any(g in groups_stats for g in ["A1", "A3", "A4"]) else None,
+        "hidden_fixture_coverage": _compute_hidden_fixture_coverage(scores),
         "completeness": build_completeness_report(scores, experiment_set, fixture_set),
         "claim_support": claim_support,
     }

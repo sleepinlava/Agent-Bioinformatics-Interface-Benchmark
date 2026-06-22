@@ -193,8 +193,9 @@ def _score_real_execution(
         p = trace_dir / art if art in ("final_answer.md", "final_answer.json") else run_dir / art
         artifacts_checked[art] = p.exists()
 
-    # Determine passed threshold (>= 70% of max)
-    passed = total_points >= round(max_points * 0.7)
+    # Determine passed threshold (>= 70% of max).
+    # Use float comparison for consistent 70% threshold across all max_score values.
+    passed = total_points >= max_points * 0.7
 
     # Build metrics
     agent_steps = _count_agent_steps(trace_dir)
@@ -215,9 +216,11 @@ def _score_real_execution(
         "artifact_completeness": _artifact_completeness(artifacts_checked),
         "unsafe_execution": None,
         "abi_interface_used": abi_interface_used,
+        "abi_leakage_penalty": 0.0,  # legacy path — no leakage penalty for simulated
         "agent_steps": agent_steps,
         "elapsed_seconds": elapsed,
         "human_interventions": _count_human_interventions(trace_dir),
+        "trace_incomplete": not (trace_dir / "tool_calls.jsonl").is_file(),
         "thinking_tokens": reasoning.get("thinking_tokens", 0),
         "thinking_tokens_per_step": (
             reasoning["thinking_tokens"] / agent_steps
@@ -237,6 +240,7 @@ def _score_real_execution(
         "fixture_set": fixture_set or metadata.get("fixture_set", "public"),
         "group_id": group_id,
         "replicate": replicate,
+        "plugin": task.get("plugin", ""),
         "model_id": metadata.get("model_id", "LLM4"),
         "agent_harness": metadata.get("agent_harness", "direct"),
         "agent_mode": metadata.get("agent_mode", "unknown"),
@@ -301,18 +305,30 @@ def score_task(
         # Run the check
         result = run_check(check_fn_name, run_dir, trace_dir, expected_answer=expected_answer, **extra_args)
 
-        earned = points_possible if result else 0
+        # Support partial-credit CheckResult returns (v0.6+) alongside legacy bools
+        if hasattr(result, 'score') and hasattr(result, 'passed'):
+            # CheckResult: use fractional score directly
+            earned = min(result.score, points_possible)
+            check_passed = result.passed
+        elif isinstance(result, bool):
+            earned = points_possible if result else 0
+            check_passed = result
+        else:
+            # Truthy fallback for non-standard returns
+            earned = points_possible if result else 0
+            check_passed = bool(result)
+
         total_points += earned
 
         check_results.append({
             "check": check_name,
             "function": check_fn_name,
-            "passed": result,
+            "passed": check_passed,
             "earned": earned,
             "possible": points_possible,
         })
 
-        if not result:
+        if not check_passed:
             failure_codes.append(f"check_failed:{check_name}")
             failure_reasons.append(
                 f"Check '{check_name}' ({check_fn_name}) returned False"
@@ -336,11 +352,15 @@ def score_task(
     group_id = metadata.get("group_id") or _discover_group_id(run_dir)
     replicate = metadata.get("replicate") or _discover_replicate(run_dir)
     abi_interface_used = _detect_abi_interface_usage(trace_dir)
+    abi_leakage_penalty = 0
     if group_id in {"G1", "G2", "G4"} and abi_interface_used:
         failure_codes.append("abi_interface_leakage")
         failure_reasons.append(
             "Baseline group trace shows ABI lifecycle command or ABI CLI usage"
         )
+        # Apply penalty: max(2, 20% of earned points) — Fix 13
+        abi_leakage_penalty = max(2.0, total_points * 0.2)
+        total_points = max(0.0, total_points - abi_leakage_penalty)
     task_type = task.get("task_type")
     successful_dryrun = (
         _is_dryrun_successful(run_dir, trace_dir)
@@ -358,9 +378,11 @@ def score_task(
         "artifact_completeness": _artifact_completeness(artifacts_checked),
         "unsafe_execution": not check_no_execution_with_fallback(trace_dir, run_dir),
         "abi_interface_used": abi_interface_used,
+        "abi_leakage_penalty": abi_leakage_penalty,
         "agent_steps": agent_steps,
         "elapsed_seconds": elapsed,
         "human_interventions": _count_human_interventions(trace_dir),
+        "trace_incomplete": not (trace_dir / "tool_calls.jsonl").is_file(),
         "thinking_tokens": reasoning.get("thinking_tokens", 0),
         "thinking_tokens_per_step": (
             reasoning["thinking_tokens"] / agent_steps
@@ -380,6 +402,7 @@ def score_task(
         "fixture_set": fixture_set or metadata.get("fixture_set", "public"),
         "group_id": group_id,
         "replicate": replicate,
+        "plugin": task.get("plugin", ""),
         "model_id": metadata.get("model_id", "LLM4"),
         "agent_harness": metadata.get("agent_harness", "direct"),
         "agent_mode": metadata.get("agent_mode", "unknown"),

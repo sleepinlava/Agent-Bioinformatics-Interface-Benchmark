@@ -60,7 +60,7 @@ class BenchConfig:
     api_base: str = "https://api.deepseek.com"
     model: str = "deepseek-v4-pro"
     max_tokens: int = 8000
-    temperature: float = 0.0
+    temperature: float = 0.3
     max_retries: int = 3
     retry_base_delay_seconds: float = 2.0
     retry_max_delay_seconds: float = 60.0
@@ -157,7 +157,7 @@ def load_bench_config(dotenv_path: str | Path | None = None) -> BenchConfig:
         api_base=_get(ENV_API_BASE, "https://api.deepseek.com"),
         model=_get(ENV_MODEL, "deepseek-v4-pro"),
         max_tokens=int(_get(ENV_MAX_TOKENS, "8000")),
-        temperature=float(_get(ENV_TEMPERATURE, "0.0")),
+        temperature=float(_get(ENV_TEMPERATURE, "0.3")),
         max_retries=int(_get(ENV_MAX_RETRIES, "3")),
         retry_base_delay_seconds=float(_get(ENV_RETRY_BASE_DELAY, "2.0")),
         retry_max_delay_seconds=float(_get(ENV_RETRY_MAX_DELAY, "60.0")),

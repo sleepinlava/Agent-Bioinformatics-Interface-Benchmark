@@ -20,6 +20,7 @@ Parallel execution (runs tasks concurrently within each replicate batch):
 
 import argparse
 import concurrent.futures
+import json
 import subprocess
 import sys
 import threading
@@ -121,18 +122,34 @@ def _run_single_task(
     score_file = run_outdir / "score.json"
 
     if score_file.exists():
-        _ts_print(f"  SKIP [{group_id}/{task_id}/rep_{replicate:02d}] "
-                  f"(already completed)")
-        return {
-            "group": group_id,
-            "task": task_id,
-            "replicate": replicate,
-            "exit_code": 0,
-            "elapsed": 0.0,
-            "stdout": "",
-            "stderr": "",
-            "skipped": True,
-        }
+        # Validate score.json is complete before skipping (Fix 18)
+        try:
+            with open(score_file) as f:
+                score_data = json.load(f)
+            required_fields = ["total_score", "max_score", "passed", "task_id", "group_id"]
+            missing = [k for k in required_fields if k not in score_data]
+            if missing or not isinstance(score_data.get("total_score"), (int, float)):
+                raise ValueError(f"Score file corrupt/incomplete: missing {missing}")
+            if score_data.get("total_score", -1) < 0:
+                raise ValueError("Score file has negative total_score (failed run)")
+            _ts_print(f"  SKIP [{group_id}/{task_id}/rep_{replicate:02d}] "
+                      f"(already completed)")
+            return {
+                "group": group_id,
+                "task": task_id,
+                "replicate": replicate,
+                "exit_code": 0,
+                "elapsed": 0.0,
+                "stdout": "",
+                "stderr": "",
+                "skipped": True,
+            }
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            _ts_print(f"  WARNING [{group_id}/{task_id}/rep_{replicate:02d}] "
+                      f"score.json exists but is corrupt/incomplete: {e}")
+            _ts_print(f"  Re-running task (corrupt score.json renamed to .broken)")
+            broken_path = score_file.with_suffix(".json.broken")
+            score_file.rename(broken_path)
 
     _ts_print(f"\n{'─'*70}")
     _ts_print(f"[{run_number}/{total_runs}] Group={group_id} Task={task_id} "
@@ -191,6 +208,9 @@ def run_group(
     outdir: Path = None,
     parallel: bool = False,
     workers: int = 4,
+    randomize_tasks: bool = False,
+    seed: int = 42,
+    stagger_seconds: float = 0,
 ):
     """Run all tasks for a group.
 
@@ -198,6 +218,13 @@ def run_group(
     executed concurrently using a thread pool (each task calls a separate
     subprocess, so the GIL is not a bottleneck).  Replicate batches are
     still run sequentially to ensure clean state and reproducible ordering.
+
+    When ``randomize_tasks`` is True, task order is shuffled independently
+    per replicate using a deterministic seed derived from (seed, replicate),
+    eliminating the fixed task-order confound.
+
+    When ``stagger_seconds > 0``, each task submission is randomly delayed
+    (0 to stagger_seconds) to reduce temporal aliasing in parallel mode.
     """
     if outdir is None:
         outdir = PROJECT_ROOT / "bench" / "results" / group_id
@@ -215,7 +242,15 @@ def run_group(
     print(f"  Agent mode: {agent_mode}")
     print(f"  Total runs: {total_runs}")
     print(f"  Parallel: {parallel}" + (f" (workers={workers})" if parallel else ""))
+    print(f"  Randomize tasks: {randomize_tasks}" + (f" (seed={seed})" if randomize_tasks else ""))
     print(f"  Outdir: {outdir}")
+
+    # Ablation group warning (Fix 10)
+    if group_id in {"A1", "A3", "A4"}:
+        print(f"  ⚠ WARNING: {group_id} is an ABLATION GROUP. Strong LLMs are documented to")
+        print(f"  compensate for removed ABI components (~98% recovery). Results are")
+        print(f"  Appendix-only. See BENCHMARK_SPEC.yaml ablation_status.")
+
     print(f"{'='*70}")
 
     run_number = 0  # shared counter for display ordering
@@ -223,7 +258,14 @@ def run_group(
     if not parallel:
         # ── Sequential mode (original behaviour) ──────────────────────────
         for rep in range(1, replicates + 1):
-            for task_id in tasks:
+            # Task order randomization per replicate (Fix 4)
+            rep_tasks = list(tasks)
+            if randomize_tasks:
+                import random as _random
+                _rng = _random.Random(seed * 1000 + rep)
+                _rng.shuffle(rep_tasks)
+                print(f"  Rep {rep} task order: {rep_tasks}")
+            for task_id in rep_tasks:
                 run_number += 1
                 outcome = _run_single_task(
                     group_id=group_id, task_id=task_id, replicate=rep,
@@ -239,10 +281,19 @@ def run_group(
         actual_workers = min(workers, task_count)
         with concurrent.futures.ThreadPoolExecutor(max_workers=actual_workers) as pool:
             for rep in range(1, replicates + 1):
+                # Task order randomization per replicate (Fix 4)
+                rep_tasks = list(tasks)
+                if randomize_tasks:
+                    import random as _random
+                    _rng = _random.Random(seed * 1000 + rep)
+                    _rng.shuffle(rep_tasks)
                 # Build a future for every task in this replicate batch
                 future_map: dict[concurrent.futures.Future, tuple] = {}
-                for task_id in tasks:
+                for task_id in rep_tasks:
                     run_number += 1
+                    # Stagger submissions to reduce temporal aliasing (Fix 14)
+                    if stagger_seconds > 0:
+                        time.sleep(_random.Random(seed * 10000 + run_number).uniform(0, stagger_seconds))
                     future = pool.submit(
                         _run_single_task,
                         group_id=group_id, task_id=task_id, replicate=rep,
@@ -317,6 +368,12 @@ def main():
         help="Max concurrent workers when --parallel is set (default: 4)",
     )
     parser.add_argument("--outdir", type=Path, help="Output directory for results")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for task order randomization (default: 42)")
+    parser.add_argument("--randomize-tasks", action="store_true",
+                        help="Randomize task order per replicate to eliminate fixed-order confound")
+    parser.add_argument("--stagger-seconds", type=float, default=0,
+                        help="Max random stagger delay between parallel task launches (0=disabled)")
     args = parser.parse_args()
 
     tasks = resolve_tasks(args.tasks)
@@ -332,6 +389,9 @@ def main():
         outdir=args.outdir,
         parallel=args.parallel,
         workers=args.workers,
+        randomize_tasks=args.randomize_tasks,
+        seed=args.seed,
+        stagger_seconds=args.stagger_seconds,
     )
     return 1 if failures else 0
 

@@ -117,6 +117,7 @@ def run_task(
             "--fixture", str(fixture_dir),
             "--workspace", str(workspace_dir),
             "--overwrite",
+            "--group-id", group_id,
         ], capture_output=True, text=True)
         if result.returncode != 0:
             print(f"ERROR: Workspace reset failed:\n{result.stderr}")
@@ -361,6 +362,7 @@ def _run_agent(
             timeout_minutes=timeout_minutes,
             task_type=task_type,
             allowed_actions=allowed_actions or {},
+            replicate=replicate,
         )
 
     print(f"  ERROR: Unknown agent_mode '{agent_mode}'")

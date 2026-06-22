@@ -19,7 +19,8 @@ benchmark:
 environment:
   agent_harness: direct
   model_id: multi           # v0.3: multi-model experiment
-  temperature: 0
+  temperature: 0.3             # Default sampling temperature (increased from 0.0
+                                #   to ensure replicate runs vary — see Fix 1 in audit)
   max_agent_steps: 50
   task_timeout_minutes: 20
   network: false
@@ -29,6 +30,17 @@ environment:
 # v0.3 Model Tier System
 # ═══════════════════════════════════════════════════════════════════════
 model_tiers:
+  tier_assignment_method: >
+    Tiers are assigned based on observed G1 baseline performance (objective
+    criteria).  The model lists below are the canonical set for each tier as
+    determined by prior benchmarking.  New models are classified dynamically
+    by `aggregate_scores.py` based on their G1 score relative to tier bands.
+    Models not in any tier list receive tier "unknown" and are included in
+    aggregate statistics but excluded from scaffolding analysis.
+  tier_bands:
+    strong: "G1 normalized score >= 70"
+    medium: "G1 normalized score >= 50 and < 70"
+    weak: "G1 normalized score < 50"
   strong:
     description: "Frontier models with strong reasoning capabilities"
     models:
@@ -45,6 +57,40 @@ model_tiers:
     models:
       - qwen2.5-7b
       - llama-3.1-8b
+
+# ═══════════════════════════════════════════════════════════════════════
+# Plugin Balance (Fix 5)
+# ═══════════════════════════════════════════════════════════════════════
+plugin_balance:
+  note: >
+    metagenomic_plasmid dominates ~55% of tasks. Cross-plugin claims are
+    supported by tasks across all 5 plugins, but per-plugin task counts are
+    asymmetric.  Per-plugin score breakdowns are reported in summary.json
+    for transparency.
+  distribution:
+    metagenomic_plasmid: 23   # ~49% of tasks
+    rnaseq_expression: 7      # ~15%
+    wgs_bacteria: 6           # ~13%
+    amplicon_16s: 5           # ~11%
+    metatranscriptomics: 4    # ~9%
+    shared_cross_plugin: 2    # ~4% (T01, T30 — plugin-agnostic)
+
+# ═══════════════════════════════════════════════════════════════════════
+# Hidden Fixture Coverage (Fix 15)
+# ═══════════════════════════════════════════════════════════════════════
+hidden_fixtures:
+  note: >
+    Hidden fixtures currently exist only for metagenomic_plasmid diagnosis
+    tasks (T05/T06/T07).  Non-plasmid diagnosis tasks fall back to public
+    fixtures when --fixture-set hidden is used.  This is documented
+    transparently in summary.json: hidden_fixture_coverage.
+  covered_plugins:
+    - metagenomic_plasmid
+  uncovered_plugins:
+    - metatranscriptomics
+    - amplicon_16s
+    - rnaseq_expression
+    - wgs_bacteria
 
 plugins:
   - metagenomic_plasmid
