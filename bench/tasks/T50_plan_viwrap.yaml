@@ -1,0 +1,42 @@
+task_id: T50
+name: Plan viral_viwrap analysis
+plugin: viral_viwrap
+task_type: planning
+fixture: viwrap_valid
+max_score: 10
+timeout_minutes: 20
+max_agent_steps: 50
+
+prompt: |
+  Create an execution plan for virus identification from a metagenomic
+  assembly using the viral_viwrap plugin. The workflow should include
+  environment checking, input validation, ViWrap execution, output
+  parsing, and artifact collection steps.
+
+  Read config.yaml first. Use ABI lifecycle commands to construct a
+  valid plan and write it to execution_plan.json.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - execution_plan.json
+
+scoring:
+  execution_plan_exists: 1
+  analysis_type_is_viwrap: 2
+  step_id_unique: 2
+  tool_id_valid_for_viwrap: 2
+  plan_not_executed: 1
+  contains_viwrap: 1
+  contains_parse_step: 1
+
+failure_codes:
+  - artifact_missing
+  - invalid_plan_schema
+  - wrong_analysis_type
+  - real_execution_violation

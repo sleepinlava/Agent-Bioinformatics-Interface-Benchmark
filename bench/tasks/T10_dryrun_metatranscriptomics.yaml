@@ -28,6 +28,9 @@ expected_artifacts:
   - provenance/resolved_inputs.tsv
   - provenance/resources.json
   - provenance/run_summary.json
+  - provenance/progress.jsonl
+  - provenance/checksums.json
+  - provenance/environment.yml
   - tables/gene_expression.tsv
   - report/report.md
   - report/report.html

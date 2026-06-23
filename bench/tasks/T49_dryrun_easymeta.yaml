@@ -30,6 +30,8 @@ expected_artifacts:
   - provenance/resources.json
   - provenance/run_summary.json
   - provenance/progress.jsonl
+  - provenance/checksums.json
+  - provenance/environment.yml
   - tables/taxonomy_abundance.tsv
   - tables/qc_summary.tsv
   - report/report.md

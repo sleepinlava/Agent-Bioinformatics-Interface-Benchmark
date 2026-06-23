@@ -837,3 +837,55 @@ rubric:
       description: "Numeric assertion values fall within expected ranges"
       points: 4
       function: check_assertion_value_in_range
+
+    # ── v0.7: Viral ViWrap checks ─────────────────────────────────────
+    analysis_type_is_viwrap:
+      description: "execution_plan.json has analysis_type: viral_viwrap"
+      points: 2
+      function: check_viwrap_analysis_type
+
+    contains_viwrap:
+      description: "Plan contains a viwrap tool step"
+      points: 1
+      function: check_contains_viwrap_step
+
+    contains_parse_step:
+      description: "Plan includes a parse/collect step after execution"
+      points: 1
+      function: check_contains_parse_step
+
+    # ── v0.7: Resource management checks ──────────────────────────────
+    check_resources_executed:
+      description: "Agent successfully ran abi check-resources"
+      points: 2
+      function: check_resource_check_executed
+
+    setup_resources_executed:
+      description: "Agent successfully ran abi setup-resources --dry-run"
+      points: 2
+      function: check_resource_check_executed
+
+    dry_run_mode_used:
+      description: "Agent used --dry-run flag, no actual resource download"
+      points: 2
+      function: check_dry_run_mode_used
+
+    missing_resource_identified:
+      description: "Agent correctly identified which resource is missing"
+      points: 2
+      function: check_resource_check_executed
+
+    resource_name_reported:
+      description: "Agent reported the specific missing resource name"
+      points: 2
+      function: check_resource_check_executed
+
+    resource_paths_reported:
+      description: "Agent reported expected paths for resources"
+      points: 2
+      function: check_resource_check_executed
+
+    no_actual_download:
+      description: "Agent did not initiate actual resource downloads"
+      points: 1
+      function: check_no_large_download

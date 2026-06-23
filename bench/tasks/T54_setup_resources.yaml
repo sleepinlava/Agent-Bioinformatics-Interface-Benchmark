@@ -1,0 +1,37 @@
+task_id: T54
+name: Plan resource setup (dry-run)
+plugin: rnaseq_expression
+task_type: planning
+fixture: rnaseq_missing_resource
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 30
+
+prompt: |
+  After identifying missing resources, use ABI setup-resources with the
+  --dry-run flag to plan resource installation. Report what resources
+  would be downloaded or configured, including expected paths and sizes.
+
+  Do NOT actually download resources — use --dry-run mode only.
+  Write your setup plan to final_answer.json.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.json
+
+scoring:
+  setup_resources_executed: 2
+  dry_run_mode_used: 2
+  resource_paths_reported: 2
+  no_actual_download: 1
+  structured_discovery: 1
+
+failure_codes:
+  - artifact_missing
+  - real_execution_violation

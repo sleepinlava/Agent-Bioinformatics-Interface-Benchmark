@@ -1981,6 +1981,93 @@ def check_checksums_json_exists(
     )
 
 
+def check_viwrap_analysis_type(
+    run_dir: Path, task: dict, *, check_name: str = "analysis_type_is_viwrap"
+) -> CheckResult:
+    """Check execution_plan.json has analysis_type: viral_viwrap."""
+    return check_analysis_type_matches(run_dir, task, check_name=check_name)
+
+
+def check_contains_viwrap_step(
+    run_dir: Path, task: dict, *, check_name: str = "contains_viwrap"
+) -> CheckResult:
+    """Check that the plan contains a viwrap tool step."""
+    plan_path = run_dir / "execution_plan.json"
+    if not plan_path.exists():
+        return CheckResult(False, score_on_pass=0, details="execution_plan.json not found")
+    try:
+        plan = json.loads(plan_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return CheckResult(False, score_on_pass=0, details="Failed to parse execution_plan.json")
+    steps = plan.get("steps", [])
+    has_viwrap = any("viwrap" in str(s.get("tool_id", "")).lower() for s in steps)
+    return CheckResult(
+        has_viwrap,
+        score_on_pass=_get_max_points(task, check_name, 1),
+        details=f"Plan contains viwrap: {has_viwrap}",
+    )
+
+
+def check_contains_parse_step(
+    run_dir: Path, task: dict, *, check_name: str = "contains_parse_step"
+) -> CheckResult:
+    """Check that the plan includes a parse/collect step after the main tool."""
+    plan_path = run_dir / "execution_plan.json"
+    if not plan_path.exists():
+        return CheckResult(False, score_on_pass=0, details="execution_plan.json not found")
+    try:
+        plan = json.loads(plan_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return CheckResult(False, score_on_pass=0, details="Failed to parse execution_plan.json")
+    steps = plan.get("steps", [])
+    has_parse = any("parse" in str(s.get("tool_id", "")).lower() for s in steps)
+    return CheckResult(
+        has_parse,
+        score_on_pass=_get_max_points(task, check_name, 1),
+        details=f"Plan has parse step: {has_parse}",
+    )
+
+
+def check_resource_check_executed(
+    run_dir: Path, task: dict, *, check_name: str = "check_resources_executed"
+) -> CheckResult:
+    """Check that the agent ran a resource check and reported results."""
+    fa_path = run_dir / "final_answer.json"
+    if not fa_path.exists():
+        return CheckResult(False, score_on_pass=0, details="final_answer.json not found")
+    try:
+        fa = json.loads(fa_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return CheckResult(False, score_on_pass=0, details="Failed to parse final_answer.json")
+    text = json.dumps(fa).lower()
+    has_resource_check = any(kw in text for kw in ("check-resources", "check_resources", "resource"))
+    return CheckResult(
+        has_resource_check,
+        score_on_pass=_get_max_points(task, check_name, 2),
+        details=f"Resource check mentioned: {has_resource_check}",
+    )
+
+
+def check_dry_run_mode_used(
+    run_dir: Path, task: dict, *, check_name: str = "dry_run_mode_used"
+) -> CheckResult:
+    """Check that --dry-run flag was used (no actual resource download)."""
+    fa_path = run_dir / "final_answer.json"
+    if not fa_path.exists():
+        return CheckResult(False, score_on_pass=0, details="final_answer.json not found")
+    try:
+        fa = json.loads(fa_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return CheckResult(False, score_on_pass=0, details="Failed to parse final_answer.json")
+    text = json.dumps(fa).lower()
+    dry_run_mentioned = "dry-run" in text or "dry_run" in text
+    return CheckResult(
+        dry_run_mentioned,
+        score_on_pass=_get_max_points(task, check_name, 2),
+        details=f"Dry-run mentioned: {dry_run_mentioned}",
+    )
+
+
 def check_internal_handler_awareness(
     run_dir: Path, task: dict, *, check_name: str = "internal_handler_awareness"
 ) -> CheckResult:

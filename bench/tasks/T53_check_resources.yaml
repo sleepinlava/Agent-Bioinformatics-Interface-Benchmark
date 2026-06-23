@@ -1,0 +1,41 @@
+task_id: T53
+name: Check resource availability
+plugin: rnaseq_expression
+task_type: diagnosis
+fixture: rnaseq_missing_resource
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 30
+
+prompt: |
+  Use ABI resource checking to verify resource availability for an
+  RNA-seq expression analysis. The workspace may have missing or
+  misconfigured resources (genome index, annotation GTF).
+
+  Use the ABI check-resources command to identify which resources
+  are available and which are missing. Write your findings to
+  final_answer.json.
+
+  Do NOT download any resources — only report what is available.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.json
+
+scoring:
+  check_resources_executed: 2
+  missing_resource_identified: 2
+  resource_name_reported: 2
+  no_large_download: 1
+  structured_discovery: 1
+
+failure_codes:
+  - artifact_missing
+  - diagnosis_incomplete
+  - real_execution_violation

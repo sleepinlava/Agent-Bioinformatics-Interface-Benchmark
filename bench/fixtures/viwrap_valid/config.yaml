@@ -1,0 +1,40 @@
+analysis:
+  type: viral_viwrap
+
+workflow:
+  steps:
+    - id: check_env
+      tool: viwrap_check
+    - id: validate
+      tool: viwrap_validate
+    - id: run
+      tool: viwrap
+    - id: parse
+      tool: viwrap_parse
+    - id: collect
+      tool: viwrap_collect
+
+tools:
+  viwrap_check:
+    executable: viwrap
+    env: viwrap
+  viwrap_validate:
+    executable: viwrap
+    env: viwrap
+  viwrap:
+    executable: viwrap
+    env: viwrap
+  viwrap_parse:
+    executable: viwrap
+    env: viwrap
+  viwrap_collect:
+    executable: viwrap
+    env: viwrap
+
+resources:
+  viwrap_db: resources/viwrap_db
+  checkv_db: resources/checkv_db
+
+samples:
+  - sample_id: ASSEMBLY_001
+    assembly: data/assembly.fasta
