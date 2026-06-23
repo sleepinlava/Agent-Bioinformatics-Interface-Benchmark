@@ -258,6 +258,70 @@ def _score_real_execution(
     return score
 
 
+def _resolve_artifact(run_dir: Path, trace_dir: Path, artifact: str) -> Path:
+    """Resolve an artifact path, checking both simulated and real ABI locations.
+
+    Real ABI (v1.5+) may produce artifacts in a subdirectory under *run_dir*
+    (e.g. ``results/<analysis_type>/<timestamp>/``).  This helper checks the
+    direct path first, then falls back to scanning subdirectories.
+    """
+    direct = trace_dir / artifact if artifact in ("final_answer.md", "final_answer.json") else run_dir / artifact
+    if direct.exists():
+        return direct
+
+    # Fallback: check one level deep for real ABI output structure
+    if run_dir.is_dir():
+        for sub in sorted(run_dir.iterdir()):
+            if sub.is_dir() and not sub.name.startswith("."):
+                candidate = sub / artifact
+                if candidate.exists():
+                    return candidate
+    return direct  # Return the original (non-existent) path as last resort
+
+
+def _score_cache_key(run_dir: Path, task_id: str) -> str | None:
+    """Return a cache key based on the hash of key run artifacts, or None."""
+    import hashlib
+    hasher = hashlib.sha256()
+    for fname in ("execution_plan.json", "artifact_manifest.json"):
+        fp = run_dir / fname
+        if fp.exists():
+            hasher.update(fp.read_bytes())
+    key_files = sorted(run_dir.glob("provenance/*.tsv")) + sorted(run_dir.glob("provenance/*.json"))
+    for fp in key_files[:20]:  # Cap at 20 files to avoid unbounded I/O
+        if fp.exists():
+            hasher.update(fp.read_bytes())
+    return hasher.hexdigest() if key_files else None
+
+
+def _load_cached_score(run_dir: Path) -> dict | None:
+    """Return a previously-saved score.json if it matches current artifacts."""
+    cache_path = run_dir / "score.json"
+    if not cache_path.exists():
+        return None
+    try:
+        cached = json.loads(cache_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    task_id = cached.get("task_id", "")
+    current_key = _score_cache_key(run_dir, task_id)
+    cached_key = cached.get("_artifact_hash", "")
+    if current_key and cached_key and current_key == cached_key:
+        return cached
+    return None
+
+
+def _write_cached_score(run_dir: Path, score: dict) -> None:
+    """Write score.json with an artifact hash for future cache validation."""
+    task_id = score.get("task_id", "")
+    key = _score_cache_key(run_dir, task_id)
+    if key:
+        score["_artifact_hash"] = key
+    cache_path = run_dir / "score.json"
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps(score, indent=2) + "\n")
+
+
 def score_task(
     task: dict,
     run_dir: Path,
@@ -334,10 +398,10 @@ def score_task(
                 f"Check '{check_name}' ({check_fn_name}) returned False"
             )
 
-    # Build artifact check map
+    # Build artifact check map (v0.7: also check real ABI paths)
     expected_artifacts = task.get("expected_artifacts", [])
     for art in expected_artifacts:
-        p = trace_dir / art if art in ("final_answer.md", "final_answer.json") else run_dir / art
+        p = _resolve_artifact(run_dir, trace_dir, art)
         artifacts_checked[art] = p.exists()
 
     # Determine passed threshold (>= 70% of max).

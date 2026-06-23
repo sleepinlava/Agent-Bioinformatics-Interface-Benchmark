@@ -759,6 +759,21 @@ def _openai_messages_to_anthropic(messages: list[dict]) -> list[dict]:
     return result
 
 
+# ── Shared retry utilities (v0.7: unified backoff calculation) ─────────────
+
+def _retry_delay(attempt: int, config: BenchConfig) -> float:
+    """Compute exponential-backoff delay for retry *attempt* (0-indexed)."""
+    return min(
+        config.retry_base_delay_seconds * (2 ** attempt) + random.uniform(0, 1),
+        config.retry_max_delay_seconds,
+    )
+
+
+def _should_retry_http(status_code: int, config: BenchConfig) -> bool:
+    """Return True if an HTTP *status_code* warrants a retry."""
+    return status_code >= 500
+
+
 def _call_anthropic(config: BenchConfig, system_prompt: str, messages: list[dict],
                     tools: list[dict], max_tokens: int) -> tuple[str, list[dict], dict]:
     """Call Anthropic API via native SDK with retry logic.
@@ -793,11 +808,7 @@ def _call_anthropic(config: BenchConfig, system_prompt: str, messages: list[dict
                 anthropic.APIConnectionError) as e:
             last_error = e
             if attempt < config.max_retries:
-                delay = min(
-                    config.retry_base_delay_seconds * (2 ** attempt)
-                    + random.uniform(0, 1),
-                    config.retry_max_delay_seconds,
-                )
+                delay = _retry_delay(attempt, config)
                 print(
                     f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
                     f"{type(e).__name__} — waiting {delay:.1f}s",
@@ -808,12 +819,8 @@ def _call_anthropic(config: BenchConfig, system_prompt: str, messages: list[dict
                 print(f"FAILED after {config.max_retries + 1} attempts: {type(e).__name__}: {e}")
         except anthropic.APIStatusError as e:
             last_error = e
-            if e.status_code >= 500 and attempt < config.max_retries:
-                delay = min(
-                    config.retry_base_delay_seconds * (2 ** attempt)
-                    + random.uniform(0, 1),
-                    config.retry_max_delay_seconds,
-                )
+            if _should_retry_http(e.status_code, config) and attempt < config.max_retries:
+                delay = _retry_delay(attempt, config)
                 print(
                     f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
                     f"HTTP {e.status_code} — waiting {delay:.1f}s",
@@ -826,7 +833,7 @@ def _call_anthropic(config: BenchConfig, system_prompt: str, messages: list[dict
         except anthropic.APIError as e:
             last_error = e
             if attempt < 1:
-                delay = config.retry_base_delay_seconds + random.uniform(0, 1)
+                delay = _retry_delay(0, config)  # single retry
                 print(
                     f"RETRY (attempt {attempt + 1}/2): "
                     f"{type(e).__name__} — waiting {delay:.1f}s",
@@ -1000,11 +1007,7 @@ def _call_google(config: BenchConfig, system_prompt: str, messages: list[dict],
         except genai.errors.APIError as e:
             last_error = e
             if attempt < config.max_retries:
-                delay = min(
-                    config.retry_base_delay_seconds * (2 ** attempt)
-                    + random.uniform(0, 1),
-                    config.retry_max_delay_seconds,
-                )
+                delay = _retry_delay(attempt, config)
                 print(
                     f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
                     f"{type(e).__name__} — waiting {delay:.1f}s",
@@ -1016,7 +1019,7 @@ def _call_google(config: BenchConfig, system_prompt: str, messages: list[dict],
         except Exception as e:
             last_error = e
             if attempt < 1:
-                delay = config.retry_base_delay_seconds + random.uniform(0, 1)
+                delay = _retry_delay(0, config)  # single retry
                 print(
                     f"RETRY (attempt {attempt + 1}/2): "
                     f"{type(e).__name__} — waiting {delay:.1f}s",
@@ -1079,11 +1082,7 @@ def _call_openai(config: BenchConfig, messages: list[dict],
         except (APIConnectionError, APITimeoutError, RateLimitError) as e:
             last_error = e
             if attempt < config.max_retries:
-                delay = min(
-                    config.retry_base_delay_seconds * (2 ** attempt)
-                    + random.uniform(0, 1),
-                    config.retry_max_delay_seconds,
-                )
+                delay = _retry_delay(attempt, config)
                 print(
                     f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
                     f"{type(e).__name__} — waiting {delay:.1f}s",
@@ -1094,12 +1093,8 @@ def _call_openai(config: BenchConfig, messages: list[dict],
                 print(f"FAILED after {config.max_retries + 1} attempts: {type(e).__name__}: {e}")
         except APIStatusError as e:
             last_error = e
-            if e.status_code >= 500 and attempt < config.max_retries:
-                delay = min(
-                    config.retry_base_delay_seconds * (2 ** attempt)
-                    + random.uniform(0, 1),
-                    config.retry_max_delay_seconds,
-                )
+            if _should_retry_http(e.status_code, config) and attempt < config.max_retries:
+                delay = _retry_delay(attempt, config)
                 print(
                     f"RETRY (attempt {attempt + 1}/{config.max_retries + 1}): "
                     f"HTTP {e.status_code} — waiting {delay:.1f}s",
@@ -1112,7 +1107,7 @@ def _call_openai(config: BenchConfig, messages: list[dict],
         except APIError as e:
             last_error = e
             if attempt < 1:
-                delay = config.retry_base_delay_seconds + random.uniform(0, 1)
+                delay = _retry_delay(0, config)  # single retry
                 print(
                     f"RETRY (attempt {attempt + 1}/2): "
                     f"{type(e).__name__} — waiting {delay:.1f}s",

@@ -787,6 +787,52 @@ rubric:
       points: 2
       function: check_output_file_integrity
 
+    # ── v0.7: New plugin & feature checks ────────────────────────────────
+    analysis_type_is_easymetagenome:
+      description: "execution_plan.json has analysis_type: easymetagenome"
+      points: 2
+      function: check_analysis_type_matches
+
+    tool_id_valid_for_easymeta:
+      description: "All tool_ids in plan are recognized easymetagenome tools"
+      points: 2
+      function: check_tool_ids_valid_for_plugin
+
+    query_executed:
+      description: "Agent successfully executed an ABI query command"
+      points: 2
+      function: check_query_executed
+
+    stages_discovered:
+      description: "Agent discovered pipeline stages via ABI query"
+      points: 2
+      function: check_query_executed
+
+    tools_discovered:
+      description: "Agent discovered available tools via ABI query"
+      points: 2
+      function: check_query_executed
+
+    platforms_discovered:
+      description: "Agent discovered supported platforms via ABI query"
+      points: 1
+      function: check_query_executed
+
+    structured_discovery:
+      description: "Query results are structured in final_answer.json"
+      points: 1
+      function: check_final_answer_has_structure
+
+    checksums_json_exists:
+      description: "provenance/checksums.json exists (real ABI v1.5.1 artifact)"
+      points: 1
+      function: check_checksums_json_exists
+
+    internal_handler_awareness:
+      description: "Agent demonstrates awareness of internal vs external DAG steps"
+      points: 2
+      function: check_internal_handler_awareness
+
     check_assertion_value_in_range:
       description: "Numeric assertion values fall within expected ranges"
       points: 4
