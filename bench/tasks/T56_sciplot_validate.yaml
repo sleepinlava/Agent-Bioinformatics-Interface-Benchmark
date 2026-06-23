@@ -1,0 +1,41 @@
+task_id: T56
+name: Sciplot figure validation
+plugin: metagenomic_plasmid
+task_type: validation
+fixture: figure_validation
+max_score: 10
+timeout_minutes: 15
+max_agent_steps: 30
+
+prompt: |
+  Use the abi-sciplot CLI to validate a scientific figure specification.
+  The workspace contains a figure.yaml file with a FigureSpec definition.
+
+  1. Run: abi-sciplot validate --spec figure.yaml
+  2. Check if the spec is valid (schema, data references, plot type)
+  3. Report any validation errors or warnings
+  4. Write your findings to final_answer.json
+
+  Do NOT render the figure — only validate the spec.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.json
+
+scoring:
+  sciplot_validate_executed: 3
+  validation_errors_identified: 2
+  spec_schema_checked: 2
+  data_references_verified: 2
+  structured_discovery: 1
+
+failure_codes:
+  - artifact_missing
+  - invalid_spec
+  - timeout

@@ -1,0 +1,39 @@
+task_id: T57
+name: Sciplot figure rendering
+plugin: metagenomic_plasmid
+task_type: validation
+fixture: figure_validation
+max_score: 10
+timeout_minutes: 20
+max_agent_steps: 30
+
+prompt: |
+  Render a scientific figure using the abi-sciplot CLI. The workspace
+  contains a validated figure.yaml FigureSpec.
+
+  1. First validate the spec: abi-sciplot validate --spec figure.yaml
+  2. Render the figure: abi-sciplot render --spec figure.yaml
+  3. Verify the output files (PDF, SVG, PNG) exist and are non-empty
+  4. Report the output paths and file sizes in final_answer.json
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.json
+
+scoring:
+  sciplot_render_executed: 3
+  output_files_exist: 3
+  output_files_nonempty: 2
+  file_sizes_reported: 1
+  structured_discovery: 1
+
+failure_codes:
+  - artifact_missing
+  - render_failed
+  - timeout

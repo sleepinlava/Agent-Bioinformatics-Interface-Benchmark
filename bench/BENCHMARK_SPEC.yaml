@@ -426,6 +426,111 @@ multi_agent_tasks:
 
 # Note: T22, T23, T24 are not in full_v0_6 — they remain in extended sets
 
+# ═══════════════════════════════════════════════════════════════════════
+# v0.7 Task Architecture (2026-06-23)
+#
+# Adds 11 new tasks spanning 5 new modules:
+#   New Plugins       → T48-T50 (easymetagenome, viral_viwrap)
+#   ABI Query         → T51-T52 (metadata discovery, cross-plugin)
+#   Resource Mgmt     → T53-T54 (check-resources, setup-resources)
+#   Doctor Agent      → T55 (operating guide interpretation)
+#   Sciplot CLI       → T56-T57 (figure validate, render)
+#   Internal Handlers → T58 (internal vs external step awareness)
+# ═══════════════════════════════════════════════════════════════════════
+
+full_v0_7_tasks:
+  - T01
+  - T02
+  - T03
+  - T04
+  - T05
+  - T06
+  - T07
+  - T08
+  - T09
+  - T10
+  - T11
+  - T12
+  - T13
+  - T14
+  - T15
+  - T16
+  - T17
+  - T18
+  - T19
+  - T25
+  - T26
+  - T27
+  - T28
+  - T29
+  - T30
+  - T31
+  - T32
+  - T33
+  - T34
+  - T35
+  - T36
+  - T37
+  - T38
+  - T39
+  - T40
+  - T41
+  - T42
+  - T43
+  - T44
+  - T45
+  - T46
+  - T47
+  # ── v0.7: new plugin + feature tasks ──
+  - T48
+  - T49
+  - T50
+  - T51
+  - T52
+  - T53
+  - T54
+  - T55
+  - T56
+  - T57
+  - T58
+
+v0_7_new_tasks:
+  - T48
+  - T49
+  - T50
+  - T51
+  - T52
+  - T53
+  - T54
+  - T55
+  - T56
+  - T57
+  - T58
+
+new_plugin_tasks:
+  - T48
+  - T49
+  - T50
+
+query_tasks:
+  - T51
+  - T52
+
+resource_tasks:
+  - T53
+  - T54
+
+sciplot_tasks:
+  - T56
+  - T57
+
+extended_v0_7_tasks:
+  - T20
+  - T21
+  - T22
+  - T23
+  - T24
+
 ablation_tasks:
   - T03
   - T04

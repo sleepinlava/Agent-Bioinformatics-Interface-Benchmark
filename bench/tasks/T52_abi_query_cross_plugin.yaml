@@ -1,0 +1,45 @@
+task_id: T52
+name: ABI query — cross-plugin metadata discovery
+plugin: all
+task_type: discovery
+fixture: plasmid_valid
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 30
+
+prompt: |
+  Use ABI query to discover and compare metadata across multiple analysis
+  types. Query for: stages and tools for metagenomic_plasmid, rnaseq_expression,
+  and amplicon_16s. Demonstrate that the same ABI lifecycle (query → plan →
+  dry-run) works identically across different plugins.
+
+  Write your cross-plugin comparison to final_answer.json with the schema:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "discovery",
+    "plugins_compared": [...],
+    "common_lifecycle_stages": [...],
+    "per_plugin_tools": {...}
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.json
+
+scoring:
+  query_executed: 2
+  multiple_plugins_queried: 2
+  lifecycle_stages_identified: 2
+  cross_plugin_comparison: 1
+  structured_discovery: 1
+
+failure_codes:
+  - artifact_missing
+  - query_not_executed
+  - timeout

@@ -56,6 +56,21 @@ V0_6_NEW_TASKS = [
     "T36", "T37", "T38", "T39", "T40", "T41",
     "T42", "T43", "T44", "T45", "T46", "T47",
 ]
+# v0.7: +11 tasks — new plugins (T48-T50), query (T51-T52),
+# resources (T53-T54), doctor-agent (T55), sciplot (T56-T57),
+# internal handlers (T58)
+FULL_V0_7_TASKS = FULL_V0_6_TASKS + [
+    "T48", "T49", "T50", "T51", "T52",
+    "T53", "T54", "T55", "T56", "T57", "T58",
+]
+EXTENDED_V0_7_TASKS = EXTENDED_V0_6_TASKS + [
+    "T48", "T49", "T50", "T51", "T52",
+    "T53", "T54", "T55", "T56", "T57", "T58",
+]
+V0_7_NEW_TASKS = [
+    "T48", "T49", "T50", "T51", "T52",
+    "T53", "T54", "T55", "T56", "T57", "T58",
+]
 ABLATION_TASKS = ["T03", "T04", "T05", "T06", "T07", "T08"]
 
 _print_lock = threading.Lock()
@@ -97,6 +112,12 @@ def resolve_tasks(task_spec: str) -> list[str]:
         return EXTENDED_V0_6_TASKS
     elif task_spec == "v0_6_new":
         return V0_6_NEW_TASKS
+    elif task_spec == "full_v0_7":
+        return FULL_V0_7_TASKS
+    elif task_spec == "extended_v0_7":
+        return EXTENDED_V0_7_TASKS
+    elif task_spec == "v0_7_new":
+        return V0_7_NEW_TASKS
     elif task_spec == "ablation":
         return ABLATION_TASKS
     else:

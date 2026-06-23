@@ -99,7 +99,7 @@ python bench/scoring/claim_preflight.py --results bench/results --experiment-set
 python bench/scoring/compute_statistics.py --results bench/results --experiment-set main --fixture-set public --output bench/results/statistics.json
 ```
 
-**Task specs**: `mvp` (8 tasks), `full` (18 tasks), `full_v0_3` (19), `extended_v0_3` (24), `full_v0_4` (29), `extended_v0_4` (30), `full_v0_5` (34), `extended_v0_5` (35), `full_v0_6` (47), `extended_v0_6` (52), `ablation` (6 tasks), or comma-separated IDs.
+**Task specs**: `mvp` (8 tasks), `full` (18 tasks), `full_v0_3` (19), `extended_v0_3` (24), `full_v0_4` (29), `extended_v0_4` (30), `full_v0_5` (34), `extended_v0_5` (35), `full_v0_6` (47), `extended_v0_6` (52), `full_v0_7` (58), `extended_v0_7` (63), `ablation` (6 tasks), or comma-separated IDs.
 
 **Linting**: `ruff check bench/` (config in `pyproject.toml`; excludes `workspaces/`, `traces/`, `results/`)
 

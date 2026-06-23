@@ -1,0 +1,43 @@
+task_id: T55
+name: ABI doctor-agent — interpret operating guide
+plugin: metagenomic_plasmid
+task_type: discovery
+fixture: plasmid_valid
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 30
+
+prompt: |
+  Use the ABI doctor-agent command to retrieve the safe operating guide
+  for the metagenomic_plasmid analysis type. Read and interpret the guide,
+  then demonstrate your understanding by answering these questions in
+  final_answer.json:
+
+  1. What lifecycle stages does this plugin support?
+  2. What tools are available and which environments do they require?
+  3. What resources/databases are needed before running?
+  4. What are the key safety considerations?
+
+  Write your answers to final_answer.json.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.json
+
+scoring:
+  doctor_agent_executed: 2
+  lifecycle_understood: 2
+  tools_environments_identified: 2
+  safety_considerations: 1
+  structured_discovery: 1
+
+failure_codes:
+  - artifact_missing
+  - query_not_executed
+  - timeout

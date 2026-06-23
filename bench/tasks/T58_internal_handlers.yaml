@@ -1,0 +1,43 @@
+task_id: T58
+name: Internal handler awareness
+plugin: easymetagenome
+task_type: planning
+fixture: easymeta_valid
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 30
+
+prompt: |
+  Examine the easymetagenome analysis type and identify which workflow
+  steps use external bioinformatics tools (fastp, kneaddata, kraken2, bracken)
+  and which steps use internal handlers (Python functions that run within
+  the ABI process without spawning external processes).
+
+  Internal handlers typically handle operations like: table joining,
+  filtering, validation, report aggregation, manifest checking.
+
+  Use ABI query or doctor-agent to discover this information. Write your
+  analysis to final_answer.json identifying which steps are external tools
+  vs internal handlers.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.json
+
+scoring:
+  internal_handler_awareness: 2
+  external_tools_identified: 2
+  internal_steps_identified: 2
+  distinction_explained: 1
+  structured_discovery: 1
+
+failure_codes:
+  - artifact_missing
+  - diagnosis_incomplete
+  - timeout
