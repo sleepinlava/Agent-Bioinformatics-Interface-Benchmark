@@ -1882,6 +1882,131 @@ def _get_max_points(task: dict, check_name: str, default: int) -> int:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# v0.7: New check functions for expanded task modules
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def check_analysis_type_matches(
+    run_dir: Path, task: dict, *, check_name: str = "analysis_type_matches"
+) -> CheckResult:
+    """Check that execution_plan.json analysis_type field matches the expected value."""
+    expected = task.get("plugin", "")
+    if not expected:
+        return CheckResult(False, score_on_pass=0, details="No plugin specified in task")
+    plan_path = run_dir / "execution_plan.json"
+    if not plan_path.exists():
+        return CheckResult(False, score_on_pass=0, details="execution_plan.json not found")
+    try:
+        plan = json.loads(plan_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return CheckResult(False, score_on_pass=0, details="Failed to parse execution_plan.json")
+    actual = str(plan.get("analysis_type", ""))
+    matches = actual == expected
+    return CheckResult(
+        matches,
+        score_on_pass=_get_max_points(task, check_name, 2),
+        details=f"Expected '{expected}', got '{actual}'",
+    )
+
+
+def check_tool_ids_valid_for_plugin(
+    run_dir: Path, task: dict, *, check_name: str = "tool_ids_valid"
+) -> CheckResult:
+    """Check that all tool_ids in the execution plan are recognized for the plugin."""
+    allowed_tools = {
+        "easymetagenome": {"fastp", "kneaddata", "kraken2", "bracken"},
+        "viral_viwrap": {"viwrap", "viwrap_check", "viwrap_validate", "viwrap_parse", "viwrap_collect"},
+        "rnaseq_expression": {"fastp", "star", "featurecounts", "deseq2", "build_count_matrix"},
+        "amplicon_16s": {"cutadapt", "vsearch_mergepairs", "vsearch_derep", "vsearch_denoise",
+                         "vsearch_taxonomy", "mafft", "fasttree", "diversity_metrics"},
+        "wgs_bacteria": {"fastp", "spades", "prokka", "mlst", "amrfinderplus"},
+        "metatranscriptomics": {"fastp", "star", "hisat2", "samtools", "featurecounts"},
+        "metagenomic_plasmid": {"prodigal", "hmmer", "genomad", "blast", "plasflow"},
+    }
+    expected_plugin = task.get("plugin", "")
+    expected = allowed_tools.get(expected_plugin, set())
+    if not expected:
+        return CheckResult(True, score_on_pass=_get_max_points(task, check_name, 1),
+                           details=f"No tool whitelist for plugin '{expected_plugin}'")
+    plan_path = run_dir / "execution_plan.json"
+    if not plan_path.exists():
+        return CheckResult(False, score_on_pass=0, details="execution_plan.json not found")
+    try:
+        plan = json.loads(plan_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return CheckResult(False, score_on_pass=0, details="Failed to parse execution_plan.json")
+    tool_ids = {str(s.get("tool_id", "")).lower() for s in plan.get("steps", [])}
+    invalid = tool_ids - {t.lower() for t in expected}
+    valid = len(invalid) == 0
+    return CheckResult(
+        valid,
+        score_on_pass=_get_max_points(task, check_name, 2),
+        details=f"Invalid tool IDs: {invalid}" if invalid else "All tool IDs recognized",
+    )
+
+
+def check_query_executed(
+    run_dir: Path, task: dict, *, check_name: str = "query_executed"
+) -> CheckResult:
+    """Check that an ABI query tool call was made (from agent trace)."""
+    # Look for query-related content in final answer or agent logs
+    fa_path = run_dir / "final_answer.json"
+    trace_dir = Path(str(run_dir).replace("/results/", "/traces/"))
+    # Check final answer for query results
+    if fa_path.exists():
+        try:
+            fa = json.loads(fa_path.read_text())
+            has_stages = bool(fa.get("stages_found"))
+            has_tools = bool(fa.get("tools_discovered"))
+            score = (1 if has_stages else 0) + (1 if has_tools else 0)
+            return CheckResult(
+                score > 0,
+                score_on_pass=_get_max_points(task, check_name, 2),
+                details=f"Query evidence: stages={has_stages}, tools={has_tools}",
+            )
+        except (json.JSONDecodeError, OSError):
+            pass
+    return CheckResult(False, score_on_pass=0, details="No query results found in final_answer.json")
+
+
+def check_checksums_json_exists(
+    run_dir: Path, task: dict, *, check_name: str = "checksums_json_exists"
+) -> CheckResult:
+    """Check that provenance/checksums.json exists (real ABI v1.5.1 artifact)."""
+    path = run_dir / "provenance" / "checksums.json"
+    return CheckResult(
+        path.exists() and path.stat().st_size > 0,
+        score_on_pass=_get_max_points(task, check_name, 1),
+        details=f"checksums.json {'found' if path.exists() else 'missing'}",
+    )
+
+
+def check_internal_handler_awareness(
+    run_dir: Path, task: dict, *, check_name: str = "internal_handler_awareness"
+) -> CheckResult:
+    """Check that the agent's final answer acknowledges internal vs external steps."""
+    fa_path = run_dir / "final_answer.json"
+    if not fa_path.exists():
+        return CheckResult(False, score_on_pass=0, details="final_answer.json not found")
+    try:
+        fa = json.loads(fa_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return CheckResult(False, score_on_pass=0, details="Failed to parse final_answer.json")
+    text = json.dumps(fa).lower()
+    mentions_internal = "internal" in text
+    mentions_external = "external" in text
+    score_frac = 0.5 if mentions_internal else 0.0
+    if mentions_external:
+        score_frac += 0.5
+    return CheckResult(
+        score_frac >= 0.5,
+        score_on_pass=int(_get_max_points(task, check_name, 2) * score_frac)
+        if score_frac > 0 else 0,
+        details=f"Internal aware: {mentions_internal}, External aware: {mentions_external}",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Function registry — MUST be at end of file, after all function defs
 # ═══════════════════════════════════════════════════════════════════════
 

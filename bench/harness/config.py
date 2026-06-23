@@ -50,6 +50,9 @@ ENV_PROVIDER = "ABI_BENCH_PROVIDER"
 ENV_REASONING = "ABI_BENCH_REASONING"
 ENV_THINKING_BUDGET = "ABI_BENCH_THINKING_BUDGET"
 ENV_REASONING_EFFORT = "ABI_BENCH_REASONING_EFFORT"
+ENV_USE_REAL_ABI = "ABI_BENCH_USE_REAL_ABI"
+ENV_ABI_BIN = "ABI_BENCH_ABI_BIN"
+ENV_USE_MCP = "ABI_BENCH_USE_MCP"
 
 
 @dataclass
@@ -70,6 +73,11 @@ class BenchConfig:
     reasoning: bool = False
     thinking_budget: int = 0
     reasoning_effort: str = ""
+
+    # ABI integration (v0.7)
+    use_real_abi: bool = False
+    abi_bin: str = ""
+    use_mcp: bool = False
 
     @property
     def is_anthropic(self) -> bool:
@@ -165,6 +173,10 @@ def load_bench_config(dotenv_path: str | Path | None = None) -> BenchConfig:
         reasoning=_get(ENV_REASONING, "").lower() == "true",
         thinking_budget=int(_get(ENV_THINKING_BUDGET, "0") or "0"),
         reasoning_effort=_get(ENV_REASONING_EFFORT, ""),
+        # v0.7: ABI integration
+        use_real_abi=_get(ENV_USE_REAL_ABI, "").lower() in ("true", "1", "yes"),
+        abi_bin=_get(ENV_ABI_BIN, ""),
+        use_mcp=_get(ENV_USE_MCP, "").lower() in ("true", "1", "yes"),
     )
 
 

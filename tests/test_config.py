@@ -76,7 +76,7 @@ class TestLoadBenchConfig:
         assert config.api_base == "https://api.deepseek.com"
         assert config.model == "deepseek-v4-pro"
         assert config.max_tokens == 8000
-        assert config.temperature == 0.0
+        assert config.temperature == 0.3
         assert config.max_retries == 3
         assert config.reasoning is False
 

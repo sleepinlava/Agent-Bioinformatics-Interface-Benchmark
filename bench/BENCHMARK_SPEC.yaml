@@ -1,6 +1,6 @@
 benchmark:
   name: ABI-Bench
-  version: "0.6"
+  version: "0.7"
   benchmark_type: agent_bioinformatics_interface
   primary_claim: >
     ABI is a structured control layer that improves LLM agent operability
@@ -63,17 +63,19 @@ model_tiers:
 # ═══════════════════════════════════════════════════════════════════════
 plugin_balance:
   note: >
-    metagenomic_plasmid dominates ~55% of tasks. Cross-plugin claims are
-    supported by tasks across all 5 plugins, but per-plugin task counts are
+    metagenomic_plasmid dominates ~49% of tasks. Cross-plugin claims are
+    supported by tasks across all 7 plugins, but per-plugin task counts are
     asymmetric.  Per-plugin score breakdowns are reported in summary.json
     for transparency.
   distribution:
-    metagenomic_plasmid: 23   # ~49% of tasks
-    rnaseq_expression: 7      # ~15%
-    wgs_bacteria: 6           # ~13%
-    amplicon_16s: 5           # ~11%
-    metatranscriptomics: 4    # ~9%
-    shared_cross_plugin: 2    # ~4% (T01, T30 — plugin-agnostic)
+    metagenomic_plasmid: 23   # ~40% of tasks
+    rnaseq_expression: 7      # ~12%
+    wgs_bacteria: 6           # ~10%
+    amplicon_16s: 5           # ~9%
+    metatranscriptomics: 4    # ~7%
+    easymetagenome: 5         # ~9% (v0.7: T48-T49 plan/dry-run + T51-T52 query + T53-T54 resources)
+    viral_viwrap: 4           # ~7% (v0.7: T50 plan + T51-T52 query + T53-T54 resources)
+    shared_cross_plugin: 4    # ~7% (T01, T30, T58, plus query/resource cross-plugin tasks)
 
 # ═══════════════════════════════════════════════════════════════════════
 # Hidden Fixture Coverage (Fix 15)
@@ -91,6 +93,8 @@ hidden_fixtures:
     - amplicon_16s
     - rnaseq_expression
     - wgs_bacteria
+    - easymetagenome
+    - viral_viwrap
 
 plugins:
   - metagenomic_plasmid
@@ -98,6 +102,8 @@ plugins:
   - amplicon_16s
   - rnaseq_expression
   - wgs_bacteria
+  - easymetagenome
+  - viral_viwrap
 
 main_groups:
   - G1
@@ -547,8 +553,8 @@ success_criteria:
   # v0.3: Cross-Plugin Portability Criteria
   # ═══════════════════════════════════════════════════════════════════════
   cross_plugin_criteria:
-    # All 5 plugins must have successful dry-run by G3 (v0.4: 3→5)
-    min_plugins_dryrun_success: 5
+    # All 7 plugins must have successful dry-run by G3 (v0.7: 5→7)
+    min_plugins_dryrun_success: 7
     # Per-plugin plan score must be ≥ 70% of max
     min_plugin_plan_score_ratio: 0.70
 

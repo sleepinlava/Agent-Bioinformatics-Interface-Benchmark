@@ -1,0 +1,37 @@
+analysis:
+  type: easymetagenome
+  preset: p0_taxonomy
+
+workflow:
+  steps:
+    - id: qc_fastp
+      tool: fastp
+    - id: host_removal
+      tool: kneaddata
+    - id: taxonomy
+      tool: kraken2
+    - id: abundance
+      tool: bracken
+
+tools:
+  fastp:
+    executable: fastp
+    env: easymeta-p0
+  kneaddata:
+    executable: kneaddata
+    env: easymeta-p0
+  kraken2:
+    executable: kraken2
+    env: easymeta-p0
+  bracken:
+    executable: bracken
+    env: easymeta-p0
+
+resources:
+  host_db: resources/host_db
+  kraken2_db: resources/kraken2_db
+
+samples:
+  - sample_id: SAMPLE_001
+    read1: data/read1.fastq.gz
+    read2: data/read2.fastq.gz

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "abi-bench"
-version = "0.4.0"
+version = "0.7.0"
 description = "Agent-Bioinformatics Interface Benchmark — evaluates structured ABI control layer for LLM agent bioinformatics workflow operation"
 readme = "README.md"
 license = "MIT"
@@ -47,7 +47,7 @@ dev = [
 
 [tool.ruff]
 target-version = "py310"
-line-length = 100
+line-length = 125
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]

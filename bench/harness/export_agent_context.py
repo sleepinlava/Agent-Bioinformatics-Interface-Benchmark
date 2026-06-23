@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -201,6 +202,11 @@ def build_output_formats(task: dict) -> dict:
     }
 
 
+def _env_flag(name: str) -> bool:
+    """Return True if environment variable *name* is set to a truthy value."""
+    return os.environ.get(name, "").strip().lower() in ("true", "1", "yes")
+
+
 def build_abi_interface(group_id: str, profile: dict, task_id: str, experiment_set: str, replicate: int = 1) -> dict:
     """Expose callable ABI lifecycle commands only to ABI-enabled groups."""
     allowed_tools = profile.get("allowed_tools", [])
@@ -219,20 +225,99 @@ def build_abi_interface(group_id: str, profile: dict, task_id: str, experiment_s
     cli_rel = str(PROJECT_ROOT / "bench" / "harness" / "abi_cli.py")
     workspace_token = "{workspace}"
     analysis_token = "{analysis_type}"
-    base = f"python {cli_rel}"
-    metadata_args = f"--task-id {task_id} --experiment-set {experiment_set} --replicate {replicate}"
+
+    # ── Check if real ABI is available ───────────────────────────────
+    use_real = _env_flag("ABI_BENCH_USE_REAL_ABI")
+    if use_real:
+        from bench.harness.abi_bridge import abi_is_available, _find_abi_bin
+        real_abi = _find_abi_bin()
+        if real_abi:
+            base = real_abi
+            cli_rel = real_abi
+        else:
+            use_real = False  # Fall back to simulated
+
+    if not use_real:
+        base = f"python {cli_rel}"
+        metadata_args = f"--task-id {task_id} --experiment-set {experiment_set} --replicate {replicate}"
+    else:
+        metadata_args = ""
+
+    list_cmd = (
+        f"{base} list-types --output-json" if use_real
+        else f"python {cli_rel} list-types"
+    )
+    plan_cmd_sim = (
+        f"python {cli_rel} plan --workspace {workspace_token} "
+        f"--group {group_id} --analysis-type {analysis_token} {metadata_args}"
+    )
+    dryrun_cmd_sim = (
+        f"python {cli_rel} dry-run --workspace {workspace_token} "
+        f"--group {group_id} --analysis-type {analysis_token} {metadata_args}"
+    )
+    report_cmd_sim = (
+        f"python {cli_rel} report --workspace {workspace_token} "
+        f"--group {group_id} --analysis-type {analysis_token} {metadata_args}"
+    )
+    run_cmd_sim = (
+        f"python {cli_rel} run --workspace {workspace_token} "
+        f"--group {group_id} --analysis-type {analysis_token} {metadata_args}"
+    )
+
+    commands: dict = {
+        "list_types": list_cmd,
+        "plan": (
+            f"{base} plan --type {analysis_token} --output-json"
+            if use_real else plan_cmd_sim
+        ),
+        "dry_run": (
+            f"{base} dry-run --type {analysis_token} --outdir {workspace_token} --output-json"
+            if use_real else dryrun_cmd_sim
+        ),
+        "inspect": (
+            f"{base} inspect --result-dir {workspace_token} --output-json"
+            if use_real
+            else f"python {cli_rel} inspect --workspace {workspace_token} --group {group_id} {metadata_args}"
+        ),
+        "report": (
+            f"{base} report --result-dir {workspace_token} --type {analysis_token} --output-json"
+            if use_real else report_cmd_sim
+        ),
+        "run": (
+            f"{base} run --type {analysis_token} --engine local --output-json"
+            if use_real else run_cmd_sim
+        ),
+    }
+
+    # ── v0.7: Additional read-only tools available with real ABI ────
+    if use_real:
+        commands.update({
+            "query": f"{base} query --type {analysis_token} --what {{what}} --output-json",
+            "doctor_agent": f"{base} doctor-agent --type {analysis_token} --output-json",
+            "check_resources": (
+                f"{base} check-resources --type {analysis_token} --output-json"
+            ),
+            "setup_resources": (
+                f"{base} setup-resources --type {analysis_token} --dry-run --output-json"
+            ),
+            "export_nextflow": (
+                f"{base} export-nextflow --type {analysis_token} "
+                f"--output {workspace_token}/nextflow.nf --output-json"
+            ),
+            "export_tools": (
+                f"{base} export-tools --type {analysis_token} --format openai --output-json"
+            ),
+            "validate_result": (
+                f"{base} validate-result --result-dir {workspace_token} --output-json"
+            ),
+            "contract_lint": f"{base} contract-lint --type {analysis_token} --output-json",
+        })
+
     return {
         "available": True,
         "cli": cli_rel,
-        "commands": {
-            "list_types": f"python {cli_rel} list-types",
-            "plan": f"{base} plan --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token} {metadata_args}",
-            "dry_run": f"{base} dry-run --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token} {metadata_args}",
-            "inspect": f"{base} inspect --workspace {workspace_token} --group {group_id} {metadata_args}",
-            "diagnose": f"{base} diagnose --workspace {workspace_token} --group {group_id} {metadata_args}",
-            "report": f"{base} report --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token} {metadata_args}",
-            "run": f"{base} run --workspace {workspace_token} --group {group_id} --analysis-type {analysis_token} {metadata_args}",
-        },
+        "use_real_abi": use_real,
+        "commands": commands,
         "rules": [
             "Use dry-run for benchmark execution tasks.",
             "Do not execute real bioinformatics tools directly.",

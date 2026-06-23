@@ -1,0 +1,42 @@
+task_id: T48
+name: Plan easymetagenome analysis
+plugin: easymetagenome
+task_type: planning
+fixture: easymeta_valid
+max_score: 10
+timeout_minutes: 20
+max_agent_steps: 50
+
+prompt: |
+  Create an execution plan for a shotgun metagenomics analysis using the
+  easymetagenome plugin. Your plan should include the standard P0 taxonomy
+  workflow steps (fastp QC, KneadData host removal, Kraken2 taxonomy,
+  Bracken abundance). Write the execution plan to execution_plan.json.
+
+  Read config.yaml and any manifest files first. Use the ABI lifecycle
+  commands (list-types, plan) to construct a valid plan.
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - execution_plan.json
+
+scoring:
+  execution_plan_exists: 1
+  analysis_type_is_easymetagenome: 2
+  step_id_unique: 2
+  tool_id_valid_for_easymeta: 2
+  plan_not_executed: 1
+  contains_fastp: 1
+  contains_kraken2: 1
+
+failure_codes:
+  - artifact_missing
+  - invalid_plan_schema
+  - wrong_analysis_type
+  - real_execution_violation

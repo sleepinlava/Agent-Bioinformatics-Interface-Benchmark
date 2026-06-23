@@ -282,6 +282,14 @@ def _select_fixture(task_id: str, task_def: dict, fixture_set: str) -> tuple[str
         "T16": "amplicon_valid",
         "T17": "wgs_valid",
         "T18": "wgs_valid",
+        "T19": "plasmid_valid",
+        "T20": "plasmid_valid",
+        "T21": "transcriptomics_valid",
+        "T22": "plasmid_valid",
+        "T23": "plasmid_valid",
+        "T24": "plasmid_valid",
+        "T25": "rnaseq_valid",
+        "T26": "wgs_valid",
     }
     if fixture_set == "hidden":
         fixture_name = task_def.get("hidden_fixture")
@@ -607,11 +615,41 @@ def _write_simulated_artifacts(workspace_dir: Path, group_id: str, task_id: str)
         f.write("contig_001\t0.95\t4523\tplasmid\n")
         f.write("contig_002\t0.87\t3180\tplasmid\n")
 
-    if task_id in ("T10",):
+    # ── Plugin-specific tables ──────────────────────────────────────
+    if task_id in ("T10", "T11"):  # metatranscriptomics
         with open(tables / "gene_expression.tsv", "w") as f:
             f.write("gene_id\tgene_name\tcount_control\tcount_treatment\tlog2fc\tpvalue\n")
             f.write("GENE001\ttetA\t150\t45\t-1.74\t0.001\n")
             f.write("GENE002\tblaTEM\t220\t210\t-0.07\t0.850\n")
+        with open(tables / "quality_metrics.tsv", "w") as f:
+            f.write("sample_id\treads_total\treads_retained\n")
+
+    elif task_id in ("T13", "T14", "T25"):  # rnaseq_expression
+        with open(tables / "gene_expression.tsv", "w") as f:
+            f.write("gene_id\tgene_name\tcount_control\tcount_treatment\tlog2fc\tpvalue\tpadj\n")
+            f.write("GENE001\ttetA\t150\t45\t-1.74\t0.001\t0.04\n")
+        with open(tables / "differential_expression.tsv", "w") as f:
+            f.write("gene_id\tbaseMean\tlog2FoldChange\tlfcSE\tstat\tpvalue\tpadj\n")
+        with open(tables / "normalized_expression.tsv", "w") as f:
+            f.write("gene_id\tsample_id\tnormalized_count\n")
+
+    elif task_id in ("T15", "T16"):  # amplicon_16s
+        with open(tables / "asv_table.tsv", "w") as f:
+            f.write("asv_id\tsample_id\tcount\n")
+        with open(tables / "taxonomy.tsv", "w") as f:
+            f.write("asv_id\tkingdom\tphylum\tclass\torder\tfamily\tgenus\tspecies\n")
+        with open(tables / "alpha_diversity.tsv", "w") as f:
+            f.write("sample_id\tshannon\tsimpson\tchao1\tfaith_pd\n")
+
+    elif task_id in ("T17", "T18", "T26"):  # wgs_bacteria
+        with open(tables / "genome_assembly_stats.tsv", "w") as f:
+            f.write("sample_id\tcontigs\ttotal_length\tn50\tgc_content\tcoverage\n")
+        with open(tables / "genome_annotation.tsv", "w") as f:
+            f.write("sample_id\tcds\ttrna\trrna\ttmRNA\tcrispr\n")
+        with open(tables / "mlst.tsv", "w") as f:
+            f.write("sample_id\tscheme\tsequence_type\talleles\n")
+        with open(tables / "amr_genes.tsv", "w") as f:
+            f.write("sample_id\tgene_symbol\tsequence_id\tscope\tresistance_type\n")
 
     # report/
     rep = workspace_dir / "report"

@@ -25,7 +25,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 # summarize_workspace_data instead).
 
 
-ANALYSIS_TYPES = ["metagenomic_plasmid", "metatranscriptomics"]
+ANALYSIS_TYPES = [
+    "metagenomic_plasmid",
+    "metatranscriptomics",
+    "rnaseq_expression",
+    "amplicon_16s",
+    "wgs_bacteria",
+    "easymetagenome",
+    "viral_viwrap",
+]
 
 
 def load_config(workspace: Path) -> dict:
@@ -104,13 +112,68 @@ def build_plan(workspace: Path, analysis_type: str) -> dict:
 
 
 def default_workflow(analysis_type: str) -> list[dict]:
+    """Return the default workflow steps for a given analysis type."""
     if analysis_type == "metatranscriptomics":
         return [
-            {"id": "trim_reads", "tool": "fastp", "input": "read1,read2", "output": "trimmed_reads"},
-            {"id": "align_reads", "tool": "star", "input": "trimmed_reads", "output": "aligned.bam"},
-            {"id": "sort_bam", "tool": "samtools", "input": "aligned.bam", "output": "sorted.bam"},
-            {"id": "quantify_genes", "tool": "featureCounts", "input": "sorted.bam", "output": "gene_expression.tsv"},
+            {"id": "trim_reads", "tool": "fastp",
+             "input": "read1,read2", "output": "trimmed_reads"},
+            {"id": "align_reads", "tool": "star",
+             "input": "trimmed_reads", "output": "aligned.bam"},
+            {"id": "sort_bam", "tool": "samtools",
+             "input": "aligned.bam", "output": "sorted.bam"},
+            {"id": "quantify_genes", "tool": "featureCounts",
+             "input": "sorted.bam", "output": "gene_expression.tsv"},
         ]
+    if analysis_type == "rnaseq_expression":
+        return [
+            {"id": "qc_fastp", "tool": "fastp",
+             "input": "read1,read2", "output": "trimmed_reads"},
+            {"id": "align_star", "tool": "star",
+             "input": "trimmed_reads", "output": "aligned.bam"},
+            {"id": "quantify_genes", "tool": "featureCounts",
+             "input": "aligned.bam", "output": "gene_counts.tsv"},
+            {"id": "build_count_matrix", "tool": "build_count_matrix",
+             "input": "gene_counts.tsv", "output": "count_matrix.tsv"},
+            {"id": "differential_expression", "tool": "deseq2",
+             "input": "count_matrix.tsv",
+             "output": "differential_expression.tsv"},
+        ]
+    if analysis_type == "amplicon_16s":
+        return [
+            {"id": "trim_primers", "tool": "cutadapt", "input": "read1,read2", "output": "trimmed_reads"},
+            {"id": "merge_pairs", "tool": "vsearch_mergepairs", "input": "trimmed_reads", "output": "merged_reads"},
+            {"id": "dereplicate", "tool": "vsearch_derep", "input": "merged_reads", "output": "derep_reads"},
+            {"id": "denoise", "tool": "vsearch_denoise", "input": "derep_reads", "output": "asv_table.tsv"},
+            {"id": "classify_taxonomy", "tool": "vsearch_taxonomy", "input": "asv_table.tsv", "output": "taxonomy.tsv"},
+            {"id": "align_sequences", "tool": "mafft", "input": "asv_sequences.fasta", "output": "aligned.fasta"},
+            {"id": "build_tree", "tool": "fasttree", "input": "aligned.fasta", "output": "tree.nwk"},
+            {"id": "compute_diversity", "tool": "diversity_metrics",
+             "input": "asv_table.tsv", "output": "diversity.tsv"},
+        ]
+    if analysis_type == "wgs_bacteria":
+        return [
+            {"id": "qc_fastp", "tool": "fastp", "input": "read1,read2", "output": "trimmed_reads"},
+            {"id": "assemble", "tool": "spades", "input": "trimmed_reads", "output": "assembly.fasta"},
+            {"id": "annotate", "tool": "prokka", "input": "assembly.fasta", "output": "annotation.gff"},
+            {"id": "sequence_type", "tool": "mlst", "input": "assembly.fasta", "output": "mlst.tsv"},
+            {"id": "amr_genes", "tool": "amrfinderplus", "input": "assembly.fasta", "output": "amr_genes.tsv"},
+        ]
+    if analysis_type == "easymetagenome":
+        return [
+            {"id": "qc_fastp", "tool": "fastp", "input": "read1,read2", "output": "trimmed_reads"},
+            {"id": "host_removal", "tool": "kneaddata", "input": "trimmed_reads", "output": "clean_reads"},
+            {"id": "taxonomy", "tool": "kraken2", "input": "clean_reads", "output": "taxonomy_report.tsv"},
+            {"id": "abundance", "tool": "bracken", "input": "taxonomy_report.tsv", "output": "abundance.tsv"},
+        ]
+    if analysis_type == "viral_viwrap":
+        return [
+            {"id": "check_environment", "tool": "viwrap_check", "input": "config", "output": "env_report.json"},
+            {"id": "validate_inputs", "tool": "viwrap_validate", "input": "assembly", "output": "input_report.json"},
+            {"id": "run_viwrap", "tool": "viwrap", "input": "assembly", "output": "viwrap_results/"},
+            {"id": "parse_outputs", "tool": "viwrap_parse", "input": "viwrap_results/", "output": "virus_summary.tsv"},
+            {"id": "collect_artifacts", "tool": "viwrap_collect", "input": "viwrap_results/", "output": "artifacts/"},
+        ]
+    # Default: metagenomic_plasmid
     return [
         {"id": "predict_genes", "tool": "prodigal", "input": "assembly", "output": "genes.faa"},
         {"id": "annotate_domains", "tool": "hmmer", "input": "genes.faa", "output": "domain_annotations.tsv"},
@@ -122,11 +185,35 @@ def normalized_tool_id(tool_key: str, executable: str) -> str:
     executable_map = {
         "star": "STAR",
         "hisat2": "HISAT2",
+        "spades": "SPAdes",
+        "prokka": "Prokka",
+        "mlst": "MLST",
+        "amrfinderplus": "AMRFinderPlus",
+        "cutadapt": "cutadapt",
+        "vsearch_mergepairs": "vsearch",
+        "vsearch_derep": "vsearch",
+        "vsearch_denoise": "vsearch",
+        "vsearch_taxonomy": "vsearch",
+        "mafft": "MAFFT",
+        "fasttree": "FastTree",
+        "kneaddata": "KneadData",
+        "kraken2": "Kraken2",
+        "bracken": "Bracken",
+        "viwrap": "ViWrap",
+        "viwrap_check": "ViWrap",
+        "viwrap_validate": "ViWrap",
+        "viwrap_parse": "ViWrap",
+        "viwrap_collect": "ViWrap",
+        "deseq2": "DESeq2",
+        "build_count_matrix": "build_count_matrix",
+        "diversity_metrics": "diversity_metrics",
     }
     return executable_map.get(tool_key.lower(), tool_key if tool_key != "featurecounts" else "featureCounts")
 
 
 def dryrun_command(analysis_type: str, tool_key: str, executable: str, step: dict) -> str:
+    """Return a dry-run command template for a given tool in a plugin context."""
+    # ── metatranscriptomics ──────────────────────────────────────
     if analysis_type == "metatranscriptomics":
         templates = {
             "fastp": "fastp -i {read1} -I {read2} -o trimmed_R1.fastq.gz -O trimmed_R2.fastq.gz",
@@ -135,6 +222,78 @@ def dryrun_command(analysis_type: str, tool_key: str, executable: str, step: dic
             "samtools": "samtools sort aligned.bam -o sorted.bam",
             "featureCounts": "featureCounts -a {annotation_gtf} -o gene_expression.tsv sorted.bam",
         }
+    # ── rnaseq_expression ─────────────────────────────────────────
+    elif analysis_type == "rnaseq_expression":
+        templates = {
+            "fastp": "fastp -i {read1} -I {read2} -o trimmed_R1.fastq.gz -O trimmed_R2.fastq.gz",
+            "star": (
+                "STAR --genomeDir {genome_index} --readFilesIn trimmed_R1.fastq.gz "
+                "trimmed_R2.fastq.gz --outSAMtype BAM SortedByCoordinate"
+            ),
+            "featureCounts": "featureCounts -a {annotation_gtf} -o gene_counts.tsv -T {threads} aligned.bam",
+            "build_count_matrix": (
+                "python scripts/build_count_matrix.py --input gene_counts.tsv "
+                "--output count_matrix.tsv"
+            ),
+            "deseq2": (
+                "Rscript scripts/run_deseq2.R count_matrix.tsv "
+                "sample_sheet.tsv differential_expression.tsv"
+            ),
+        }
+    # ── amplicon_16s ──────────────────────────────────────────────
+    elif analysis_type == "amplicon_16s":
+        templates = {
+            "cutadapt": (
+                "cutadapt -a {forward_primer} -A {reverse_primer} "
+                "-o trimmed_R1.fastq.gz -p trimmed_R2.fastq.gz {read1} {read2}"
+            ),
+            "vsearch_mergepairs": (
+                "vsearch --fastq_mergepairs trimmed_R1.fastq.gz "
+                "--reverse trimmed_R2.fastq.gz --fastqout merged.fastq"
+            ),
+            "vsearch_derep": "vsearch --derep_fulllength merged.fastq --output derep.fasta --sizeout",
+            "vsearch_denoise": (
+                "vsearch --cluster_unoise derep.fasta "
+                "--centroids asv_sequences.fasta --otutabout asv_table.tsv"
+            ),
+            "vsearch_taxonomy": (
+                "vsearch --sintax asv_sequences.fasta --db {sintax_db} "
+                "--sintax_cutoff 0.8 --tabbedout taxonomy.tsv"
+            ),
+            "mafft": "mafft --auto asv_sequences.fasta > aligned.fasta",
+            "fasttree": "FastTree -nt -gtr < aligned.fasta > tree.nwk",
+            "diversity_metrics": (
+                "python scripts/amplicon_diversity.py "
+                "--asv_table asv_table.tsv --tree tree.nwk --output diversity.tsv"
+            ),
+        }
+    # ── wgs_bacteria ──────────────────────────────────────────────
+    elif analysis_type == "wgs_bacteria":
+        templates = {
+            "fastp": "fastp -i {read1} -I {read2} -o trimmed_R1.fastq.gz -O trimmed_R2.fastq.gz",
+            "spades": "spades.py --pe1-1 trimmed_R1.fastq.gz --pe1-2 trimmed_R2.fastq.gz -o spades_output",
+            "prokka": "prokka --outdir prokka_output --prefix sample assembly.fasta",
+            "mlst": "mlst --scheme auto assembly.fasta > mlst.tsv",
+            "amrfinderplus": "amrfinderplus -n assembly.fasta -o amr_genes.tsv",
+        }
+    # ── easymetagenome ────────────────────────────────────────────
+    elif analysis_type == "easymetagenome":
+        templates = {
+            "fastp": "fastp -i {read1} -I {read2} -o trimmed_R1.fastq.gz -O trimmed_R2.fastq.gz",
+            "kneaddata": "kneaddata -i trimmed_R1.fastq.gz -i trimmed_R2.fastq.gz -db {host_db} -o kneaddata_output",
+            "kraken2": "kraken2 --db {kraken2_db} --paired clean_R1.fastq.gz clean_R2.fastq.gz --report taxonomy_report.tsv",
+            "bracken": "bracken -d {kraken2_db} -i taxonomy_report.tsv -o abundance.tsv",
+        }
+    # ── viral_viwrap ──────────────────────────────────────────────
+    elif analysis_type == "viral_viwrap":
+        templates = {
+            "viwrap_check": "viwrap check --config config.yaml --output env_report.json",
+            "viwrap_validate": "viwrap validate --assembly {assembly} --output input_report.json",
+            "viwrap": "viwrap run --config config.yaml --assembly {assembly} --outdir viwrap_results/",
+            "viwrap_parse": "viwrap parse --results viwrap_results/ --output virus_summary.tsv",
+            "viwrap_collect": "viwrap collect --results viwrap_results/ --output artifacts/",
+        }
+    # ── metagenomic_plasmid (default) ─────────────────────────────
     else:
         templates = {
             "prodigal": "prodigal -i {assembly} -a genes.faa",
@@ -249,7 +408,59 @@ def write_tables(workspace: Path, analysis_type: str):
             "gene_id\tgene_name\tcount_control\tcount_treatment\tlog2fc\tpvalue\n"
         )
         (tables / "quality_metrics.tsv").write_text("sample_id\treads_total\treads_retained\n")
+    elif analysis_type == "rnaseq_expression":
+        (tables / "gene_expression.tsv").write_text(
+            "gene_id\tgene_name\tcount_control\tcount_treatment\tlog2fc\tpvalue\tpadj\n"
+        )
+        (tables / "differential_expression.tsv").write_text(
+            "gene_id\tbaseMean\tlog2FoldChange\tlfcSE\tstat\tpvalue\tpadj\n"
+        )
+        (tables / "normalized_expression.tsv").write_text(
+            "gene_id\tsample_id\tnormalized_count\n"
+        )
+    elif analysis_type == "amplicon_16s":
+        (tables / "asv_table.tsv").write_text("asv_id\tsample_id\tcount\n")
+        (tables / "taxonomy.tsv").write_text(
+            "asv_id\tkingdom\tphylum\tclass\torder\tfamily\tgenus\tspecies\n"
+        )
+        (tables / "alpha_diversity.tsv").write_text(
+            "sample_id\tshannon\tsimpson\tchao1\tfaith_pd\n"
+        )
+        (tables / "beta_diversity.tsv").write_text(
+            "sample_1\tsample_2\tbray_curtis\tjaccard\tunifrac\n"
+        )
+    elif analysis_type == "wgs_bacteria":
+        (tables / "genome_assembly_stats.tsv").write_text(
+            "sample_id\tcontigs\ttotal_length\tn50\tgc_content\tcoverage\n"
+        )
+        (tables / "genome_annotation.tsv").write_text(
+            "sample_id\tcds\ttrna\trrna\ttmRNA\tcrispr\n"
+        )
+        (tables / "mlst.tsv").write_text(
+            "sample_id\tscheme\tsequence_type\talleles\n"
+        )
+        (tables / "amr_genes.tsv").write_text(
+            "sample_id\tgene_symbol\tsequence_id\tscope\tresistance_type\n"
+        )
+    elif analysis_type == "easymetagenome":
+        (tables / "taxonomy_abundance.tsv").write_text(
+            "sample_id\ttax_id\tname\trank\treads\tfraction\n"
+        )
+        (tables / "qc_summary.tsv").write_text(
+            "sample_id\treads_raw\treads_clean\treads_host\treads_retained_pct\n"
+        )
+        (tables / "functional_abundance.tsv").write_text(
+            "sample_id\tpathway\tabundance\tcoverage\n"
+        )
+    elif analysis_type == "viral_viwrap":
+        (tables / "virus_summary.tsv").write_text(
+            "sample_id\tcontig_id\tlength\tcheckv_quality\tviral_genes\ttaxonomy\tpredicted_host\n"
+        )
+        (tables / "viral_abundance.tsv").write_text(
+            "sample_id\tviral_species\tabundance\tcoverage\n"
+        )
     else:
+        # metagenomic_plasmid (default)
         (tables / "plasmid_annotations.tsv").write_text(
             "contig_id\tplasmid_score\tlength\tpredicted_type\n"
         )
@@ -486,7 +697,7 @@ def command_run(args) -> int:
 def add_common(parser: argparse.ArgumentParser):
     parser.add_argument("--workspace", type=Path, default=Path.cwd(), help="Workspace directory")
     parser.add_argument("--group", default="G3", help="Benchmark group id")
-    parser.add_argument("--analysis-type", choices=ANALYSIS_TYPES, help="Analysis type override")
+    parser.add_argument("--analysis-type", default=None, help="Analysis type override")
     parser.add_argument("--task-id", default="T00", help="Benchmark task id for generated metadata")
     parser.add_argument("--replicate", type=int, default=1, help="Benchmark replicate for generated metadata")
     parser.add_argument(

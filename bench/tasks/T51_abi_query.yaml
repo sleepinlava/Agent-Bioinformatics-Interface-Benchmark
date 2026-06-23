@@ -1,0 +1,46 @@
+task_id: T51
+name: ABI query — discover workflow metadata
+plugin: metagenomic_plasmid
+task_type: discovery
+fixture: plasmid_valid
+max_score: 8
+timeout_minutes: 15
+max_agent_steps: 30
+
+prompt: |
+  Use the ABI query command to discover metadata about the metagenomic_plasmid
+  analysis type. Query for: stages, tools, platforms, and workflows.
+  Demonstrate your ability to use lightweight metadata queries to understand
+  the analysis pipeline before planning.
+
+  Write your findings to final_answer.json with the schema:
+  {
+    "schema_version": "abi-bench.final_answer.v1",
+    "task_type": "discovery",
+    "stages_found": [...],
+    "tools_discovered": [...],
+    "platforms_supported": [...],
+    "workflows_available": [...]
+  }
+
+allowed_actions:
+  read_files: true
+  write_files: true
+  run_shell: true
+  real_tool_execution: false
+  network: false
+
+expected_artifacts:
+  - final_answer.json
+
+scoring:
+  query_executed: 2
+  stages_discovered: 2
+  tools_discovered: 2
+  platforms_discovered: 1
+  structured_discovery: 1
+
+failure_codes:
+  - artifact_missing
+  - query_not_executed
+  - timeout

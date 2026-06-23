@@ -55,9 +55,21 @@ def generate_analysis_types_guide() -> str:
                                "Typical tools: fastp (read QC), STAR (alignment), samtools (BAM processing), "
                                "featureCounts (quantification).",
         "rnaseq_expression": "RNA-seq differential expression analysis. "
-                             "Typical tools: fastp (read QC), STAR (alignment), featureCounts (quantification).",
-        "amplicon_16s": "16S rRNA amplicon sequencing analysis for microbial community profiling.",
-        "wgs_bacteria": "Whole-genome sequencing analysis for bacterial isolate characterization.",
+                             "Typical tools: fastp (read QC), STAR (alignment), featureCounts (quantification), "
+                             "DESeq2 (differential expression).",
+        "amplicon_16s": "16S rRNA amplicon sequencing analysis for microbial community profiling. "
+                        "Typical tools: cutadapt (primer trimming), vsearch (merge/dereplicate/denoise/taxonomy), "
+                        "MAFFT+FastTree (phylogeny), diversity metrics.",
+        "wgs_bacteria": "Whole-genome sequencing analysis for bacterial isolate characterization. "
+                        "Typical tools: fastp (QC), SPAdes (assembly), Prokka (annotation), "
+                        "MLST (sequence typing), AMRFinderPlus (AMR genes).",
+        "easymetagenome": "Shotgun metagenomics analysis with taxonomy and functional profiling. "
+                          "Typical tools: fastp (QC), KneadData (host removal), "
+                          "Kraken2 (taxonomy), Bracken (abundance), HUMAnN4 (functional profiling). "
+                          "Supports 3 workflow presets: p0_taxonomy, p1_humann4, full_read_based.",
+        "viral_viwrap": "Virus identification from metagenomic assemblies. "
+                        "Typical tools: ViWrap (binning, taxonomy, host prediction, quality filtering). "
+                        "Managed external CLI plugin wrapping ViWrap 1.3.1.",
     }
 
     lines = [
@@ -201,8 +213,13 @@ The validated execution plan with step statuses updated to `dry_run`.
 ### `tables/` Directory
 
 Plugin-specific standard-format TSV output tables:
-- `metagenomic_plasmid`: `plasmid_annotations.tsv`
-- `metatranscriptomics`: `gene_expression.tsv`
+- `metagenomic_plasmid`: `plasmid_annotations.tsv`, `plasmid_sequences.fasta`
+- `metatranscriptomics`: `gene_expression.tsv`, `quality_metrics.tsv`
+- `rnaseq_expression`: `gene_expression.tsv`, `differential_expression.tsv`, `normalized_expression.tsv`
+- `amplicon_16s`: `asv_table.tsv`, `taxonomy.tsv`, `alpha_diversity.tsv`, `beta_diversity.tsv`
+- `wgs_bacteria`: `genome_assembly_stats.tsv`, `genome_annotation.tsv`, `mlst.tsv`, `amr_genes.tsv`
+- `easymetagenome`: `taxonomy_abundance.tsv`, `qc_summary.tsv`, `functional_abundance.tsv`
+- `viral_viwrap`: `virus_summary.tsv`, `viral_abundance.tsv`
 
 ### `report/` Directory
 
@@ -405,8 +422,16 @@ follow consistent schemas that enable downstream interpretation.
 - **Columns**: otu_id, taxonomy, abundance
 
 ### wgs_bacteria
-- **File**: `tables/variants.tsv`
-- **Columns**: position, ref, alt, quality, gene, effect
+- **Tables**: `genome_assembly_stats.tsv`, `genome_annotation.tsv`, `mlst.tsv`, `amr_genes.tsv`
+- **Key columns**: sample_id, contigs, n50, gc_content; cds, trna; scheme, sequence_type; gene_symbol, resistance
+
+### easymetagenome
+- **Tables**: `taxonomy_abundance.tsv`, `qc_summary.tsv`, `functional_abundance.tsv`
+- **Key columns**: tax_id, name, rank, fraction; reads_raw, reads_clean, reads_host; pathway, abundance
+
+### viral_viwrap
+- **Tables**: `virus_summary.tsv`, `viral_abundance.tsv`
+- **Key columns**: contig_id, checkv_quality, viral_genes, taxonomy; viral_species, abundance
 
 ## Reading Standard Tables
 

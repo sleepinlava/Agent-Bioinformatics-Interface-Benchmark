@@ -61,7 +61,12 @@ G4_GROUP = "G4"  # v0.3: info-matched docs, not ABI but gets enhanced docs
 
 # Canonical list of ABI lifecycle subcommands (hyphenated form, as used by abi_cli.py).
 # Used by the bash tool description and the command-level guard regex.
-_ABI_LIFECYCLE_COMMANDS = ("list-types", "plan", "dry-run", "inspect", "diagnose", "report", "run")
+_ABI_LIFECYCLE_COMMANDS = (
+    "list-types", "plan", "dry-run", "inspect", "diagnose", "report", "run",
+    "query", "check", "check-resources", "setup-resources",
+    "doctor-agent", "export-tools", "export-nextflow", "validate-result",
+    "contract-lint",
+)
 
 # Regex to detect ABI CLI invocations in bash commands.
 # Matches: abi_cli.py as a path/word token, or ABI lifecycle subcommands as whole words.
@@ -82,6 +87,12 @@ _BIO_TOOL_NAMES = [
     "minimap2", "kraken2", "metaphlan", "maxbin2", "metabat2", "concoct",
     "checkm", "gtdbtk", "abricate", "amrfinder", "prokka", "bakta",
     "platon", "plasmidfinder", "mob_suite", "coverm",
+    # v0.7: easymetagenome tools
+    "kneaddata", "bracken", "humann",
+    # v0.7: viral_viwrap tools
+    "viwrap",
+    # v0.7: amplicon_16s tools
+    "cutadapt", "vsearch", "mafft", "fasttree",
 ]
 
 # Diagnostic prefixes/suffixes that indicate safe operations
@@ -224,7 +235,11 @@ def _build_tools(group_id: str, allowed_actions: dict = None) -> list:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "description": "Directory path to list (default: workspace root)", "default": "."},
+                        "path": {
+                            "type": "string",
+                            "description": "Directory path to list (default: workspace root)",
+                            "default": ".",
+                        },
                     },
                 },
             },
@@ -293,6 +308,8 @@ ABI CLI paths, or calling abi_cli.py.
 2. Dry-run: Validate plans without real bioinformatics execution
 3. Inspect: Read provenance artifacts to diagnose issues
 4. Report: Generate structured reports
+5. Query: Lightweight metadata discovery (tool lists, stages, resources)
+6. Check: Preflight validation of inputs, resources, runtimes
 
 Call the ABI CLI with these commands:
 - {ABI_CLI_CMD} list-types
@@ -301,6 +318,11 @@ Call the ABI CLI with these commands:
 - {ABI_CLI_CMD} inspect --workspace {workspace}
 - {ABI_CLI_CMD} diagnose --workspace {workspace}
 - {ABI_CLI_CMD} report --workspace {workspace}
+
+Additional tools available (v0.7):
+- query: {ABI_CLI_CMD} query --workspace {workspace} --what <stages|tools|platforms|workflows>
+- check-resources: {ABI_CLI_CMD} check-resources --workspace {workspace}
+- doctor-agent: {ABI_CLI_CMD} doctor-agent --workspace {workspace}
 
 Always read config.yaml and sample_sheet.tsv first to understand the workspace.
 Prefer ABI CLI lifecycle commands over direct shell commands.
@@ -382,7 +404,8 @@ bioinformatics workflow operation in this environment.
 
 ## Documentation Available to You
 The workspace contains detailed guides that describe:
-- Available analysis types (metagenomic_plasmid, metatranscriptomics, amplicon_16s)
+- Available analysis types (metagenomic_plasmid, metatranscriptomics,
+   amplicon_16s, rnaseq_expression, wgs_bacteria, easymetagenome, viral_viwrap)
 - How to structure execution plans (step IDs, tool IDs, analysis_type fields)
 - Dry-run validation procedures and expected artifact paths
 - Provenance artifact formats (commands.tsv, resolved_inputs.tsv, etc.)
