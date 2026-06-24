@@ -821,7 +821,7 @@ rubric:
     structured_discovery:
       description: "Query results are structured in final_answer.json"
       points: 1
-      function: check_final_answer_has_structure
+      function: check_structured_discovery
 
     checksums_json_exists:
       description: "provenance/checksums.json exists (real ABI v1.5.1 artifact)"
