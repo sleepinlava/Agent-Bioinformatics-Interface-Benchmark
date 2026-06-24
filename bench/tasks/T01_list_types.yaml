@@ -10,6 +10,8 @@ max_agent_steps: 20
 prompt: |
   List all available bioinformatics analysis types that you can perform.
   Use the available tools to discover what analysis types are supported.
+  Write final_answer.json with schema_version, task_type="discovery",
+  analysis_types, count, and discovery_evidence.
 
 allowed_actions:
   read_files: true
@@ -23,9 +25,16 @@ expected_artifacts:
   - final_answer.json
 
 scoring:
-  discover_metagenomic_plasmid: 2
-  discover_metatranscriptomics: 2
-  uses_allowed_entry_points: 1
+  discovery_targets:
+    points: 5
+    function: check_json_contract
+    args:
+      equals:
+        task_type: discovery
+        count: 7
+      unordered_equals:
+        analysis_types: [metagenomic_plasmid, metatranscriptomics, amplicon_16s, rnaseq_expression, wgs_bacteria, easymetagenome, viral_viwrap]
+      nonempty_paths: [discovery_evidence]
   structured_discovery: 3
   final_answer_has_structure: 1
 

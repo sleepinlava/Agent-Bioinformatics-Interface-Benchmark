@@ -1,5 +1,5 @@
 task_id: T46
-name: Cross-model verification — audit results from another perspective
+name: Cross-review verification — compare independent review artifacts
 plugin: metagenomic_plasmid
 task_type: multi_agent
 fixture: plasmid_valid
@@ -8,23 +8,20 @@ timeout_minutes: 20
 max_agent_steps: 40
 
 prompt: |
-  You have metagenomic_plasmid results (results/ and provenance/).
+  You have metagenomic_plasmid results plus two independently generated review
+  artifacts: reviews/review_a.json and reviews/review_b.json.
 
   Your task:
-  1. Perform a thorough audit of every step: input → output → logs
-  2. Now, imagine you are a DIFFERENT LLM (e.g., if you are GPT, think like Claude).
-     From this alternate perspective, would you reach the same conclusions?
-  3. Where the two perspectives diverge, flag as "model-dependent finding"
-  4. Produce a "confidence assessment report":
-     - Which conclusions are robust (either model agrees)?
-     - Which are model-dependent (perspective matters)?
+  1. Read both review artifacts and verify their claims against provenance files
+  2. Identify conclusions supported by both reviews
+  3. Identify disagreements and preserve each review's actual position
+  4. Produce a confidence assessment based on agreement and source evidence
 
   Write to final_answer.json:
   {
     "schema_version": "abi-bench.final_answer.v1",
     "task_type": "multi_agent",
-    "primary_perspective": "<current model>",
-    "alternate_perspective": "<hypothetical model>",
+    "source_reviews": ["review_a", "review_b"],
     "robust_findings": ["<finding that either model would confirm>"],
     "model_dependent_findings": [
       {"finding": "<...>", "primary_view": "<...>", "alternate_view": "<...>"}
@@ -46,19 +43,18 @@ expected_artifacts:
 
 scoring:
   robust_findings_identified:
-    points: 5
-    function: check_final_answer_has_structure
+    points: 10
+    function: check_cross_review_comparison
   model_dependent_flagged:
-    points: 5
-    function: check_final_answer_contains
+    points: 2
+    function: check_json_contract
     args:
-      required_terms: ["model_dependent", "perspective", "uncertainty"]
-      min_sections: 2
+      required_paths: [model_dependent_findings, uncertainty_sources]
   confidence_assessed:
-    points: 4
-    function: check_final_answer_contains
+    points: 2
+    function: check_json_contract
     args:
-      required_terms: ["confidence", "robust", "finding"]
+      nonempty_paths: [confidence_summary]
 
 failure_codes:
   - artifact_missing

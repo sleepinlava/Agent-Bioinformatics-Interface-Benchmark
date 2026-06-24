@@ -3,7 +3,7 @@ task_id: T38
 name: Figure-data consistency — cross-validate charts against source tables
 plugin: amplicon_16s
 task_type: figure_data_consistency
-fixture: figure_validation
+fixture: figure_data_consistency
 max_score: 14
 timeout_minutes: 20
 max_agent_steps: 40
@@ -12,10 +12,10 @@ prompt: |
   You have an amplicon_16s analysis workspace with results including figures
   and standard tables. Your task is to cross-validate:
 
-  1. alpha_diversity.png Shannon values == tables/alpha_diversity.tsv values
-  2. taxonomy_barplot.png genus names == tables/taxonomy.tsv genus column
-  3. pcoa.png sample clustering == tables/beta_diversity.tsv distance matrix
-  4. rarefaction_curve.png asymptote == actual observed features count
+  1. alpha_diversity.svg Shannon values == tables/alpha_diversity.tsv values
+  2. taxonomy_barplot.svg genus names == tables/taxonomy.tsv genus column
+  3. pcoa.svg sample clustering == tables/beta_diversity.tsv distance matrix
+  4. rarefaction_curve.svg asymptote == actual observed features count
 
   For each check:
   - Extract the numerical value from the table
@@ -74,21 +74,35 @@ expected_artifacts:
 scoring:
   shannon_check:
     points: 4
-    function: check_final_answer_contains
+    function: check_json_expected_records
     args:
-      required_terms: ["shannon", "diversity", "alpha"]
+      list_path: checks
+      key_field: check
+      required_fields: [table_value, figure_value, consistent, evidence]
+      expected_records:
+        shannon_diversity: {table_value: 3.2, figure_value: 3.2, consistent: true}
   taxonomy_check:
     points: 5
-    function: check_final_answer_contains
+    function: check_json_expected_records
     args:
-      required_terms: ["taxonomy", "genus", "genera"]
-      min_sections: 2
+      list_path: checks
+      key_field: check
+      required_fields: [table_genera, figure_genera, consistent, evidence]
+      expected_records:
+        taxonomy_genera:
+          table_genera: [Bacteroides, Faecalibacterium, Prevotella]
+          figure_genera: [Bacteroides, Faecalibacterium, Prevotella]
+          consistent: true
   pcoa_check:
     points: 5
-    function: check_final_answer_contains
+    function: check_json_expected_records
     args:
-      required_terms: ["pcoa", "cluster", "beta"]
-      min_sections: 2
+      list_path: checks
+      key_field: check
+      required_fields: [consistent, evidence]
+      expected_records:
+        pcoa_clustering: {consistent: true}
+        rarefaction_asymptote: {table_observed: 128, figure_asymptote: 128, consistent: true}
 
 failure_codes:
   - artifact_missing

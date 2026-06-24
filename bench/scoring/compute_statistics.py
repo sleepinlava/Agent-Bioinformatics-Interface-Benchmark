@@ -30,6 +30,12 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+# Allow direct execution from the repository root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from bench.harness.task_suites import resolve_suite
+from bench.metadata import BENCHMARK_NAME, BENCHMARK_VERSION
+
 
 # ── Bootstrap CI ─────────────────────────────────────────────────────────────
 
@@ -142,12 +148,15 @@ def collect_scores(results_dir: Path) -> list[dict]:
     return scores
 
 
-def filter_scores(scores, experiment_set=None, fixture_set=None):
+def filter_scores(scores, experiment_set=None, fixture_set=None, task_ids=None):
     """Filter scores by metadata."""
     if experiment_set:
         scores = [s for s in scores if s.get("experiment_set") == experiment_set]
     if fixture_set:
         scores = [s for s in scores if s.get("fixture_set") == fixture_set]
+    if task_ids is not None:
+        allowed = set(task_ids)
+        scores = [s for s in scores if s.get("task_id") in allowed]
     return scores
 
 
@@ -159,10 +168,14 @@ def compute_statistics(
     fixture_set: str | None = None,
     comparison_pairs: list[tuple[str, str]] = None,
     bootstrap_iterations: int = 10000,
+    suite: str | None = None,
 ) -> dict:
     """Compute all statistics from collected scores."""
     all_scores = collect_scores(results_dir)
-    scores = filter_scores(all_scores, experiment_set, fixture_set)
+    suite_tasks = resolve_suite(suite) if suite else None
+    if suite and suite_tasks is None:
+        return {"error": f"Unknown evaluation suite: {suite}", "scores_found": 0}
+    scores = filter_scores(all_scores, experiment_set, fixture_set, suite_tasks)
 
     if not scores:
         return {"error": "No scores found matching filter criteria", "scores_found": 0}
@@ -171,10 +184,11 @@ def compute_statistics(
         comparison_pairs = [("G3", "G1"), ("G3", "G2")]
 
     result = {
-        "benchmark": "ABI-Bench",
-        "version": "0.1",
+        "benchmark": BENCHMARK_NAME,
+        "version": BENCHMARK_VERSION,
         "experiment_set": experiment_set or "all",
         "fixture_set": fixture_set or "all",
+        "evaluation_suite": suite or "unfiltered",
         "total_scores": len(scores),
     }
 
@@ -186,8 +200,9 @@ def compute_statistics(
 
     group_cis = {}
     for gid in sorted(by_group.keys()):
-        normalized = _normalized_totals_by_replicate(by_group[gid])
+        normalized = _normalized_totals_by_unit(by_group[gid])
         group_cis[gid] = bootstrap_ci(normalized, n_bootstrap=bootstrap_iterations)
+        group_cis[gid]["experimental_unit"] = "model_id × replicate"
         # Enrich with auxiliary metrics from raw scores
         gscores = by_group[gid]
         tokens = [s.get("metrics", {}).get("thinking_tokens", 0) for s in gscores]
@@ -199,9 +214,10 @@ def compute_statistics(
 
     paired_delta_ci = {}
     for g_a, g_b in comparison_pairs:
-        deltas = _paired_total_deltas(scores, g_a, g_b)
-        paired_delta_ci[f"{g_a}_vs_{g_b}"] = bootstrap_ci(
-            deltas,
+        paired_delta_ci[f"{g_a}_vs_{g_b}"] = _clustered_paired_delta_ci(
+            scores,
+            g_a,
+            g_b,
             n_bootstrap=bootstrap_iterations,
         )
     result["paired_delta_ci"] = paired_delta_ci
@@ -270,42 +286,127 @@ def compute_statistics(
     return result
 
 
-def _normalized_totals_by_replicate(scores: list[dict]) -> list[float]:
-    """Return total benchmark score per replicate, normalized to 100."""
-    by_rep = defaultdict(list)
+def _experimental_unit_key(score: dict) -> tuple[str, object]:
+    """Return the independent randomized-block unit for one score record."""
+    return (score.get("model_id", "unknown"), score.get("replicate", 1))
+
+
+def _normalized_total_map_by_unit(scores: list[dict]) -> dict[tuple[str, object], float]:
+    """Return normalized benchmark totals keyed by model and replicate."""
+    by_unit = defaultdict(list)
     for s in scores:
-        by_rep[s.get("replicate", 1)].append(s)
-
-    normalized = []
-    for rep_scores in by_rep.values():
-        score_sum = sum(s.get("score", 0) for s in rep_scores)
-        max_sum = sum(s.get("max_score", 0) for s in rep_scores)
-        normalized.append((score_sum / max_sum * 100) if max_sum > 0 else 0)
-    return normalized
-
-
-def _normalized_total_map_by_replicate(scores: list[dict]) -> dict[int, float]:
-    """Return normalized total score by replicate id."""
-    by_rep = defaultdict(list)
-    for s in scores:
-        by_rep[s.get("replicate", 1)].append(s)
+        by_unit[_experimental_unit_key(s)].append(s)
 
     totals = {}
-    for rep, rep_scores in by_rep.items():
-        score_sum = sum(s.get("score", 0) for s in rep_scores)
-        max_sum = sum(s.get("max_score", 0) for s in rep_scores)
-        totals[rep] = (score_sum / max_sum * 100) if max_sum > 0 else 0
+    for unit, unit_scores in by_unit.items():
+        score_sum = sum(s.get("score", 0) for s in unit_scores)
+        max_sum = sum(s.get("max_score", 0) for s in unit_scores)
+        totals[unit] = (score_sum / max_sum * 100) if max_sum > 0 else 0
     return totals
 
 
+def _normalized_totals_by_unit(scores: list[dict]) -> list[float]:
+    """Return one normalized total per ``model_id × replicate`` unit."""
+    return list(_normalized_total_map_by_unit(scores).values())
+
+
+def _normalized_totals_by_replicate(scores: list[dict]) -> list[float]:
+    """Backward-compatible alias using the corrected experimental unit."""
+    return _normalized_totals_by_unit(scores)
+
+
+def _normalized_total_map_by_replicate(scores: list[dict]) -> dict:
+    """Backward-compatible alias keyed by ``(model_id, replicate)``."""
+    return _normalized_total_map_by_unit(scores)
+
+
 def _paired_total_deltas(scores: list[dict], group_a: str, group_b: str) -> list[float]:
-    """Return paired normalized total deltas group_a - group_b by replicate."""
+    """Return deltas paired by model and randomized-block replicate.
+
+    Units with different task sets across groups are excluded.  Comparing such
+    totals would otherwise turn missing tasks into an apparent treatment effect.
+    """
     a_scores = [s for s in scores if s.get("group_id") == group_a]
     b_scores = [s for s in scores if s.get("group_id") == group_b]
-    a_by_rep = _normalized_total_map_by_replicate(a_scores)
-    b_by_rep = _normalized_total_map_by_replicate(b_scores)
-    common_reps = sorted(set(a_by_rep) & set(b_by_rep))
-    return [a_by_rep[rep] - b_by_rep[rep] for rep in common_reps]
+    a_by_unit = _normalized_total_map_by_unit(a_scores)
+    b_by_unit = _normalized_total_map_by_unit(b_scores)
+    tasks_a = defaultdict(set)
+    tasks_b = defaultdict(set)
+    for score in a_scores:
+        tasks_a[_experimental_unit_key(score)].add(score.get("task_id"))
+    for score in b_scores:
+        tasks_b[_experimental_unit_key(score)].add(score.get("task_id"))
+    common_units = sorted(set(a_by_unit) & set(b_by_unit))
+    return [
+        a_by_unit[unit] - b_by_unit[unit]
+        for unit in common_units
+        if tasks_a[unit] == tasks_b[unit]
+    ]
+
+
+def _clustered_paired_delta_ci(
+    scores: list[dict],
+    group_a: str,
+    group_b: str,
+    n_bootstrap: int = 10000,
+    ci: float = 0.95,
+    seed: int = 42,
+) -> dict:
+    """Bootstrap a paired treatment effect, clustering on model identity."""
+    a_scores = [s for s in scores if s.get("group_id") == group_a]
+    b_scores = [s for s in scores if s.get("group_id") == group_b]
+    a_map = _normalized_total_map_by_unit(a_scores)
+    b_map = _normalized_total_map_by_unit(b_scores)
+    tasks_a = defaultdict(set)
+    tasks_b = defaultdict(set)
+    for score in a_scores:
+        tasks_a[_experimental_unit_key(score)].add(score.get("task_id"))
+    for score in b_scores:
+        tasks_b[_experimental_unit_key(score)].add(score.get("task_id"))
+
+    by_model = defaultdict(list)
+    excluded = 0
+    for unit in sorted(set(a_map) & set(b_map)):
+        if tasks_a[unit] != tasks_b[unit]:
+            excluded += 1
+            continue
+        by_model[unit[0]].append(a_map[unit] - b_map[unit])
+
+    deltas = [delta for model_deltas in by_model.values() for delta in model_deltas]
+    if not deltas:
+        result = bootstrap_ci([], n_bootstrap=n_bootstrap, ci=ci, seed=seed)
+    else:
+        rng = random.Random(seed)
+        models = sorted(by_model)
+        means = []
+        for _ in range(n_bootstrap):
+            sampled_models = [rng.choice(models) for _ in models]
+            sampled = []
+            for model in sampled_models:
+                model_deltas = by_model[model]
+                sampled.extend(rng.choice(model_deltas) for _ in model_deltas)
+            means.append(statistics.mean(sampled))
+        means.sort()
+        alpha = (1 - ci) / 2
+        result = {
+            "mean": round(statistics.mean(deltas), 2),
+            "lower": round(means[int(alpha * n_bootstrap)], 2),
+            "upper": round(means[min(int((1 - alpha) * n_bootstrap), n_bootstrap - 1)], 2),
+            "ci_level": ci,
+            "n_bootstrap": n_bootstrap,
+            "n_samples": len(deltas),
+        }
+    result.update({
+        "estimand": f"ATE({group_a} - {group_b}) in normalized score points",
+        "experimental_unit": "model_id × replicate",
+        "cluster": "model_id",
+        "n_models": len(by_model),
+        "excluded_incomplete_pairs": excluded,
+        "wins": sum(delta > 0 for delta in deltas),
+        "ties": sum(delta == 0 for delta in deltas),
+        "losses": sum(delta < 0 for delta in deltas),
+    })
+    return result
 
 
 def _build_failure_taxonomy(scores: list[dict]) -> dict:
@@ -422,18 +523,38 @@ def _compute_scaffolding_analysis(scores: list[dict]) -> dict:
         tier = MODEL_TIER_MAP.get(mid, "unknown")
         model_tiers[mid] = tier
 
-    tiers_present = set(model_tiers.values())
-    if len(tiers_present) < 2:
-        return {"available": False, "reason": f"All models in single tier: {tiers_present}"}
+    tiers_present = {tier for tier in model_tiers.values() if tier != "unknown"}
+    unknown_models = sorted(mid for mid, tier in model_tiers.items() if tier == "unknown")
+    if not {"weak", "strong"}.issubset(tiers_present):
+        return {
+            "available": False,
+            "reason": "Scaffolding interaction requires preregistered weak and strong models",
+            "tiers_detected": sorted(tiers_present),
+            "unknown_models": unknown_models,
+        }
 
-    # ── Per-model, per-group normalized scores (for tier aggregation) ──
+    # ── Per-model, per-group benchmark totals ─────────────────────────
+    # A model receives equal weight regardless of how many tasks or replicates
+    # happened to be collected for it.  The old implementation pooled task
+    # records, which treated correlated tasks as independent observations and
+    # let models with more records dominate their tier.
+    by_model_group_units = defaultdict(lambda: defaultdict(list))
+    for mid in model_ids:
+        for gid in {s.get("group_id", "unknown") for s in scores}:
+            subset = [
+                s for s in scores
+                if s.get("model_id") == mid and s.get("group_id") == gid
+            ]
+            by_model_group_units[mid][gid] = [
+                value / 100.0 for value in _normalized_totals_by_unit(subset)
+            ]
+
     by_tier_group = defaultdict(lambda: defaultdict(list))
-    for s in scores:
-        mid = s.get("model_id", "")
+    for mid, groups in by_model_group_units.items():
         tier = model_tiers.get(mid, "unknown")
-        gid = s.get("group_id", "unknown")
-        normalized = s.get("score", 0) / max(s.get("max_score", 1), 1)
-        by_tier_group[tier][gid].append(normalized)
+        for gid, unit_values in groups.items():
+            if unit_values:
+                by_tier_group[tier][gid].append(statistics.mean(unit_values))
 
     # ── Compute tier-level deltas ──
     tier_deltas = {}
@@ -444,7 +565,8 @@ def _compute_scaffolding_analysis(scores: list[dict]) -> dict:
         g4_vals = by_tier_group.get(tier, {}).get("G4", [])
 
         tier_deltas[tier] = {
-            "n_scores": len(g1_vals) + len(g3_vals),
+            "n_models": sum(model_tiers.get(mid) == tier for mid in model_ids),
+            "n_model_group_observations": len(g1_vals) + len(g3_vals),
             "G1_mean": round(statistics.mean(g1_vals), 3) if g1_vals else None,
             "G2_mean": round(statistics.mean(g2_vals), 3) if g2_vals else None,
             "G3_mean": round(statistics.mean(g3_vals), 3) if g3_vals else None,
@@ -469,7 +591,7 @@ def _compute_scaffolding_analysis(scores: list[dict]) -> dict:
     strong_g3 = by_tier_group.get("strong", {}).get("G3", [])
     weak_g1 = by_tier_group.get("weak", {}).get("G1", [])
     strong_g1 = by_tier_group.get("strong", {}).get("G1", [])
-    if weak_g3 and strong_g3 and weak_g1 and strong_g1:
+    if min(len(weak_g3), len(strong_g3), len(weak_g1), len(strong_g1)) >= 2:
         interaction_p = _bootstrap_interaction_test(
             [weak_g3, strong_g3],
             [weak_g1, strong_g1],
@@ -491,16 +613,14 @@ def _compute_scaffolding_analysis(scores: list[dict]) -> dict:
     per_model = {}
     for mid in sorted(model_ids):
         tier = model_tiers.get(mid, "unknown")
-        g1 = [s.get("score", 0) / max(s.get("max_score", 1), 1)
-              for s in scores if s.get("model_id") == mid and s.get("group_id") == "G1"]
-        g3 = [s.get("score", 0) / max(s.get("max_score", 1), 1)
-              for s in scores if s.get("model_id") == mid and s.get("group_id") == "G3"]
+        g1 = by_model_group_units[mid].get("G1", [])
+        g3 = by_model_group_units[mid].get("G3", [])
         per_model[mid] = {
             "tier": tier,
             "G1_mean": round(statistics.mean(g1), 3) if g1 else None,
             "G3_mean": round(statistics.mean(g3), 3) if g3 else None,
             "G3_minus_G1": round(statistics.mean(g3) - statistics.mean(g1), 3) if g3 and g1 else None,
-            "n": len(g1) + len(g3),
+            "n_experimental_units": len(g1) + len(g3),
         }
 
     # ── Determine which models show G3 > G1 ──
@@ -514,6 +634,7 @@ def _compute_scaffolding_analysis(scores: list[dict]) -> dict:
         "models_detected": len(model_ids),
         "tiers_detected": sorted(tiers_present),
         "model_tiers": model_tiers,
+        "unknown_models": unknown_models,
         "scaffolding_gain": scaffolding_gain,
         "scaffolding_gain_interpretation": (
             "ABI helps weak models more than strong models"
@@ -521,6 +642,8 @@ def _compute_scaffolding_analysis(scores: list[dict]) -> dict:
             else "No scaffolding effect detected"
         ),
         "interaction_p_value": interaction_p,
+        "interaction_unit": "model-level mean across model_id × replicate units",
+        "interaction_min_models_per_tier": 2,
         "interaction_significant": interaction_p is not None and interaction_p < 0.05,
         "weak_abi_vs_strong_no_abi_ratio": ratio,
         "weak_abi_reaches_80pct_of_strong_no_abi": ratio is not None and ratio >= 0.80,
@@ -869,6 +992,10 @@ def main():
         help="Filter by fixture set",
     )
     parser.add_argument(
+        "--suite",
+        help="Filter to a named suite from bench/evaluation_suites.yaml",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         help="Output statistics JSON path",
@@ -900,6 +1027,7 @@ def main():
         fixture_set=args.fixture_set,
         comparison_pairs=pairs or None,
         bootstrap_iterations=args.bootstrap_iterations,
+        suite=args.suite,
     )
 
     if "error" in stats:
@@ -910,6 +1038,7 @@ def main():
     print("\n=== ABI-Bench Statistical Analysis ===")
     print(f"Experiment set: {args.experiment_set or 'all'}")
     print(f"Fixture set: {args.fixture_set or 'all'}")
+    print(f"Evaluation suite: {args.suite or 'unfiltered'}")
     print(f"Total scores: {stats['total_scores']}")
 
     print("\nBootstrap 95% CIs (total normalized score):")

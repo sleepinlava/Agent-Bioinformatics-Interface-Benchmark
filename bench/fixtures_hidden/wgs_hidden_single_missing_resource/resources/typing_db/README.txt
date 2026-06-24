@@ -1,0 +1,1 @@
+Available hidden typing database.

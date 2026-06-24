@@ -1,0 +1,5 @@
+plot_type: bar
+source: tables/alpha_diversity.tsv
+x: sample_id
+y: shannon
+title: Alpha diversity

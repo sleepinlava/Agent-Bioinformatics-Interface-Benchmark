@@ -1,7 +1,9 @@
-# ABI-Bench v0.5 — Model Tier Configuration
+# ABI-Bench v0.9 — Preregistered Model Tier Configuration
 #
-# Defines which models belong to which capability tier for scaffolding
-# analysis and multi-model experiments.
+# Tier membership must be frozen before outcome collection. Do not classify a
+# model from its ABI-Bench G1 score: that creates regression-to-the-mean bias in
+# the Group × Tier interaction. Record quantization as a separate configuration;
+# a quantized variant is not interchangeable with the native-precision model.
 #
 # To add custom models (including local/self-hosted models), add them under
 # the appropriate tier.  Models not listed here receive tier "unknown" and

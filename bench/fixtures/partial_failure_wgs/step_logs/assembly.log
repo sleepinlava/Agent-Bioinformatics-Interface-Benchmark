@@ -1,0 +1,2 @@
+ERROR: requested k-mer 155 exceeds maximum supported by 150 bp reads.
+SPAdes terminated before graph construction.

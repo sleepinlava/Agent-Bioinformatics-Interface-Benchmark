@@ -48,27 +48,32 @@ expected_artifacts:
 
 scoring:
   resources_correctly_listed:
-    points: 3
-    function: check_final_answer_contains
+    points: 5
+    function: check_json_expected_records
     args:
-      required_terms: ["star_index", "gtf", "resource"]
-      min_sections: 2
+      list_path: required_resources
+      key_field: name
+      required_fields: [type, auto_generatable]
+      expected_records:
+        star_index: {type: genome_index, auto_generatable: true}
+        gtf: {type: annotation, auto_generatable: false}
   tools_detected:
     points: 3
-    function: check_final_answer_contains
+    function: check_json_contract
     args:
-      required_terms: ["STAR", "installed", "tool"]
+      required_paths: [tools_available.STAR, tools_available.featureCounts]
   auto_generate_judgment:
-    points: 4
-    function: check_final_answer_contains
+    points: 3
+    function: check_json_contract
     args:
-      required_terms: ["auto_generatable", "generate"]
-      min_sections: 2
+      required_paths: [auto_generated, manual_required]
+      nonempty_paths: [assessment]
   manual_report_clear:
-    points: 4
-    function: check_final_answer_contains
+    points: 3
+    function: check_command_trace_evidence
     args:
-      required_terms: ["manual", "download", "required"]
+      required_patterns: ["which\\s+STAR"]
+      forbidden_patterns: ["(?:wget|curl)\\s+"]
 
 failure_codes:
   - artifact_missing

@@ -2,17 +2,17 @@ task_id: T57
 name: Sciplot figure rendering
 plugin: metagenomic_plasmid
 task_type: validation
-fixture: figure_validation
+fixture: figure_validation_clean
 max_score: 10
 timeout_minutes: 20
 max_agent_steps: 30
 
 prompt: |
   Render a scientific figure using the abi-sciplot CLI. The workspace
-  contains a validated figure.yaml FigureSpec.
+  contains figure_specs/alpha_diversity.yaml.
 
-  1. First validate the spec: abi-sciplot validate --spec figure.yaml
-  2. Render the figure: abi-sciplot render --spec figure.yaml
+  1. Validate: abi-sciplot validate --spec figure_specs/alpha_diversity.yaml
+  2. Render: abi-sciplot render --spec figure_specs/alpha_diversity.yaml
   3. Verify the output files (PDF, SVG, PNG) exist and are non-empty
   4. Report the output paths and file sizes in final_answer.json
 
@@ -27,10 +27,22 @@ expected_artifacts:
   - final_answer.json
 
 scoring:
-  sciplot_render_executed: 3
-  output_files_exist: 3
-  output_files_nonempty: 2
-  file_sizes_reported: 1
+  sciplot_render_executed:
+    points: 3
+    function: check_command_trace_evidence
+    args: {required_patterns: ["abi-sciplot\\s+render"]}
+  output_files_exist:
+    points: 3
+    function: check_reported_paths_exist
+    args: {list_path: outputs, path_field: path, size_field: size_bytes}
+  output_files_nonempty:
+    points: 2
+    function: check_reported_paths_exist
+    args: {list_path: outputs, path_field: path}
+  file_sizes_reported:
+    points: 1
+    function: check_json_contract
+    args: {min_items: {outputs: 1}}
   structured_discovery: 1
 
 failure_codes:

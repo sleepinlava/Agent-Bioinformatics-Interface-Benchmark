@@ -84,6 +84,13 @@ def _ts_print(*args, **kwargs):
 
 def resolve_tasks(task_spec: str) -> list[str]:
     """Resolve task specification to list of task IDs."""
+    # v0.8 suites are defined once in evaluation_suites.yaml.  Resolve them
+    # before the legacy aliases below so runners cannot silently drift apart.
+    from bench.harness.task_suites import resolve_suite
+
+    suite_tasks = resolve_suite(task_spec)
+    if suite_tasks is not None:
+        return suite_tasks
     if task_spec == "mvp":
         return MVP_TASKS
     elif task_spec == "full":
@@ -147,12 +154,12 @@ def _run_single_task(
         try:
             with open(score_file) as f:
                 score_data = json.load(f)
-            required_fields = ["total_score", "max_score", "passed", "task_id", "group_id"]
+            required_fields = ["score", "max_score", "passed", "task_id", "group_id"]
             missing = [k for k in required_fields if k not in score_data]
-            if missing or not isinstance(score_data.get("total_score"), (int, float)):
+            if missing or not isinstance(score_data.get("score"), (int, float)):
                 raise ValueError(f"Score file corrupt/incomplete: missing {missing}")
-            if score_data.get("total_score", -1) < 0:
-                raise ValueError("Score file has negative total_score (failed run)")
+            if score_data.get("score", -1) < 0:
+                raise ValueError("Score file has negative score (failed run)")
             _ts_print(f"  SKIP [{group_id}/{task_id}/rep_{replicate:02d}] "
                       f"(already completed)")
             return {
@@ -352,7 +359,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run a group of ABI-Bench tasks")
     parser.add_argument("--group", required=True, type=str, help="Group ID (G1/G2/G3/A1/A3/A4)")
     parser.add_argument("--tasks", default="mvp", type=str,
-                        help="Task spec: 'mvp', 'full', 'ablation', or comma-separated list")
+                        help="Named suite (for example causal_core_v0_8), legacy alias, or comma-separated IDs")
     parser.add_argument("--replicates", type=int, default=3, help="Number of replicates per task")
     parser.add_argument("--model", type=str, default="LLM4", help="Model ID")
     parser.add_argument("--agent", type=str, default="direct", help="Agent harness name")

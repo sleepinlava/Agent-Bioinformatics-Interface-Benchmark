@@ -15,7 +15,9 @@ prompt: |
   3. Distinguish between empty tables, tables with only headers, and tables with result rows.
   4. Do not over-interpret dry-run results as real biological findings.
 
-  Write both final_answer.md and final_answer.json.
+  Write both final_answer.md and final_answer.json. JSON must include table_name,
+  columns, row_count, is_empty, has_header, and
+  overclaims_biological_findings.
 
 allowed_actions:
   read_files: true
@@ -29,10 +31,16 @@ expected_artifacts:
   - final_answer.json
 
 scoring:
-  identifies_table_names: 1
-  explains_table_structure: 1
-  distinguishes_empty_vs_populated: 1
-  avoids_overinterpret: 1
+  table_identity_evidence:
+    points: 2
+    function: check_json_contract
+    args:
+      equals: {table_name: plasmid_annotations.tsv, row_count: 2, is_empty: false, has_header: true}
+      min_items: {columns: 4}
+  interpretation_safety_evidence:
+    points: 2
+    function: check_json_contract
+    args: {equals: {overclaims_biological_findings: false}}
   structured_table_interpretation: 2
   final_answer_has_structure: 1
 

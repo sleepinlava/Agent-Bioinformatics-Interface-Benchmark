@@ -52,8 +52,14 @@ scoring:
     points: 3
   registry_consistency_checked:
     points: 2
+    function: check_json_contract
+    args:
+      required_paths: [registry_consistency]
   unsatisfied_assertions_reported:
     points: 1
+    function: check_json_contract
+    args:
+      required_paths: [unsatisfied_assertions]
   final_answer_has_structure:
     points: 2
 

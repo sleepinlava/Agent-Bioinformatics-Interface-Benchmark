@@ -57,25 +57,34 @@ expected_artifacts:
 
 scoring:
   both_faults_identified:
-    points: 4
-    function: check_final_answer_has_structure
+    points: 5
+    function: check_json_expected_records
+    args:
+      list_path: faults
+      key_field: step
+      required_fields: [error_type, root_cause, fix]
+      expected_records:
+        genomad: {error_type: OOM}
+        bakta: {error_type: config_error}
   fix_order_correct:
     points: 3
-    function: check_final_answer_contains
+    function: check_json_contract
     args:
-      required_terms: ["fix_order", "bakta", "genomad"]
+      equals: {fix_order: [bakta, genomad]}
+      nonempty_paths: [fix_order_rationale]
   fixes_reasonable:
     points: 4
-    function: check_final_answer_contains
+    function: check_yaml_config_evidence
     args:
-      required_terms: ["fix", "config", "threads"]
-      min_sections: 2
+      relpath: config.yaml
+      equals: {resources.bakta_db: resources/mini_bakta_db}
+      forbidden_substrings:
+        resources.bakta_db: [nonexistent]
   recovery_executed:
-    points: 4
-    function: check_final_answer_contains
+    points: 3
+    function: check_command_trace_evidence
     args:
-      required_terms: ["recovery", "successful"]
-      min_sections: 2
+      required_patterns: ["run"]
 
 failure_codes:
   - artifact_missing

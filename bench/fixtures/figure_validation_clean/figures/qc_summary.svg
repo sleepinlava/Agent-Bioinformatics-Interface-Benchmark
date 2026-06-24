@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">
+  <title>Reads retained after QC</title>
+  <text x="20" y="30">sample_1 reads_after 950</text>
+  <rect x="80" y="80" width="100" height="280" fill="#228833"/>
+</svg>

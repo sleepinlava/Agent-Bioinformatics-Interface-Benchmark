@@ -1,0 +1,10 @@
+analysis: {type: easymetagenome, preset: p0_taxonomy}
+resources:
+  host_db: resources/depletion_db
+  kraken2_db: unavailable/taxonomy_build_zeta
+samples:
+  - {sample_id: ZETA_4, read1: data/z4_R1.fastq.gz, read2: data/z4_R2.fastq.gz}
+workflow:
+  steps:
+    - {id: deplete, tool: kneaddata, database: host_db}
+    - {id: classify, tool: kraken2, database: kraken2_db}

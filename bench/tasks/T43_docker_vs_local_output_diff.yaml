@@ -43,26 +43,24 @@ expected_artifacts:
 
 scoring:
   command_compared:
-    points: 3
-    function: check_final_answer_contains
-    args:
-      required_terms: ["command", "compare"]
+    points: 8
+    function: check_dual_runtime_comparison_evidence
   tables_compared:
-    points: 4
-    function: check_final_answer_contains
-    args:
-      required_terms: ["table", "numeric", "value"]
-      min_sections: 2
-  figures_compared:
-    points: 3
-    function: check_final_answer_contains
-    args:
-      required_terms: ["figure", "png", "visual"]
-  equivalence_conclusion:
     points: 2
-    function: check_final_answer_contains
+    function: check_json_contract
     args:
-      required_terms: ["equivalent", "rationale"]
+      equals: {task_type: cross_platform, substantially_equivalent: false}
+      required_paths: [command_comparison, table_comparison, figure_comparison]
+  figures_compared:
+    points: 1
+    function: check_json_contract
+    args:
+      equals: {platforms: [docker, local]}
+  equivalence_conclusion:
+    points: 1
+    function: check_json_contract
+    args:
+      nonempty_paths: [rationale]
 
 failure_codes:
   - artifact_missing

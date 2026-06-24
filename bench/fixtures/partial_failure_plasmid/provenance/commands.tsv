@@ -1,0 +1,3 @@
+step_id	tool_id	status	exit_code	command
+plasmid_detection	genomad	failed	137	genomad end-to-end --threads 16 assembly.fasta results/genomad
+annotation	bakta	failed	2	bakta --db /nonexistent/path/to/bakta_db assembly.fasta

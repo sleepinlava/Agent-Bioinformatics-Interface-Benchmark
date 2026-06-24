@@ -1,0 +1,4 @@
+wgs_bacteria:
+  assembly:
+    output_exists: true
+    min_contigs: 1

@@ -1,4 +1,4 @@
-# ABI-Bench v0.6
+# ABI-Bench v0.9
 
 ## Agent-Bioinformatics Interface Benchmark
 
@@ -150,7 +150,7 @@ LLM agent 操作生信 workflow 面临五大特有困难：
 | T11 | Inspect metatranscriptomics | metatranscriptomics | inspection | 5 |
 | T12 | Interpret standard tables | both | interpretation | 4 |
 
-**v0.1 总分：100 分** | **v0.6 总分（47 任务）：~450 分**
+**v0.1 总分：100 分** | **v0.6 总分（47 任务）：~450 分** | **v0.9 总分（61 任务，7 套件）：~600 分**
 
 ### 6.2 任务生命周期链
 
@@ -185,7 +185,35 @@ v0.6 在 v0.1-v0.5 基础上新增 12 个任务，覆盖 4 个新模块：
 | **Figure Validation** | T36, T37, T38 | Sciplot 科学图表验证、诊断、数据一致性检查 |
 | **Progressive Repair** | T39, T40, T41 | 单故障恢复、多故障恢复、资源自配置 |
 | **Cross-Platform** | T42, T43, T44 | Local/Nextflow/Docker 跨平台输出一致性、溯源审计 |
-| **Multi-Agent** | T45, T46, T47 | Planner-reviewer 协作、跨模型验证、零样本迁移 |
+| **Multi-Agent** | T45, T46, T47 | Planner-reviewer 协作、跨模型验证（比较独立 review）、零样本迁移 |
+
+### 6.5 v0.9 新增任务模块（T59-T61）与评测套件
+
+v0.9 新增 3 个跨插件隐藏鲁棒性诊断任务，并将全部 61 个任务按 claim role 分为 7 个评测套件：
+
+| 套件 | Claim Role | 任务数 | 说明 |
+|------|-----------|--------|------|
+| `causal_core_v0_8` | primary_causal | 24 | 主因果评估，提示词不命名 ABI |
+| `hidden_robustness_v0_9` | causal_robustness | 3 (T59-T61) | 跨插件 hidden diagnosis，public/hidden 配对 fixture |
+| `mechanism_probes_v0_8` | mechanism_descriptive | 32 | ABI 原生机制探针，不与主因果混合 |
+| `real_execution_case_studies_v0_8` | case_study | 5 (T31-T35) | 真实执行案例证据 |
+| `heldout_plugin_v0_8` | external_validity | 3 (T48-T50) | 外部有效性：easymetagenome + viral_viwrap |
+| `ablation_v0_8` | component_ablation | 6 (T03-T08) | 组件消融（附录） |
+| `full_descriptive_v0_8` | descriptive_only | 61 (T01-T61) | 全量描述性覆盖 |
+
+**T59-T61 设计要点：**
+- T59：RNA-seq genome index 缺失诊断（`rnaseq_hidden_missing_resource`）
+- T60：WGS AMRFinder 数据库缺失诊断（`wgs_hidden_single_missing_resource`）
+- T61：Shotgun metagenomics Kraken2 数据库缺失诊断（`easymeta_hidden_single_missing_resource`）
+- 每题均有 public/hidden 两个语义等价但标识符不同的 fixture
+- 所有实验组 (G1-G4) 均可运行，单独报告 G3−G1/G3−G2/G3−G4
+
+**T36-T47 证据评分变更（v0.9）：**
+- 不再使用 `check_final_answer_contains` 关键词匹配
+- 改为交叉验证：final_answer.json 字段、workspace 文件、配置变更、agent trace
+- T46 改为比较两个独立预生成的 review artifact，不再要求模型"假装另一个模型"
+- 安全检查在 trace 缺失时失败，不再默认通过
+- 静态审计 (`audit_benchmark.py --strict`) 检测未知评分函数、fixture 多故障混杂、rubric 间接关键词评分
 
 ---
 
@@ -288,17 +316,23 @@ python bench/harness/run_group.py --group G3 --tasks mvp --replicates 1 --parall
 ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
   --group G3 --tasks mvp --replicates 3 --agent-mode direct --parallel --workers 4
 
-# 6. 聚合评分
+# 6. 聚合评分（指定套件）
 python bench/scoring/aggregate_scores.py \
   --results bench/results --experiment-set main --fixture-set public \
+  --suite causal_core_v0_8 \
   --output bench/results/leaderboard.tsv --summary bench/results/summary.json
 
 # 7. 统计分析
 python bench/scoring/claim_preflight.py \
-  --results bench/results --experiment-set main --fixture-set public --min-replicates 3
+  --results bench/results --experiment-set main --fixture-set public \
+  --suite causal_core_v0_8 --min-replicates 5
 python bench/scoring/compute_statistics.py \
   --results bench/results --experiment-set main --fixture-set public \
+  --suite causal_core_v0_8 \
   --output bench/results/statistics.json
+
+# 8. 静态设计审计（实验前必须通过）
+python bench/validation/audit_benchmark.py --strict
 ```
 
 ---
@@ -365,10 +399,15 @@ bench/
 │   ├── A3_no_diagnostic_hints.yaml  #   消融: 移除 diagnostic hints
 │   └── A4_no_permission_model.yaml  #   消融: 移除 permission model
 │
-├── tasks/                           # 12 个任务定义 (YAML)
+├── tasks/                           # 61 个任务定义 (YAML, T01-T61)
 │   ├── T01_list_types.yaml
 │   ├── ...
-│   └── T12_standard_tables_interpretation.yaml
+│   └── T61_easymeta_hidden_diagnosis.yaml
+│
+├── validation/                      # 静态设计审计 (v0.9)
+│   └── audit_benchmark.py           #   检测未知评分函数、fixture 多故障混杂等
+│
+├── evaluation_suites.yaml           # v0.9 套件定义 (7 suites)
 │
 ├── fixtures/                        # 隔离测试 fixture
 │   ├── plasmid_valid/
@@ -449,7 +488,11 @@ bench/
 | **4** 三组实验 | 主结果 | 3 组 × 8 任务 × 3 replicate |
 | **5** 消融实验 | 组件贡献 | A1/A3/A4 选择性消融 |
 | **6** 论文材料 | 产出 | methods、leaderboard、failure analysis |
+| **7** v0.7 扩展 | 新插件 + 特性任务 | T48-T58：easymetagenome、viral_viwrap、ABI query、doctor agent、sciplot CLI |
+| **8** v0.8 套件化 | 因果完整性 | 7 套件架构，mechanism/causal 分离，suite-aware scoring |
+| **9** v0.9 证据评分 | 鲁棒性 | T36-T47 证据评分，T46 独立 review 对比，T59-T61 hidden robustness，静态审计 |
 
 ---
 
 完整执行规范见项目根目录下 `Plan.md`（中文）和 `bench/docs/methods.md`（英文）。
+`bench/docs/evaluation_design_v0_9.md` 包含 v0.9 证据评分与隐藏鲁棒性设计细节。

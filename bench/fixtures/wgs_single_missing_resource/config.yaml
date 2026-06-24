@@ -1,0 +1,10 @@
+analysis: {type: wgs_bacteria}
+samples: {sample_sheet: sample_sheet.tsv}
+resources:
+  amrfinder_db: {path: missing/amr_release_2026, type: directory}
+  mlst_db: {path: resources/mlst_db, type: directory}
+workflow:
+  steps:
+    - {id: assembly, tool: spades}
+    - {id: mlst, tool: mlst, database: mlst_db}
+    - {id: amr, tool: amrfinderplus, database: amrfinder_db}

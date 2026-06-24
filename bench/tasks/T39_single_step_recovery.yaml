@@ -45,25 +45,29 @@ expected_artifacts:
 
 scoring:
   failed_step_identified:
-    points: 2
-    function: check_final_answer_contains
+    points: 3
+    function: check_json_contract
     args:
-      required_terms: ["spades", "assembly"]
+      equals: {task_type: progressive_repair, failed_step: assembly, diagnosis.error_type: invalid_kmer}
+      nonempty_paths: [diagnosis.root_cause, fix_applied.file, fix_applied.change]
   diagnosis_correct:
     points: 3
-    function: check_final_answer_contains
+    function: check_json_contract
     args:
-      required_terms: ["k-mer", "parameter", "error"]
-      min_sections: 2
+      equals: {fix_applied.file: config.yaml}
+      required_paths: [diagnosis.error_type, diagnosis.root_cause]
   fix_applied:
     points: 3
-    function: check_final_answer_has_structure
-  recovery_executed:
-    points: 4
-    function: check_final_answer_contains
+    function: check_yaml_config_evidence
     args:
-      required_terms: ["recovery", "rerun", "from-step"]
-      min_sections: 2
+      relpath: config.yaml
+      forbidden_substrings:
+        spades.kmers: ["155"]
+  recovery_executed:
+    points: 3
+    function: check_command_trace_evidence
+    args:
+      required_patterns: ["run", "from-step\\s+assembly"]
 
 failure_codes:
   - artifact_missing

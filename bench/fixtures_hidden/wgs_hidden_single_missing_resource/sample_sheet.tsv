@@ -1,0 +1,2 @@
+sample_id	read1	read2
+CLIN_Q9	data/q9_1.fastq.gz	data/q9_2.fastq.gz

@@ -47,12 +47,13 @@ expected_artifacts:
 scoring:
   dimensions_checked:
     points: 6
-    function: check_final_answer_has_structure
+    function: check_provenance_audit_evidence
   overall_assessment:
     points: 2
-    function: check_final_answer_contains
+    function: check_json_contract
     args:
-      required_terms: ["complete", "valid", "dimension"]
+      required_paths: [overall_complete, score]
+      min_items: {checks: 6}
 
 failure_codes:
   - artifact_missing

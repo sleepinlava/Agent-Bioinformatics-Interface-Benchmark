@@ -1,0 +1,3 @@
+analysis_type: rnaseq_expression
+figure_spec_dir: figure_specs
+palette: colorblind_safe

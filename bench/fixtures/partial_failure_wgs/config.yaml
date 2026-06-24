@@ -6,4 +6,4 @@ dry_run: false
 input:
   sample_sheet: sample_sheet.tsv
 spades:
-  kmers: "21,33,55,77,99"  # Intentionally wrong — reads are 150bp
+  kmers: "21,33,55,77,155"  # Intentionally invalid — k-mer exceeds 150bp reads

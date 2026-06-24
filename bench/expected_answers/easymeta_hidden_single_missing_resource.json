@@ -1,0 +1,8 @@
+{
+  "task_type": "diagnosis",
+  "cause": "missing_resource",
+  "resource": "kraken2_db",
+  "config_key": "resources.kraken2_db",
+  "path": "unavailable/taxonomy_build_zeta",
+  "fix_required": true
+}

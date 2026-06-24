@@ -1,0 +1,2 @@
+sample_id	read1	read2	condition
+R73_A	data/a_R1.fastq.gz	data/a_R2.fastq.gz	control

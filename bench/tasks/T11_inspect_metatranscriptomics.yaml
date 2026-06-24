@@ -15,7 +15,9 @@ prompt: |
   3. Explain that dry-run gene expression values are not real biological results.
   4. List what must be configured before real execution.
 
-  Write both final_answer.md and final_answer.json.
+  Write both final_answer.md and final_answer.json. JSON must include
+  genome_index_status, annotation_gtf_status, is_dry_run,
+  dry_run_limitations, and real_execution_requirements.
 
 allowed_actions:
   read_files: true
@@ -29,10 +31,21 @@ expected_artifacts:
   - final_answer.json
 
 scoring:
-  identifies_genome_index_placeholder: 1
-  identifies_annotation_gtf_placeholder: 1
-  explains_dryrun_limits: 1
-  lists_real_execution_requirements: 2
+  resource_status_evidence:
+    points: 2
+    function: check_json_contract
+    args:
+      allowed_values:
+        genome_index_status: [placeholder, missing, not_configured]
+        annotation_gtf_status: [placeholder, missing, not_configured]
+  dryrun_limit_evidence:
+    points: 1
+    function: check_json_contract
+    args: {equals: {is_dry_run: true}, min_items: {dry_run_limitations: 1}}
+  execution_requirement_evidence:
+    points: 2
+    function: check_json_contract
+    args: {min_items: {real_execution_requirements: 2}}
   structured_placeholder_check: 3
   final_answer_has_structure: 1
 

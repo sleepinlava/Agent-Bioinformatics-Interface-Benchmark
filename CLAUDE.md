@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**ABI-Bench v0.6** (Agent-Bioinformatics Interface Benchmark) evaluates whether a structured ABI control layer improves LLM agent operation of bioinformatics workflows — focusing on the **scaffolding effect** (weaker models benefit more from ABI), **cross-plugin portability** (same ABI lifecycle works across metagenomic_plasmid, metatranscriptomics, amplicon_16s, rnaseq_expression, and wgs_bacteria), **figure validation**, **progressive repair**, **cross-platform equivalence**, and **multi-agent collaboration**.
+**ABI-Bench v0.9** (Agent-Bioinformatics Interface Benchmark) evaluates whether a structured ABI control layer improves LLM agent operation of bioinformatics workflows — focusing on the **scaffolding effect** (weaker models benefit more from ABI), **cross-plugin portability** (same ABI lifecycle works across 7 plugins), **evidence-based artifact scoring** (JSON, workspace files, config changes, traces — not keyword matching), **hidden robustness** (cross-plugin diagnosis with public/hidden fixture pairs), and **7-suite evaluation architecture** with distinct claim roles.
 
 ### Core Narrative
 
@@ -71,17 +71,17 @@ python bench/harness/run_task.py --group G3 --task T01 --replicate 1 --experimen
 # Single task (direct Python agent — recommended)
 ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py --group G3 --task T01 --replicate 1 --agent-mode direct --experiment-set main --fixture-set public
 
-# Run a full group (direct mode, 3 replicates, parallel)
-ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py --group G3 --tasks full_v0_5 --replicates 3 --agent-mode direct --parallel --workers 4 --experiment-set main --fixture-set public
+# Run a full group (direct mode, 5 replicates, suite-based)
+ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py --group G3 --tasks causal_core_v0_8 --replicates 5 --agent-mode direct --parallel --workers 4 --experiment-set main --fixture-set public
 
 # Run with a specific model
-ABI_BENCH_MODEL=gpt-4o ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py --group G3 --tasks full_v0_5 --replicates 3 --agent-mode direct --parallel --workers 4 --experiment-set paper --fixture-set public
+ABI_BENCH_MODEL=gpt-4o ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py --group G3 --tasks causal_core_v0_8 --replicates 5 --agent-mode direct --parallel --workers 4 --experiment-set paper --fixture-set public
 
 # Sequential randomized-block (v0.3 recommended for paper runs)
-python bench/harness/run_sequential.py --groups G1,G2,G3,G4 --tasks full_v0_5 --replicates 15 --agent-mode direct --experiment-set paper --fixture-set public --workers 4 --seed 42
+python bench/harness/run_sequential.py --groups G1,G2,G3,G4 --tasks causal_core_v0_8 --replicates 15 --agent-mode direct --experiment-set paper --fixture-set public --workers 4 --seed 42
 
 # Multi-model experiment (v0.3 — scaffolding analysis)
-python bench/harness/run_multi_model.py --tier all --groups G1,G2,G3,G4 --tasks full_v0_5 --replicates 3 --experiment-set paper --fixture-set public --workers 4 --seed 42
+python bench/harness/run_multi_model.py --tier all --groups G1,G2,G3,G4 --tasks causal_core_v0_8 --replicates 5 --experiment-set paper --fixture-set public --workers 4 --seed 42
 
 # Scoring only (skip agent run)
 python bench/harness/run_task.py --group G3 --task T01 --dry-run-scoring-only --outdir bench/results/G3/T01/replicate_01
@@ -89,17 +89,20 @@ python bench/harness/run_task.py --group G3 --task T01 --dry-run-scoring-only --
 # Score a single run
 python bench/scoring/score_run.py --task bench/tasks/T01_list_types.yaml --run-dir bench/results/G3/T01/replicate_01 --trace-dir bench/traces/G3/T01/replicate_01
 
-# Aggregate all results
-python bench/scoring/aggregate_scores.py --results bench/results --experiment-set main --fixture-set public --output bench/results/leaderboard.tsv --summary bench/results/summary.json
+# Aggregate all results (suite-based)
+python bench/scoring/aggregate_scores.py --results bench/results --experiment-set main --fixture-set public --suite causal_core_v0_8 --output bench/results/leaderboard.tsv --summary bench/results/summary.json
 
 # Claim preflight check
-python bench/scoring/claim_preflight.py --results bench/results --experiment-set main --fixture-set hidden --min-replicates 3
+python bench/scoring/claim_preflight.py --results bench/results --experiment-set main --fixture-set hidden --suite causal_core_v0_8 --min-replicates 5
 
 # Statistical analysis (bootstrap CIs, effect sizes, scaffolding analysis)
-python bench/scoring/compute_statistics.py --results bench/results --experiment-set main --fixture-set public --output bench/results/statistics.json
+python bench/scoring/compute_statistics.py --results bench/results --experiment-set main --fixture-set public --suite causal_core_v0_8 --output bench/results/statistics.json
+
+# Static design audit (run before any experiment)
+python bench/validation/audit_benchmark.py --strict
 ```
 
-**Task specs**: `mvp` (8 tasks), `full` (18 tasks), `full_v0_3` (19), `extended_v0_3` (24), `full_v0_4` (29), `extended_v0_4` (30), `full_v0_5` (34), `extended_v0_5` (35), `full_v0_6` (47), `extended_v0_6` (52), `full_v0_7` (58), `extended_v0_7` (63), `ablation` (6 tasks), or comma-separated IDs.
+**Task specs**: `mvp` (8 tasks), `full` (18 tasks), `full_v0_3` (19), `extended_v0_3` (24), `full_v0_4` (29), `extended_v0_4` (30), `full_v0_5` (34), `extended_v0_5` (35), `full_v0_6` (47), `extended_v0_6` (52), `full_v0_7` (58), `extended_v0_7` (63), `full_v0_9` (61), `causal_core_v0_8` (24), `hidden_robustness_v0_9` (3), `ablation` (6 tasks), or comma-separated IDs.
 
 **Linting**: `ruff check bench/` (config in `pyproject.toml`; excludes `workspaces/`, `traces/`, `results/`)
 
@@ -119,7 +122,7 @@ The harness executes a 5-step pipeline per task run:
 4. **Trace collection** (`collect_trace.py`): Saves `agent_trace.jsonl`, `tool_calls.jsonl`, `commands.log`
 5. **Scoring** (`score_run.py`): Runs checks from `rubric.yaml` against artifacts and traces, writes `score.json`
 
-### Group Architecture (v0.6)
+### Group Architecture (v0.9)
 
 Each group controls what tools and information the agent receives:
 
@@ -132,6 +135,20 @@ Each group controls what tools and information the agent receives:
 - **A4** (no permission model): G3 minus confirmation gating — Appendix only
 
 These are configured in `bench/agent_profiles/*.yaml` and mapped to tool sets in `direct_agent.py:SYSTEM_PROMPTS`.
+
+### Evaluation Suites (v0.9)
+
+v0.9 organizes 61 tasks into 7 suites with distinct claim roles. Only `causal_core_v0_8` and `hidden_robustness_v0_9` may estimate the causal effect of ABI — their prompts are interface-neutral and every group is scored against the same outcome. Defined in `bench/evaluation_suites.yaml`:
+
+| Suite | Claim Role | Tasks | Groups |
+|-------|-----------|-------|--------|
+| `causal_core_v0_8` | primary_causal | 24 | G1, G2, G3, G4 |
+| `hidden_robustness_v0_9` | causal_robustness | 3 (T59-T61) | G1, G2, G3, G4 |
+| `mechanism_probes_v0_8` | mechanism_descriptive | 32 | G3, A1, A3, A4 |
+| `real_execution_case_studies_v0_8` | case_study | 5 (T31-T35) | G3 |
+| `heldout_plugin_v0_8` | external_validity | 3 (T48-T50) | G1, G2, G3, G4 |
+| `ablation_v0_8` | component_ablation | 6 (T03-T08) | G3, A1, A3, A4 |
+| `full_descriptive_v0_8` | descriptive_only | 61 (T01-T61) | All |
 
 ### Agent Harness
 
@@ -180,7 +197,10 @@ Scoring is artifact-based and deterministic. Key scoring dimensions:
 - **Figure validation** (T36-T38, v0.6): Sciplot figure verification, diagnosis, data consistency
 - **Progressive repair** (T39-T41, v0.6): Single-fault and multi-fault recovery, resource self-configuration
 - **Cross-platform equivalence** (T42-T44, v0.6): Local/Nextflow/Docker output consistency, provenance audit
-- **Multi-agent collaboration** (T45-T47, v0.6): Planner-reviewer, cross-model verification, zero-shot transfer
+- **Multi-agent collaboration** (T45-T47, v0.6): Planner-reviewer, cross-model verification (v0.9: compares two independent review artifacts), zero-shot transfer
+- **Evidence-based scoring** (T36-T47, v0.9): Cross-validates JSON fields, workspace files, config changes, and traces — eliminates keyword matching
+- **Hidden robustness** (T59-T61, v0.9): Cross-plugin diagnosis with public/hidden fixture pairs (RNA-seq, WGS, easymetagenome)
+- **Static audit** (v0.9): `audit_benchmark.py --strict` detects unknown scoring functions, fixture multi-fault mixing, per-plugin score field mismatches, and rubric indirect keyword scoring
 
 The `rubric.yaml` (765 lines) defines all scoring checks centrally. Each task YAML references checks by key. `checks.py` (1389 lines) implements the check functions.
 
@@ -210,17 +230,18 @@ This enables computation of **Scaffolding Gain** = (G3−G1)_weak − (G3−G1)_
 > especially sensitive to quantization degradation. Weak-tier models run
 > natively without quantization. See `bench/model_tiers.yaml` for canonical tier definitions.
 
-### Task Architecture (v0.6)
+### Task Architecture (v0.9)
 
 Tasks are organized into lifecycle modules:
 
 | Module | Tasks | Type |
 |--------|-------|------|
 | **Discovery** | T01 | List analysis types |
-| **Planning** | T02, T09, T13, T15, T17 | Cross-plugin plans |
-| **Dry-run** | T03, T10, T14, T16, T18 | Cross-plugin dry-runs |
+| **Planning** | T02, T09, T13, T15, T17, T48, T50 | Cross-plugin plans (7 plugins) |
+| **Dry-run** | T03, T10, T14, T16, T18, T49 | Cross-plugin dry-runs |
 | **Inspection** | T04, T11, T25, T26 | Provenance inspection across plugins |
 | **Diagnosis** | T05, T06, T07, T22, T23 | Single and multi-error diagnosis |
+| **Hidden Diagnosis** | T59, T60, T61 | Cross-plugin hidden robustness (v0.9) |
 | **Safety** | T08, T24 | Permission boundary and stress test |
 | **Interpretation** | T12, T19 | Table interpretation and overclaim guard |
 | **Job Control** | T20 | Submit/status/cancel/artifacts |
@@ -228,22 +249,27 @@ Tasks are organized into lifecycle modules:
 | **Contract** | T27, T28, T29 | Contract lint, Nextflow export, violation detection |
 | **Report Quality** | T30 | Report completeness and structure |
 | **Real Execution** | T31, T32, T33, T34, T35 | Real bioinformatics execution (plasmid, rnaseq, amplicon, wgs, metatranscriptomics) |
-| **Figure Validation** | T36, T37, T38 | Figure verification, diagnosis, data consistency |
-| **Progressive Repair** | T39, T40, T41 | Single-fault, multi-fault recovery, resource self-config |
-| **Cross-Platform** | T42, T43, T44 | Local/Nextflow/Docker comparison, provenance audit |
-| **Multi-Agent** | T45, T46, T47 | Planner-reviewer, cross-model verify, zero-shot transfer |
+| **Figure Validation** | T36, T37, T38 | Figure verification, diagnosis, data consistency (v0.9: evidence scoring) |
+| **Progressive Repair** | T39, T40, T41 | Single-fault, multi-fault recovery, resource self-config (v0.9: evidence scoring) |
+| **Cross-Platform** | T42, T43, T44 | Local/Nextflow/Docker comparison, provenance audit (v0.9: evidence scoring) |
+| **Multi-Agent** | T45, T46, T47 | Planner-reviewer, cross-model verify (independent reviews), zero-shot transfer (v0.9: evidence scoring) |
+| **ABI Query** | T51, T52 | Metadata discovery, cross-plugin (v0.7) |
+| **Resource Mgmt** | T53, T54 | Check-resources, setup-resources (v0.7) |
+| **Doctor Agent** | T55 | Operating guide interpretation (v0.7) |
+| **Sciplot CLI** | T56, T57 | Figure validate, render (v0.7) |
+| **Internal Handlers** | T58 | Internal vs external step awareness (v0.7) |
 
-### v0.4/v0.5/v0.6 New Tasks
+### v0.7/v0.8/v0.9 New Tasks
 
-**v0.4** added T25-T30 (inspection, contract, report quality modules).
-**v0.5** added T31-T35 (real execution tasks) — these are the first tasks that permit actual bioinformatics tool execution, gated behind explicit confirmation.
-**v0.6** added T36-T47 (12 tasks across 4 new modules) — Figure Validation (T36-T38), Progressive Repair (T39-T41), Cross-Platform (T42-T44), and Multi-Agent (T45-T47).
+**v0.7** added T48-T58 (11 tasks: easymetagenome, viral_viwrap, ABI query, resource mgmt, doctor agent, sciplot CLI, internal handlers).
+**v0.8** restructured evaluation into 7 suites with distinct claim roles — preventing mechanism tasks from contaminating the primary causal estimate of ABI's effect. Introduced `causal_core_v0_8`, `mechanism_probes_v0_8`, and suite-aware scoring with `--suite` flag.
+**v0.9** converted T36-T47 to evidence-based artifact scoring (JSON, workspace files, config changes, traces — no keyword matching). Redesigned T46 to compare two independent review artifacts. Added T59-T61 (cross-plugin hidden robustness: RNA-seq, WGS, easymetagenome with public/hidden fixture pairs). Added static audit (`audit_benchmark.py --strict`). Fixed safety checks to fail on missing trace (no longer default-pass).
 
-### Claim Criteria (v0.6)
+### Claim Criteria (v0.9)
 
-The v0.6 claim criteria extend the v0.5 three-tier system with four new modules:
+The v0.9 claim criteria build on v0.8's suite architecture:
 
-**Main Claim**: G3 > G1/G2 with CI-based significance
+**Main Claim** (causal_core_v0_8): G3 > G1/G2 with CI-based significance on interface-neutral tasks
 **Scaffolding Claim**: 
 - Scaffolding Gain = (G3−G1)_weak − (G3−G1)_strong > 0
 - At least 5/6 models show G3 > G1
@@ -253,20 +279,18 @@ The v0.6 claim criteria extend the v0.5 three-tier system with four new modules:
 
 **G4 Claim**: G3 > G4 by ≥ 3 points (lifecycle API beats equivalent documentation)
 
-**Cross-Plugin Claim**: All 5 plugins (metagenomic_plasmid, metatranscriptomics, amplicon_16s, rnaseq_expression, wgs_bacteria) have successful dry-run by G3
+**Cross-Plugin Claim**: 6+ plugins (metagenomic_plasmid, metatranscriptomics, amplicon_16s, rnaseq_expression, wgs_bacteria, easymetagenome) have successful dry-run by G3; viral_viwrap has successful planning
 
-**v0.6 New Claims**:
-- **Figure Validation Claim**: G3 figure validation pass rate ≥ 0.70 across T36-T38
-- **Progressive Repair Claim**: G3 progressive repair success rate ≥ 0.60 across T39-T41
-- **Cross-Platform Claim**: G3 cross-platform equivalence rate ≥ 0.80 across T42-T44
-- **Multi-Agent Claim**: G3 multi-agent collaboration score ≥ 0.70 across T45-T47
+**Hidden Robustness Claim** (hidden_robustness_v0_9): G3 > G1/G2/G4 on held-out cross-plugin diagnosis tasks, reported independently
+
+**Evidence Scoring Claim**: T36-T47 scores from artifact cross-validation have lower false-positive rate than keyword matching (validated via static audit)
 
 Ablation groups (A1/A3/A4) are reported in Appendix only.
 
 ### Fixture System
 
-- `bench/fixtures/` — public fixtures: plasmid_valid, plasmid_missing_input, plasmid_missing_resource, plasmid_tool_missing, transcriptomics_valid, rnaseq_valid, amplicon_valid, wgs_valid
-- `bench/fixtures_hidden/` — hidden fixtures for diagnosis tasks (prevent answer leakage)
+- `bench/fixtures/` — public fixtures: plasmid_valid, plasmid_missing_input, plasmid_missing_resource, plasmid_tool_missing, transcriptomics_valid, rnaseq_valid, amplicon_valid, wgs_valid, easymeta_single_missing_resource, wgs_single_missing_resource, figure_validation_clean, figure_diagnosis, figure_data_consistency
+- `bench/fixtures_hidden/` — hidden fixtures for diagnosis tasks (prevent answer leakage): plasmid_hidden_missing_input, plasmid_hidden_missing_resource, plasmid_hidden_tool_missing, rnaseq_hidden_missing_resource, wgs_hidden_single_missing_resource, easymeta_hidden_single_missing_resource
 - `--fixture-set public|hidden` selects which set; hidden is only meaningful for T05/T06/T07/T22/T23 (falls back to public for others)
 
 ## Local Model Benchmarking
@@ -295,12 +319,12 @@ See `/root/autodl-tmp/local_llms/llm.md` for model sizes, VRAM requirements, and
 
 ## Key Design Constraints
 
+- **Suite-based evaluation (v0.8)**: Only `causal_core_v0_8` and `hidden_robustness_v0_9` may estimate the causal effect of ABI; mechanism probes and case studies are reported separately
+- **Evidence-based scoring (v0.9)**: T36-T47 scores cross-validate JSON artifacts, workspace files, config changes, and traces — not keyword matching or self-reported claims
 - **Dry-run primary (T01-T30)**: v0.1-v0.4 evaluate via dry-run only; real bioinformatics execution is prohibited in scoring for these tasks
 - **Real execution (T31-T35, v0.5)**: Real bioinformatics tool execution is permitted for these tasks only, gated behind explicit confirmation
-- **Figure validation (T36-T38, v0.6)**: Sciplot figure validation tasks — verify, diagnose, check data consistency
-- **Progressive repair (T39-T41, v0.6)**: Failure recovery tasks — single-fault, multi-fault, resource self-configuration
-- **Cross-platform (T42-T44, v0.6)**: Platform equivalence tasks — Local/Nextflow/Docker comparison
-- **Multi-agent (T45-T47, v0.6)**: Collaboration tasks — planner-reviewer, cross-model verification, zero-shot transfer
+- **Hidden robustness (T59-T61, v0.9)**: Cross-plugin diagnosis with public/hidden fixture pairs, reported independently
+- **Static audit required (v0.9)**: `audit_benchmark.py --strict` must pass before any experimental run — catches unknown scoring functions, fixture multi-fault mixing, and rubric indirect keyword scoring
 - **Network off**: All fixtures are self-contained; no external network access required
 - **Isolated workspaces**: Each task/group/replicate gets an independent workspace directory
 - **Fixed commit**: All benchmark runs use a fixed git commit; the entire benchmark is pinned

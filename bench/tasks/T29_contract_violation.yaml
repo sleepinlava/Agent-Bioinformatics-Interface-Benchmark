@@ -52,12 +52,21 @@ scoring:
     points: 2
   checksum_values_reported:
     points: 2
+    function: check_json_contract
+    args:
+      nonempty_paths: [expected_checksum, actual_checksum]
   blocked_steps_identified:
     points: 2
+    function: check_json_contract
+    args:
+      min_items: {blocked_steps: 1}
   integrity_assessed_correctly:
     points: 2
   minimal_fix_proposed:
     points: 1
+    function: check_json_contract
+    args:
+      nonempty_paths: [fix]
   final_answer_has_structure:
     points: 1
 

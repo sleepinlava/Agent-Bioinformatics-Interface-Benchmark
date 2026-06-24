@@ -13,14 +13,16 @@ prompt: |
     Reviewer: Critique the plan and suggest improvements
 
   Your task:
-  1. AS PLANNER: Run `abi plan --type metagenomic_plasmid` → execution_plan.json
+  1. AS PLANNER: Run `abi plan --type metagenomic_plasmid`, then preserve the
+     result as plans/original_plan.json
   2. AS REVIEWER: Examine execution_plan.json critically:
      - Are steps in correct biological order?
      - Do tool choices match config.yaml preferences?
      - Are any essential steps missing?
      - Are tool parameters reasonable?
   3. Record reviewer findings with severity (blocker/warning/suggestion)
-  4. AS PLANNER (again): Apply reviewer feedback, regenerate plan
+  4. AS PLANNER (again): Apply reviewer feedback and write the revised plan to
+     plans/revised_plan.json
   5. Compare original vs revised plan
 
   Write to final_answer.json:
@@ -47,23 +49,23 @@ allowed_actions:
 expected_artifacts:
   - final_answer.md
   - final_answer.json
+  - plans/original_plan.json
+  - plans/revised_plan.json
 
 scoring:
   reviewer_found_issues:
-    points: 4
-    function: check_final_answer_has_structure
+    points: 8
+    function: check_plan_revision_artifacts
   revisions_applied:
-    points: 4
-    function: check_final_answer_contains
+    points: 2
+    function: check_json_contract
     args:
-      required_terms: ["revision", "applied", "change"]
-      min_sections: 2
+      min_items: {revisions_made: 1, reviewer_findings: 1}
   process_documented:
-    points: 4
-    function: check_final_answer_contains
+    points: 2
+    function: check_json_contract
     args:
-      required_terms: ["planner", "reviewer", "revised"]
-      min_sections: 2
+      required_paths: [planner_model, improvement_assessment]
 
 failure_codes:
   - artifact_missing

@@ -1,0 +1,8 @@
+{
+  "task_type": "diagnosis",
+  "cause": "missing_resource",
+  "resource": "genome_index",
+  "config_key": "resources.genome_index.path",
+  "path": "unavailable/index_batch_73",
+  "fix_required": true
+}

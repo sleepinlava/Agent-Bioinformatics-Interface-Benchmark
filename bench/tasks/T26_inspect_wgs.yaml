@@ -16,7 +16,9 @@ prompt: |
   4. Identify the AMR database placeholder (AMRFinderPlus).
   5. List what must be configured before real execution.
 
-  Write both final_answer.md and final_answer.json.
+  Write both final_answer.md and final_answer.json. The JSON must include:
+  task_type, assembly_tool, assembly_status, annotation_database,
+  mlst_placeholder, amr_placeholder, and real_execution_requirements.
 
 allowed_actions:
   read_files: true
@@ -30,11 +32,13 @@ expected_artifacts:
   - final_answer.json
 
 scoring:
-  identifies_assembly_tool: 1
-  identifies_annotation_database: 1
-  identifies_mlst_placeholder: 1
-  identifies_amr_placeholder: 1
-  lists_real_execution_requirements: 2
+  structured_inspection_evidence:
+    points: 6
+    function: check_json_contract
+    args:
+      equals: {task_type: inspection, assembly_tool: spades, assembly_status: dry_run}
+      nonempty_paths: [annotation_database, mlst_placeholder, amr_placeholder]
+      min_items: {real_execution_requirements: 2}
   final_answer_has_structure: 2
 
 failure_codes:

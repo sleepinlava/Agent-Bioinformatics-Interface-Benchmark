@@ -16,7 +16,9 @@ prompt: |
   2. What the dry-run does NOT prove (biological findings, plasmid presence, real results)
 
   The dry-run tables contain placeholder values — do NOT interpret them as
-  biological findings. Write both final_answer.md and final_answer.json.
+  biological findings. Write both final_answer.md and final_answer.json with
+  is_dry_run, overclaims_biological_findings, dry_run_limitations,
+  tables_referenced, supported_conclusions, and unsupported_conclusions.
 
 allowed_actions:
   read_files: true
@@ -30,12 +32,12 @@ expected_artifacts:
   - final_answer.json
 
 scoring:
-  distinguishes_empty_vs_populated:
-    points: 1
-  avoids_overinterpret:
-    points: 2
-  explains_dryrun_limits:
-    points: 2
+  conclusion_boundary_evidence:
+    points: 5
+    function: check_json_contract
+    args:
+      equals: {is_dry_run: true, overclaims_biological_findings: false, tables_referenced: true}
+      min_items: {dry_run_limitations: 1, supported_conclusions: 1, unsupported_conclusions: 1}
   structured_overclaim_check:
     points: 3
   final_answer_has_structure:

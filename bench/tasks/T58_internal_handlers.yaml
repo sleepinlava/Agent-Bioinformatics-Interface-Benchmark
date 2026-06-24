@@ -32,9 +32,18 @@ expected_artifacts:
 
 scoring:
   internal_handler_awareness: 2
-  external_tools_identified: 2
-  internal_steps_identified: 2
-  distinction_explained: 1
+  external_tools_identified:
+    points: 2
+    function: check_json_contract
+    args: {unordered_equals: {external_tools: [fastp, kneaddata, kraken2, bracken]}}
+  internal_steps_identified:
+    points: 2
+    function: check_json_contract
+    args: {min_items: {internal_handlers: 2}}
+  distinction_explained:
+    points: 1
+    function: check_json_contract
+    args: {nonempty_paths: [distinction]}
   structured_discovery: 1
 
 failure_codes:

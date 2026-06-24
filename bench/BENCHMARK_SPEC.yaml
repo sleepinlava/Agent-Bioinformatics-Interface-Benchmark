@@ -1,6 +1,6 @@
 benchmark:
   name: ABI-Bench
-  version: "0.7"
+  version: "0.9"
   benchmark_type: agent_bioinformatics_interface
   primary_claim: >
     ABI is a structured control layer that improves LLM agent operability
@@ -31,16 +31,12 @@ environment:
 # ═══════════════════════════════════════════════════════════════════════
 model_tiers:
   tier_assignment_method: >
-    Tiers are assigned based on observed G1 baseline performance (objective
-    criteria).  The model lists below are the canonical set for each tier as
-    determined by prior benchmarking.  New models are classified dynamically
-    by `aggregate_scores.py` based on their G1 score relative to tier bands.
-    Models not in any tier list receive tier "unknown" and are included in
-    aggregate statistics but excluded from scaffolding analysis.
-  tier_bands:
-    strong: "G1 normalized score >= 70"
-    medium: "G1 normalized score >= 50 and < 70"
-    weak: "G1 normalized score < 50"
+    Tiers are frozen in bench/model_tiers.yaml before benchmark outcomes are
+    collected, using external capability evidence and native-precision model
+    configuration. Outcome-based reclassification is forbidden because using
+    observed G1 scores to define tiers biases the Group × Tier interaction.
+    Unregistered models receive tier "unknown" and require a preregistered
+    amendment before they can contribute to the scaffolding claim.
   strong:
     description: "Frontier models with strong reasoning capabilities"
     models:
@@ -63,37 +59,35 @@ model_tiers:
 # ═══════════════════════════════════════════════════════════════════════
 plugin_balance:
   note: >
-    metagenomic_plasmid dominates ~49% of tasks. Cross-plugin claims are
-    supported by tasks across all 7 plugins, but per-plugin task counts are
-    asymmetric.  Per-plugin score breakdowns are reported in summary.json
-    for transparency.
+    metagenomic_plasmid remains overrepresented. v0.9 adds held-out diagnosis
+    for RNA-seq, WGS, and easymetagenome, but per-plugin task counts remain
+    asymmetric and must be reported separately.
   distribution:
-    metagenomic_plasmid: 23   # ~40% of tasks
-    rnaseq_expression: 7      # ~12%
-    wgs_bacteria: 6           # ~10%
-    amplicon_16s: 5           # ~9%
-    metatranscriptomics: 4    # ~7%
-    easymetagenome: 5         # ~9% (v0.7: T48-T49 plan/dry-run + T51-T52 query + T53-T54 resources)
-    viral_viwrap: 4           # ~7% (v0.7: T50 plan + T51-T52 query + T53-T54 resources)
-    shared_cross_plugin: 4    # ~7% (T01, T30, T58, plus query/resource cross-plugin tasks)
+    metagenomic_plasmid: 27
+    rnaseq_expression: 10
+    wgs_bacteria: 7
+    amplicon_16s: 5
+    metatranscriptomics: 4
+    easymetagenome: 4
+    viral_viwrap: 1
+    shared_cross_plugin: 3
 
 # ═══════════════════════════════════════════════════════════════════════
 # Hidden Fixture Coverage (Fix 15)
 # ═══════════════════════════════════════════════════════════════════════
 hidden_fixtures:
   note: >
-    Hidden fixtures currently exist only for metagenomic_plasmid diagnosis
-    tasks (T05/T06/T07).  Non-plasmid diagnosis tasks fall back to public
-    fixtures when --fixture-set hidden is used.  This is documented
-    transparently in summary.json: hidden_fixture_coverage.
+    Hidden diagnosis fixtures cover metagenomic_plasmid plus the v0.9
+    robustness suite for rnaseq_expression, wgs_bacteria, and
+    easymetagenome. Other task classes still use public fixtures.
   covered_plugins:
     - metagenomic_plasmid
-  uncovered_plugins:
-    - metatranscriptomics
-    - amplicon_16s
     - rnaseq_expression
     - wgs_bacteria
     - easymetagenome
+  uncovered_plugins:
+    - metatranscriptomics
+    - amplicon_16s
     - viral_viwrap
 
 plugins:
@@ -531,6 +525,86 @@ extended_v0_7_tasks:
   - T23
   - T24
 
+# ═══════════════════════════════════════════════════════════════════════
+# v0.9 Robustness Extension (2026-06-24)
+#
+# T59-T61 add group-neutral, public/hidden paired diagnosis fixtures for
+# RNA-seq, bacterial WGS, and shotgun metagenomics. They are evaluated as a
+# separate causal robustness suite and are not mixed into causal_core_v0_8.
+# ═══════════════════════════════════════════════════════════════════════
+full_v0_9_tasks:
+  - T01
+  - T02
+  - T03
+  - T04
+  - T05
+  - T06
+  - T07
+  - T08
+  - T09
+  - T10
+  - T11
+  - T12
+  - T13
+  - T14
+  - T15
+  - T16
+  - T17
+  - T18
+  - T19
+  - T20
+  - T21
+  - T22
+  - T23
+  - T24
+  - T25
+  - T26
+  - T27
+  - T28
+  - T29
+  - T30
+  - T31
+  - T32
+  - T33
+  - T34
+  - T35
+  - T36
+  - T37
+  - T38
+  - T39
+  - T40
+  - T41
+  - T42
+  - T43
+  - T44
+  - T45
+  - T46
+  - T47
+  - T48
+  - T49
+  - T50
+  - T51
+  - T52
+  - T53
+  - T54
+  - T55
+  - T56
+  - T57
+  - T58
+  - T59
+  - T60
+  - T61
+
+v0_9_new_tasks:
+  - T59
+  - T60
+  - T61
+
+hidden_robustness_v0_9_tasks:
+  - T59
+  - T60
+  - T61
+
 ablation_tasks:
   - T03
   - T04
@@ -619,6 +693,9 @@ success_criteria:
   # Different task sets have different discrimination ceilings.
   # Full set (12 tasks) includes non-discriminating tasks that dilute the delta.
   stratified_deltas:
+    causal_core_v0_8:  # prospective primary suite, registered 2026-06-24
+      G3_minus_G1_min_delta: 5
+      G3_minus_G2_min_delta: 5
     full:         # T01–T12, 12 tasks
       G3_minus_G1_min_delta: 5
       G3_minus_G2_min_delta: 5
@@ -658,8 +735,9 @@ success_criteria:
   # v0.3: Cross-Plugin Portability Criteria
   # ═══════════════════════════════════════════════════════════════════════
   cross_plugin_criteria:
-    # All 7 plugins must have successful dry-run by G3 (v0.7: 5→7)
-    min_plugins_dryrun_success: 7
+    # Six plugins expose dry-run tasks; viral_viwrap currently exposes planning.
+    min_plugins_dryrun_success: 6
+    require_viral_viwrap_plan_success: true
     # Per-plugin plan score must be ≥ 70% of max
     min_plugin_plan_score_ratio: 0.70
 
@@ -724,3 +802,41 @@ success_criteria:
     progressive_repair_success_rate: 0.60
     cross_platform_equivalence_rate: 0.80
     multi_agent_collaboration_score: 0.70
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # v0.9 Claim Criteria (2026-06-24)
+  #
+  # v0.9 restructures evaluation into 7 suites with distinct claim roles
+  # and replaces keyword-matching with evidence-based artifact scoring
+  # for T36–T47.  T59–T61 form a separate causal robustness suite.
+  #
+  # Key design properties:
+  #   1. causal_core_v0_8 prompts are interface-neutral (no ABI naming)
+  #   2. T36–T47 scores are cross-validated against workspace files, config
+  #      changes, and agent traces — not self-reported claims
+  #   3. T46 compares two independently-generated review artifacts
+  #   4. hidden_robustness_v0_9 uses public/hidden fixture pairs with
+  #      identical fault classes but different identifiers/paths
+  #   5. Safety checks fail when trace is missing (no longer default-pass)
+  #   6. Static audit catches unknown scoring functions, fixture multi-fault
+  #      mixing, and rubric indirect keyword scoring
+  # ═══════════════════════════════════════════════════════════════════════
+  v0_9_criteria:
+    evidence_scoring:
+      description: >
+        T36–T47 scores cross-validate final_answer.json fields, workspace
+        files, config changes, and agent traces.  Self-reported keyword
+        matching is eliminated.
+      min_evidence_sources: 2  # each T36-T47 check requires ≥2 evidence types
+    hidden_robustness:
+      description: >
+        T59–T61 hidden suite reports G3−G1, G3−G2, G3−G4 independently.
+        Public/hidden fixture pairs share the same fault class.
+      report_separately: true
+    static_audit:
+      description: >
+        audit_benchmark.py --strict must pass (0 errors, 0 warnings) before
+        any experimental run.  Catches unknown scoring functions, fixture
+        multi-fault mixing, per-plugin score field mismatches, and rubric
+        indirect keyword scoring.
+      required: true

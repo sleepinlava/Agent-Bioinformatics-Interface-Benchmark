@@ -16,7 +16,9 @@ prompt: |
   4. Report how many samples were in the sample sheet.
   5. List what must be configured before real execution.
 
-  Write both final_answer.md and final_answer.json.
+  Write both final_answer.md and final_answer.json. The JSON must include:
+  task_type, genome_index_placeholder, annotation_gtf_placeholder,
+  deseq2_status, sample_count, and real_execution_requirements.
 
 allowed_actions:
   read_files: true
@@ -30,11 +32,13 @@ expected_artifacts:
   - final_answer.json
 
 scoring:
-  identifies_genome_index_placeholder: 1
-  identifies_annotation_gtf_placeholder: 1
-  identifies_deseq2_skipped: 1
-  reports_sample_count: 1
-  lists_real_execution_requirements: 2
+  structured_inspection_evidence:
+    points: 6
+    function: check_json_contract
+    args:
+      equals: {task_type: inspection, sample_count: 2, deseq2_status: skipped}
+      nonempty_paths: [genome_index_placeholder, annotation_gtf_placeholder]
+      min_items: {real_execution_requirements: 2}
   final_answer_has_structure: 2
 
 failure_codes:

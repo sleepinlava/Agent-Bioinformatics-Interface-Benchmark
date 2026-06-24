@@ -13,8 +13,8 @@ prompt: |
   workflow steps (fastp QC, KneadData host removal, Kraken2 taxonomy,
   Bracken abundance). Write the execution plan to execution_plan.json.
 
-  Read config.yaml and any manifest files first. Use the ABI lifecycle
-  commands (list-types, plan) to construct a valid plan.
+  Read config.yaml and any manifest files first. Use the interfaces available
+  to you to construct a valid plan; do not execute the workflow.
 
 allowed_actions:
   read_files: true
@@ -29,11 +29,21 @@ expected_artifacts:
 scoring:
   execution_plan_exists: 1
   analysis_type_is_easymetagenome: 2
-  step_id_unique: 2
+  step_id_unique:
+    points: 2
+    function: check_unique_step_ids
   tool_id_valid_for_easymeta: 2
-  plan_not_executed: 1
-  contains_fastp: 1
-  contains_kraken2: 1
+  plan_not_executed:
+    points: 1
+    function: check_no_real_execution
+  contains_fastp:
+    points: 1
+    function: check_json_contains_tool
+    args: {relpath: execution_plan.json, tool_id: fastp}
+  contains_kraken2:
+    points: 1
+    function: check_json_contains_tool
+    args: {relpath: execution_plan.json, tool_id: kraken2}
 
 failure_codes:
   - artifact_missing

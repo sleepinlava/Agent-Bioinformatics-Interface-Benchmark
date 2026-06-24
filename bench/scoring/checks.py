@@ -29,11 +29,24 @@ class CheckResult:
 
     def __init__(
         self,
-        check: str,
-        passed: bool,
-        score: float,
-        details: dict | None = None,
+        check: str | bool,
+        passed: bool | None = None,
+        score: float | None = None,
+        details: dict | str | None = None,
+        score_on_pass: float | None = None,
     ):
+        # v0.7 introduced several checks using the short legacy form
+        # ``CheckResult(passed, score_on_pass=...)``.  Preserve that form while
+        # normalizing every result to the explicit v0.8 representation.
+        if isinstance(check, bool) and passed is None:
+            passed = check
+            check = "legacy_check"
+        if passed is None:
+            raise TypeError("CheckResult requires a passed value")
+        if score is None:
+            score = score_on_pass if score_on_pass is not None else 0
+        if isinstance(details, str):
+            details = {"message": details}
         self.check = check
         self.passed = passed
         self.score = score
@@ -646,10 +659,11 @@ def check_no_large_download(trace_dir: Path) -> bool:
     """Check that agent did not attempt to download large databases."""
     tc = trace_dir / "tool_calls.jsonl"
     if not tc.is_file():
-        # Safety check: missing traces → benefit of doubt (no evidence of download)
+        # Safety evidence must fail closed. Otherwise a missing trace earns the
+        # same safety credit as a trace proving that no download occurred.
         import sys as _sys
-        print("WARNING: tool_calls.jsonl missing — cannot verify download behaviour, defaulting to pass (benefit of doubt)", file=_sys.stderr)
-        return True
+        print("WARNING: tool_calls.jsonl missing — cannot verify download behaviour", file=_sys.stderr)
+        return False
     download_keywords = ["wget", "curl", "ftp", "rsync", "download", "aws s3 cp"]
     try:
         with open(tc) as f:
@@ -2090,6 +2104,361 @@ def check_internal_handler_awareness(
         score_on_pass=int(_get_max_points(task, check_name, 2) * score_frac)
         if score_frac > 0 else 0,
         details=f"Internal aware: {mentions_internal}, External aware: {mentions_external}",
+    )
+
+
+# ── v0.9 evidence-first mechanism checks ───────────────────────────────────
+
+_MISSING = object()
+
+
+def _nested_value(data, path: str):
+    """Read a dotted path from nested dictionaries."""
+    current = data
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return _MISSING
+        current = current[part]
+    return current
+
+
+def _evidence_value_matches(actual, expected, tolerance: float = 1e-6) -> bool:
+    if isinstance(expected, float) and isinstance(actual, (int, float)):
+        return abs(float(actual) - expected) <= tolerance
+    if isinstance(expected, list):
+        return isinstance(actual, list) and actual == expected
+    return actual == expected
+
+
+def check_json_contract(
+    trace_dir: Path,
+    run_dir: Path = None,
+    required_paths: list[str] | None = None,
+    nonempty_paths: list[str] | None = None,
+    equals: dict | None = None,
+    unordered_equals: dict | None = None,
+    min_items: dict | None = None,
+    allowed_values: dict | None = None,
+) -> bool:
+    """Validate final_answer.json structurally without keyword matching."""
+    data = _load_final_answer_json(trace_dir, run_dir)
+    if not data:
+        return False
+    for path in required_paths or []:
+        if _nested_value(data, path) is _MISSING:
+            return False
+    for path in nonempty_paths or []:
+        value = _nested_value(data, path)
+        if value is _MISSING or value is None or value == "" or value == [] or value == {}:
+            return False
+    for path, expected in (equals or {}).items():
+        if not _evidence_value_matches(_nested_value(data, path), expected):
+            return False
+    for path, expected in (unordered_equals or {}).items():
+        actual = _nested_value(data, path)
+        if not isinstance(actual, list) or not isinstance(expected, list):
+            return False
+        if sorted(map(str, actual)) != sorted(map(str, expected)):
+            return False
+    for path, minimum in (min_items or {}).items():
+        value = _nested_value(data, path)
+        if not isinstance(value, (list, dict, str)) or len(value) < int(minimum):
+            return False
+    for path, allowed in (allowed_values or {}).items():
+        if _nested_value(data, path) not in allowed:
+            return False
+    return True
+
+
+def check_json_expected_records(
+    trace_dir: Path,
+    run_dir: Path = None,
+    list_path: str = "checks",
+    key_field: str = "check",
+    expected_records: dict | None = None,
+    required_fields: list[str] | None = None,
+    tolerance: float = 1e-6,
+) -> bool:
+    """Match structured records against fixture ground truth."""
+    data = _load_final_answer_json(trace_dir, run_dir)
+    records = _nested_value(data or {}, list_path)
+    if not isinstance(records, list):
+        return False
+    indexed = {
+        str(record.get(key_field)): record
+        for record in records
+        if isinstance(record, dict) and key_field in record
+    }
+    for key, expected in (expected_records or {}).items():
+        record = indexed.get(str(key))
+        if record is None:
+            return False
+        if any(field not in record for field in required_fields or []):
+            return False
+        for field, expected_value in expected.items():
+            if not _evidence_value_matches(record.get(field, _MISSING), expected_value, tolerance):
+                return False
+    return True
+
+
+def check_reported_paths_exist(
+    trace_dir: Path,
+    run_dir: Path,
+    list_path: str,
+    path_field: str = "path",
+    size_field: str | None = None,
+    require_all_workspace_files: str | None = None,
+) -> bool:
+    """Cross-check paths and optional byte counts reported by the agent."""
+    data = _load_final_answer_json(trace_dir, run_dir)
+    records = _nested_value(data or {}, list_path)
+    if not isinstance(records, list) or not records:
+        return False
+    root = run_dir.resolve()
+    reported = set()
+    for record in records:
+        if not isinstance(record, dict) or not _has_text(record.get(path_field)):
+            return False
+        relpath = Path(record[path_field])
+        path = (run_dir / relpath).resolve()
+        if root not in path.parents or not path.is_file():
+            return False
+        reported.add(path.relative_to(root).as_posix())
+        if size_field and record.get(size_field) != path.stat().st_size:
+            return False
+    if require_all_workspace_files:
+        actual = {
+            path.relative_to(root).as_posix()
+            for path in run_dir.glob(require_all_workspace_files)
+            if path.is_file()
+        }
+        if reported != actual:
+            return False
+    return True
+
+
+def check_command_trace_evidence(
+    trace_dir: Path,
+    required_patterns: list[str] | None = None,
+    forbidden_patterns: list[str] | None = None,
+) -> bool:
+    """Require actual command/tool-call trace evidence, not a self-report."""
+    chunks = []
+    for relpath in ("commands.log", "tool_calls.jsonl", ".agent_log/commands.log"):
+        path = trace_dir / relpath
+        if path.is_file():
+            chunks.append(path.read_text(errors="replace"))
+    text = "\n".join(chunks)
+    if not text:
+        return False
+    if any(not re.search(pattern, text, re.IGNORECASE) for pattern in required_patterns or []):
+        return False
+    if any(re.search(pattern, text, re.IGNORECASE) for pattern in forbidden_patterns or []):
+        return False
+    return True
+
+
+def check_yaml_config_evidence(
+    run_dir: Path,
+    relpath: str = "config.yaml",
+    equals: dict | None = None,
+    forbidden_substrings: dict | None = None,
+) -> bool:
+    """Validate that a claimed repair materially changed workspace config."""
+    path = run_dir / relpath
+    if not path.is_file():
+        return False
+    try:
+        data = yaml.safe_load(path.read_text()) or {}
+    except (OSError, yaml.YAMLError):
+        return False
+    for dotted, expected in (equals or {}).items():
+        if not _evidence_value_matches(_nested_value(data, dotted), expected):
+            return False
+    for dotted, forbidden in (forbidden_substrings or {}).items():
+        value = _nested_value(data, dotted)
+        if value is _MISSING or any(term in str(value) for term in forbidden):
+            return False
+    return True
+
+
+def check_dual_runtime_comparison_evidence(
+    trace_dir: Path, run_dir: Path = None
+) -> bool:
+    """Verify T43 conclusions against the actual local and Docker artifacts."""
+    if run_dir is None:
+        return False
+    data = _load_final_answer_json(trace_dir, run_dir)
+    if not data:
+        return False
+    local = run_dir / "results" / "local_run"
+    docker = run_dir / "results" / "docker_run"
+    pairs = [
+        ("provenance/commands.tsv", "command_comparison.match"),
+        ("tables/plasmid_annotations.tsv", "table_comparison.match"),
+        ("figures/plasmid_map.png", "figure_comparison.match"),
+    ]
+    for relpath, answer_path in pairs:
+        left, right = local / relpath, docker / relpath
+        if not left.is_file() or not right.is_file():
+            return False
+        actual_match = (
+            left.stat().st_size > 0
+            and right.stat().st_size > 0
+            and left.read_bytes() == right.read_bytes()
+        )
+        if _nested_value(data, answer_path) is not actual_match:
+            return False
+    expected_equivalence = all(
+        _nested_value(data, answer_path) is True for _, answer_path in pairs
+    )
+    return (
+        data.get("substantially_equivalent") is expected_equivalence
+        and _has_text(data.get("rationale"))
+    )
+
+
+def check_provenance_audit_evidence(
+    trace_dir: Path, run_dir: Path = None
+) -> bool:
+    """Cross-check T44's audit verdict against the six provenance dimensions."""
+    if run_dir is None:
+        return False
+    data = _load_final_answer_json(trace_dir, run_dir)
+    records = data.get("checks") if data else None
+    if not isinstance(records, list):
+        return False
+    reported = {record.get("dimension"): record for record in records if isinstance(record, dict)}
+    expected_dimensions = {
+        "commands", "resolved_inputs", "tool_versions",
+        "checksums", "progress", "run_summary",
+    }
+    if set(reported) != expected_dimensions:
+        return False
+    provenance = run_dir / "provenance"
+    commands_path = provenance / "commands.tsv"
+    commands_valid = check_tsv_columns(
+        run_dir, "provenance/commands.tsv", ["step_id", "tool_id", "status", "exit_code"]
+    )
+    command_rows = []
+    if commands_path.is_file():
+        with open(commands_path) as f:
+            command_rows = list(csv.DictReader(f, delimiter="\t"))
+
+    resolved_valid = False
+    resolved_path = provenance / "resolved_inputs.tsv"
+    if resolved_path.is_file():
+        with open(resolved_path) as f:
+            resolved_rows = list(csv.DictReader(f, delimiter="\t"))
+        resolved_valid = bool(resolved_rows) and all(
+            row.get("status") == "resolved"
+            and not str(row.get("path", "")).startswith("PLACEHOLDER:")
+            and (run_dir / str(row.get("path", ""))).exists()
+            for row in resolved_rows
+        )
+
+    versions_valid = False
+    versions_path = provenance / "tool_versions.tsv"
+    if versions_path.is_file():
+        with open(versions_path) as f:
+            version_rows = list(csv.DictReader(f, delimiter="\t"))
+        versions_valid = bool(version_rows) and all(_has_text(row.get("version")) for row in version_rows)
+
+    progress_valid = False
+    progress_path = provenance / "progress.jsonl"
+    if progress_path.is_file():
+        try:
+            progress_rows = [json.loads(line) for line in progress_path.read_text().splitlines() if line.strip()]
+            progress_valid = (
+                len(progress_rows) == len(command_rows)
+                and all(_has_text(row.get("step_id")) and row.get("timestamp") for row in progress_rows)
+            )
+        except (json.JSONDecodeError, OSError):
+            progress_valid = False
+
+    summary_valid = False
+    summary_path = provenance / "run_summary.json"
+    if summary_path.is_file():
+        try:
+            summary = json.loads(summary_path.read_text())
+            summary_valid = (
+                summary.get("total_steps") == len(command_rows)
+                and sum(summary.get(key, 0) for key in ("dry_run", "skipped", "failed"))
+                == len(command_rows)
+            )
+        except (json.JSONDecodeError, OSError, TypeError):
+            summary_valid = False
+
+    checksums_valid = False
+    checksums_path = provenance / "checksums.json"
+    if checksums_path.is_file():
+        try:
+            checksums_valid = isinstance(json.loads(checksums_path.read_text()), dict)
+        except (json.JSONDecodeError, OSError):
+            checksums_valid = False
+
+    expected_valid = {
+        "commands": commands_valid,
+        "resolved_inputs": resolved_valid,
+        "tool_versions": versions_valid,
+        "checksums": checksums_valid,
+        "progress": progress_valid,
+        "run_summary": summary_valid,
+    }
+    if any(reported[name].get("valid") is not valid for name, valid in expected_valid.items()):
+        return False
+    return data.get("overall_complete") is all(expected_valid.values())
+
+
+def check_plan_revision_artifacts(
+    trace_dir: Path, run_dir: Path = None
+) -> bool:
+    """Require two concrete plan versions and a matching structured review."""
+    if run_dir is None:
+        return False
+    data = _load_final_answer_json(trace_dir, run_dir)
+    paths = [run_dir / "plans" / "original_plan.json", run_dir / "plans" / "revised_plan.json"]
+    if not data or not all(path.is_file() and path.stat().st_size > 0 for path in paths):
+        return False
+    try:
+        original, revised = (json.loads(path.read_text()) for path in paths)
+    except (json.JSONDecodeError, OSError):
+        return False
+    original_steps = original.get("steps", [])
+    revised_steps = revised.get("steps", [])
+    return (
+        isinstance(data.get("reviewer_findings"), list)
+        and bool(data["reviewer_findings"])
+        and isinstance(data.get("revisions_made"), list)
+        and bool(data["revisions_made"])
+        and data.get("original_step_count") == len(original_steps)
+        and data.get("revised_step_count") == len(revised_steps)
+        and original != revised
+    )
+
+
+def check_cross_review_comparison(
+    trace_dir: Path, run_dir: Path = None
+) -> bool:
+    """Require T46 to compare independent supplied reviews, not imagine a model."""
+    if run_dir is None:
+        return False
+    data = _load_final_answer_json(trace_dir, run_dir)
+    review_paths = [run_dir / "reviews" / "review_a.json", run_dir / "reviews" / "review_b.json"]
+    if not data or not all(path.is_file() for path in review_paths):
+        return False
+    try:
+        reviews = [json.loads(path.read_text()) for path in review_paths]
+    except (json.JSONDecodeError, OSError):
+        return False
+    source_ids = {review.get("review_id") for review in reviews}
+    compared = set(data.get("source_reviews", []))
+    return (
+        source_ids == compared
+        and bool(data.get("robust_findings"))
+        and isinstance(data.get("model_dependent_findings"), list)
+        and bool(data.get("uncertainty_sources"))
+        and _has_text(data.get("confidence_summary"))
     )
 
 

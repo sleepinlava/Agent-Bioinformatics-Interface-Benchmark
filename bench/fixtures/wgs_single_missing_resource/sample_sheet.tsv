@@ -1,0 +1,2 @@
+sample_id	read1	read2
+ISO_01	data/iso_R1.fastq.gz	data/iso_R2.fastq.gz

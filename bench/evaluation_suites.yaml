@@ -1,0 +1,174 @@
+schema_version: abi-bench.suites.v1
+benchmark_version: "0.9"
+
+# Only suites with claim_role: primary_causal may be used to estimate the
+# causal effect of exposing a general-purpose agent to ABI.  Their prompts are
+# interface-neutral and every group is scored against the same outcome.
+suites:
+  causal_core_v0_8:
+    claim_role: primary_causal
+    description: >
+      Outcome-equivalent comparison of G1/G2/G3/G4. Prompts name the goal, not
+      the ABI command. This suite is the default evidence for the ABI effect.
+    groups: [G1, G2, G3, G4]
+    tasks:
+      - T01
+      - T02
+      - T03
+      - T04
+      - T05
+      - T06
+      - T07
+      - T08
+      - T09
+      - T10
+      - T11
+      - T12
+      - T13
+      - T14
+      - T15
+      - T16
+      - T17
+      - T18
+      - T19
+      - T25
+      - T26
+      - T48
+      - T49
+      - T50
+
+  heldout_plugin_v0_8:
+    claim_role: external_validity
+    description: >
+      Transfer to easymetagenome and viral_viwrap, which are excluded from the
+      original five-plugin lifecycle set.
+    groups: [G1, G2, G3, G4]
+    tasks: [T48, T49, T50]
+
+  hidden_robustness_v0_9:
+    claim_role: causal_robustness
+    description: >
+      Group-neutral diagnosis on held-out RNA-seq, WGS, and shotgun
+      metagenomics fixtures. Public and hidden variants change identifiers and
+      paths while preserving the fault class.
+    groups: [G1, G2, G3, G4]
+    tasks: [T59, T60, T61]
+
+  mechanism_probes_v0_8:
+    claim_role: mechanism_descriptive
+    description: >
+      ABI-native feature probes. These tasks explain how ABI is used but must
+      not be mixed into the primary G3-versus-baseline treatment estimate.
+    groups: [G3, A1, A3, A4]
+    tasks:
+      - T20
+      - T21
+      - T22
+      - T23
+      - T24
+      - T27
+      - T28
+      - T29
+      - T30
+      - T36
+      - T37
+      - T38
+      - T39
+      - T40
+      - T41
+      - T42
+      - T43
+      - T44
+      - T45
+      - T46
+      - T47
+      - T51
+      - T52
+      - T53
+      - T54
+      - T55
+      - T56
+      - T57
+      - T58
+
+  real_execution_case_studies_v0_8:
+    claim_role: case_study
+    description: >
+      Value-level validation of real pipeline outputs. Report separately from
+      the primary agent-operability score because these tasks explicitly name
+      the ABI execution interface.
+    groups: [G3]
+    tasks: [T31, T32, T33, T34, T35]
+
+  ablation_v0_8:
+    claim_role: component_ablation
+    description: Component probes for provenance, diagnostics, and permission gating.
+    groups: [G3, A1, A3, A4]
+    tasks: [T03, T04, T05, T06, T07, T08]
+
+  full_descriptive_v0_8:
+    claim_role: descriptive_only
+    description: All tasks for coverage reporting; not a valid causal total score.
+    groups: [G1, G2, G3, G4, A1, A3, A4]
+    tasks:
+      - T01
+      - T02
+      - T03
+      - T04
+      - T05
+      - T06
+      - T07
+      - T08
+      - T09
+      - T10
+      - T11
+      - T12
+      - T13
+      - T14
+      - T15
+      - T16
+      - T17
+      - T18
+      - T19
+      - T20
+      - T21
+      - T22
+      - T23
+      - T24
+      - T25
+      - T26
+      - T27
+      - T28
+      - T29
+      - T30
+      - T31
+      - T32
+      - T33
+      - T34
+      - T35
+      - T36
+      - T37
+      - T38
+      - T39
+      - T40
+      - T41
+      - T42
+      - T43
+      - T44
+      - T45
+      - T46
+      - T47
+      - T48
+      - T49
+      - T50
+      - T51
+      - T52
+      - T53
+      - T54
+      - T55
+      - T56
+      - T57
+      - T58
+      - T59
+      - T60
+      - T61

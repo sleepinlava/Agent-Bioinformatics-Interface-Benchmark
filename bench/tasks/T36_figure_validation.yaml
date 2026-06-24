@@ -3,7 +3,7 @@ task_id: T36
 name: Figure validation — verify rendered scientific figures
 plugin: metagenomic_plasmid
 task_type: figure_validation
-fixture: figure_validation
+fixture: figure_validation_clean
 max_score: 12
 timeout_minutes: 15
 max_agent_steps: 30
@@ -30,7 +30,9 @@ prompt: |
         "path": "figures/<name>.png",
         "plot_type": "bar|volcano|pca|heatmap|...",
         "file_size_bytes": <N>,
-        "dpi": <N>,
+        "format": "png|svg|pdf",
+        "dpi": <N|null>,
+        "resolution_checked": true/false,
         "lint_passed": true/false,
         "data_consistent": true/false,
         "issues": ["description of any problems found"]
@@ -52,24 +54,38 @@ expected_artifacts:
 
 scoring:
   figures_enumerated:
-    points: 2
-    function: check_final_answer_has_structure
+    points: 3
+    function: check_reported_paths_exist
+    args:
+      list_path: figures
+      path_field: path
+      size_field: file_size_bytes
+      require_all_workspace_files: "figures/*"
   dpi_verified:
     points: 3
-    function: check_final_answer_contains
+    function: check_json_expected_records
     args:
-      required_terms: ["dpi", "resolution"]
+      list_path: figures
+      key_field: path
+      required_fields: [format, dpi, resolution_checked]
+      expected_records:
+        figures/alpha_diversity.svg: {format: svg, dpi: null, resolution_checked: true}
+        figures/qc_summary.svg: {format: svg, dpi: null, resolution_checked: true}
   lint_executed:
     points: 3
-    function: check_final_answer_contains
+    function: check_command_trace_evidence
     args:
-      required_terms: ["lint", "sciplot"]
+      required_patterns: ["abi-sciplot\\s+lint"]
   data_consistency_checked:
-    points: 4
-    function: check_final_answer_contains
+    points: 3
+    function: check_json_expected_records
     args:
-      required_terms: ["consistent", "table", "match"]
-      min_sections: 2
+      list_path: figures
+      key_field: path
+      required_fields: [data_consistent, issues]
+      expected_records:
+        figures/alpha_diversity.svg: {data_consistent: true}
+        figures/qc_summary.svg: {data_consistent: true}
 
 failure_codes:
   - artifact_missing

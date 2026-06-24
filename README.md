@@ -1,4 +1,4 @@
-# ABI-Bench v0.6
+# ABI-Bench v0.9
 
 > [中文版 (Chinese Version)](README.zh.md)
 
@@ -12,12 +12,12 @@
 
 **ABI-Bench** (Agent-Bioinformatics Interface Benchmark) evaluates whether
 a structured **ABI control layer** improves LLM agent operation of
-bioinformatics workflows. v0.6 focuses on the **scaffolding effect**:
-does ABI lower the model capability threshold required for reliable
-bioinformatics workflow operation, and extends evaluation to real
-bioinformatics tool execution (T31-T35), figure validation (T36-T38),
-progressive repair (T39-T41), cross-platform equivalence (T42-T44),
-and multi-agent collaboration (T45-T47).
+bioinformatics workflows. v0.9 converts T36–T47 to evidence-based scoring
+(JSON artifacts, workspace files, config changes, and traces instead of
+keyword matching), adds a cross-plugin hidden robustness suite (T59–T61:
+RNA-seq, WGS, easymetagenome), and separates evaluation into 7 suites
+with distinct claim roles — preventing mechanism tasks from contaminating
+the primary causal estimate of ABI's effect.
 
 ABI-Bench answers three core questions:
 
@@ -29,11 +29,12 @@ ABI-Bench answers three core questions:
 >    domain-specific scaffold that lowers the capability barrier?
 
 > 3. Can the same ABI lifecycle **transfer across multiple workflow plugins**
->    (metagenomic_plasmid, metatranscriptomics, amplicon_16s)?
+>    (metagenomic_plasmid, metatranscriptomics, amplicon_16s, rnaseq_expression,
+>    wgs_bacteria, easymetagenome, viral_viwrap)?
 
 ---
 
-## 2. Key Claims (v0.6)
+## 2. Key Claims (v0.9)
 
 ### 2.1 Main Claim: ABI Improves Agent Operability
 
@@ -83,8 +84,25 @@ execution platforms with full provenance audit trail (T42-T44).
 ### 2.8 Multi-Agent Claim: ABI Lifecycle Supports Agent Collaboration
 
 ABI's structured JSON envelopes and standard artifact paths enable effective
-planner-reviewer collaboration, cross-model verification, and zero-shot
+planner-reviewer collaboration, cross-model verification (comparing two
+independently-generated review artifacts), and zero-shot
 transfer between agent platforms (T45-T47).
+
+### 2.9 Evidence Scoring Claim: Artifact-Based Evaluation is More Reliable
+
+v0.9 replaces keyword-matching (`final_answer_contains`) with evidence-based
+scoring for T36–T47: JSON field validation, workspace file cross-checking,
+config change verification, and trace inspection. This eliminates false
+positives from self-reported claims and ensures the agent actually performed
+the work rather than describing it.
+
+### 2.10 Hidden Robustness Claim: Diagnosis Skills Generalize to Held-Out Plugins
+
+T59–T61 test whether diagnosis ability transfers to RNA-seq, bacterial WGS,
+and shotgun metagenomics with public/hidden fixture pairs that change
+identifiers and paths while preserving the fault class. These tasks form a
+separate `hidden_robustness_v0_9` suite, reported independently from the
+primary causal estimate.
 
 ---
 
@@ -139,7 +157,7 @@ ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_task.py \
 
 ```bash
 ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
-  --group G3 --tasks full_v0_5 --replicates 3 \
+  --group G3 --tasks causal_core_v0_8 --replicates 5 \
   --agent-mode direct --parallel --workers 4 \
   --experiment-set main --fixture-set public
 ```
@@ -149,24 +167,38 @@ ABI_BENCH_MAX_TOKENS=8000 python bench/harness/run_group.py \
 ```bash
 python bench/harness/run_multi_model.py \
   --tier all --groups G1,G2,G3,G4 \
-  --tasks full_v0_5 --replicates 3 \
+  --tasks causal_core_v0_8 --replicates 5 \
   --experiment-set paper --fixture-set public \
   --workers 4 --seed 42
+```
+
+### Static Design Audit
+
+```bash
+# Run before any experiment to catch design-time issues
+python bench/validation/audit_benchmark.py --strict
 ```
 
 ### Score and Analyze
 
 ```bash
-# Aggregate all scores
+# Aggregate scores for a specific suite
 python bench/scoring/aggregate_scores.py \
   --results bench/results --experiment-set main \
+  --suite causal_core_v0_8 \
   --output bench/results/leaderboard.tsv \
   --summary bench/results/summary.json
 
 # Statistical analysis with scaffolding metrics
 python bench/scoring/compute_statistics.py \
   --results bench/results --experiment-set main \
+  --suite causal_core_v0_8 \
   --output bench/results/statistics.json
+
+# Claim preflight check
+python bench/scoring/claim_preflight.py \
+  --results bench/results --experiment-set main --fixture-set hidden \
+  --suite hidden_robustness_v0_9 --min-replicates 5
 ```
 
 ---
@@ -192,10 +224,31 @@ python bench/scoring/compute_statistics.py \
 | Progressive Repair | T39-T41 | Single-fault and multi-fault recovery, resource self-config (v0.6) |
 | Cross-Platform | T42-T44 | Local/Nextflow/Docker comparison, provenance audit (v0.6) |
 | Multi-Agent | T45-T47 | Planner-reviewer, cross-model verify, zero-shot transfer (v0.6) |
+| Hidden Diagnosis | T59-T61 | Cross-plugin hidden robustness: RNA-seq, WGS, easymetagenome (v0.9) |
 
 ---
 
-## 6. Repository Structure
+## 6. Evaluation Suites (v0.9)
+
+v0.9 organizes tasks into 7 evaluation suites with distinct claim roles,
+preventing mechanism tasks from contaminating the primary causal estimate:
+
+| Suite | Claim Role | Tasks | Groups |
+|-------|-----------|-------|--------|
+| `causal_core_v0_8` | primary_causal | 24 tasks (T01–T19, T25–T26, T48–T50) | G1, G2, G3, G4 |
+| `hidden_robustness_v0_9` | causal_robustness | 3 tasks (T59–T61) | G1, G2, G3, G4 |
+| `mechanism_probes_v0_8` | mechanism_descriptive | 32 tasks (T20–T24, T27–T30, T36–T47, T51–T58) | G3, A1, A3, A4 |
+| `real_execution_case_studies_v0_8` | case_study | 5 tasks (T31–T35) | G3 |
+| `heldout_plugin_v0_8` | external_validity | 3 tasks (T48–T50) | G1, G2, G3, G4 |
+| `ablation_v0_8` | component_ablation | 6 tasks (T03–T08) | G3, A1, A3, A4 |
+| `full_descriptive_v0_8` | descriptive_only | 61 tasks (T01–T61) | All groups |
+
+Run suite-based scoring with `--suite <name>` on `aggregate_scores.py`,
+`compute_statistics.py`, and `claim_preflight.py`.
+
+---
+
+## 7. Repository Structure
 
 ```
 bench/
@@ -211,22 +264,27 @@ bench/
     score_run.py      # Single run scorer
     checks.py         # Check function implementations
     rubric.yaml       # Centralized check definitions
-    aggregate_scores.py  # Score aggregation
+    aggregate_scores.py  # Score aggregation (supports --suite)
     compute_statistics.py  # Bootstrap CIs, effect sizes, scaffolding analysis
     claim_preflight.py  # Pre-submission completeness check
-  tasks/            # Task YAML definitions (T01–T24)
+  validation/       # Static design auditing (v0.9)
+    audit_benchmark.py  # Detects unknown scoring functions, fixture multi-fault
+                       #   mixing, rubric indirect keyword scoring, and
+                       #   per-plugin score field mismatches
+  tasks/            # Task YAML definitions (T01–T61)
   agent_profiles/   # Group profiles (G1–G4, A1, A3, A4)
   fixtures/         # Public workspace fixtures
-  fixtures_hidden/  # Hidden fixtures (diagnosis anti-leakage)
+  fixtures_hidden/  # Hidden fixtures (diagnosis anti-leakage, 9 plugins)
   expected_answers/ # Fixture-local expected answers for structured checks
-  BENCHMARK_SPEC.yaml  # v0.3 benchmark specification
+  evaluation_suites.yaml  # v0.9 suite definitions with claim roles
+  BENCHMARK_SPEC.yaml  # Benchmark specification
 ```
 
 For detailed architecture, see [CLAUDE.md](CLAUDE.md).
 
 ---
 
-## 7. Local Model Results (v0.6-dev)
+## 8. Local Model Results (v0.6-dev)
 
 ABI-Bench has been validated on a suite of 7 local/self-hosted models
 across Weak, Medium, and Strong capability tiers, confirming the core
@@ -268,18 +326,19 @@ Qwen3-14B was run with 4-bit bitsandbytes quantization (NF4) due to VRAM constra
 
 See `bench/model_tiers.yaml` for the canonical tier definitions.
 
-## 8. Citing
+## 9. Citing
 
 If you use ABI-Bench in your research, please cite:
 
 ```bibtex
-@software{abi_bench_v0_6,
-  title = {ABI-Bench: Agent-Bioinformatics Interface Benchmark v0.6},
+@software{abi_bench_v0_9,
+  title = {ABI-Bench: Agent-Bioinformatics Interface Benchmark v0.9},
   author = {ABI-Bench Contributors},
   year = {2026},
   note = {Evaluates structured ABI control layer for LLM agent
           bioinformatics workflow operation across model capability tiers.
-          v0.6 adds figure validation, progressive repair, cross-platform
-          equivalence, and multi-agent collaboration tasks (T36-T47).},
+          v0.9 adds evidence-based artifact scoring (T36-T47), cross-plugin
+          hidden robustness suite (T59-T61), and 7-suite evaluation
+          architecture with distinct claim roles.},
 }
 ```

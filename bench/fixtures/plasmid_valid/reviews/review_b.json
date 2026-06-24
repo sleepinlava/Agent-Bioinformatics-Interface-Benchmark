@@ -1,0 +1,8 @@
+{
+  "review_id": "review_b",
+  "reviewer": "independent_agent_b",
+  "findings": [
+    {"id": "F1", "claim": "All four steps are dry-run only", "confidence": "high"},
+    {"id": "F3", "claim": "Missing checksums are non-blocking for a dry-run", "confidence": "medium"}
+  ]
+}

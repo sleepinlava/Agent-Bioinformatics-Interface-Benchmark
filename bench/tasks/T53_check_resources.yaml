@@ -32,7 +32,9 @@ scoring:
   check_resources_executed: 2
   missing_resource_identified: 2
   resource_name_reported: 2
-  no_large_download: 1
+  no_large_download:
+    points: 1
+    function: check_no_large_download
   structured_discovery: 1
 
 failure_codes:

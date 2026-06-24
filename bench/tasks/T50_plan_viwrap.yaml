@@ -13,8 +13,8 @@ prompt: |
   environment checking, input validation, ViWrap execution, output
   parsing, and artifact collection steps.
 
-  Read config.yaml first. Use ABI lifecycle commands to construct a
-  valid plan and write it to execution_plan.json.
+  Read config.yaml first. Use the interfaces available to you to construct a
+  valid plan and write it to execution_plan.json; do not execute the workflow.
 
 allowed_actions:
   read_files: true
@@ -29,9 +29,15 @@ expected_artifacts:
 scoring:
   execution_plan_exists: 1
   analysis_type_is_viwrap: 2
-  step_id_unique: 2
-  tool_id_valid_for_viwrap: 2
-  plan_not_executed: 1
+  step_id_unique:
+    points: 2
+    function: check_unique_step_ids
+  tool_id_valid_for_viwrap:
+    points: 2
+    function: check_tool_ids_valid_for_plugin
+  plan_not_executed:
+    points: 1
+    function: check_no_real_execution
   contains_viwrap: 1
   contains_parse_step: 1
 

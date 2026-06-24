@@ -37,6 +37,11 @@ sys.path.insert(0, str(PROJECT_ROOT))
 def _resolve_tasks_for_count(task_spec: str) -> list[str]:
     """Resolve task spec to a task list for counting only (avoids importing run_group)."""
     spec = task_spec.strip()
+    from bench.harness.task_suites import resolve_suite
+
+    suite_tasks = resolve_suite(spec)
+    if suite_tasks is not None:
+        return suite_tasks
     if spec == "mvp":
         return ["T01", "T02", "T03", "T05", "T06", "T08", "T09", "T10"]
     elif spec == "full":

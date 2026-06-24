@@ -1,0 +1,8 @@
+{
+  "review_id": "review_a",
+  "reviewer": "independent_agent_a",
+  "findings": [
+    {"id": "F1", "claim": "All four steps are dry-run only", "confidence": "high"},
+    {"id": "F2", "claim": "Provenance lacks checksums.json", "confidence": "high"}
+  ]
+}

@@ -15,8 +15,8 @@ prompt: |
   1. `abi list-types` — discover wgs_bacteria
   2. `abi query --type wgs_bacteria --what stages` — understand the workflow
   3. `abi query --type wgs_bacteria --what resources` — understand resource needs
-  4. Based on your experience with plasmid (assembly/annotation) and rnaseq (QC/quantification),
-     infer wgs_bacteria's likely structure: QC → Assembly → Annotation → Typing → AMR
+  4. Infer the workflow structure from query results; do not assume it is the
+     same as either familiar plugin
   5. Identify what transfers from your existing knowledge and what is NEW
   6. Generate a "new plugin adaptation guide"
 
@@ -26,6 +26,7 @@ prompt: |
     "task_type": "multi_agent",
     "new_plugin": "wgs_bacteria",
     "familiar_plugins": ["metagenomic_plasmid", "rnaseq_expression"],
+    "workflow_stages": ["<ordered stages discovered from ABI>"],
     "transferable_knowledge": ["<concepts that apply to both>"],
     "new_concepts": ["<concepts unique to wgs>"],
     "adaptation_guide": "<step-by-step guide for adapting from plasmid to wgs>"
@@ -45,24 +46,24 @@ expected_artifacts:
 scoring:
   plugin_discovered:
     points: 2
-    function: check_final_answer_contains
+    function: check_json_contract
     args:
-      required_terms: ["wgs_bacteria"]
+      equals: {task_type: multi_agent, new_plugin: wgs_bacteria}
   workflow_inferred:
     points: 3
-    function: check_final_answer_contains
+    function: check_json_contract
     args:
-      required_terms: ["assembly", "annotation", "typing"]
-      min_sections: 2
+      equals: {workflow_stages: [qc, assembly, annotation, typing, amr]}
   transfer_assessed:
     points: 3
-    function: check_final_answer_contains
+    function: check_json_contract
     args:
-      required_terms: ["transfer", "adapt", "knowledge"]
-      min_sections: 2
+      min_items: {transferable_knowledge: 2, new_concepts: 2}
   guide_quality:
     points: 2
-    function: check_final_answer_has_structure
+    function: check_json_contract
+    args:
+      nonempty_paths: [adaptation_guide]
 
 failure_codes:
   - artifact_missing

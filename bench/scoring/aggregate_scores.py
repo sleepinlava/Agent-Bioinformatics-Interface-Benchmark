@@ -22,15 +22,25 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+# Allow direct execution from the repository root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from bench.harness.task_suites import resolve_suite
+from bench.metadata import BENCHMARK_NAME, BENCHMARK_VERSION
+
 EXPECTED_GROUPS = {
     "main": ["G1", "G2", "G3", "G4"],
+    "paper": ["G1", "G2", "G3", "G4"],
     "ablation": ["G3", "A1", "A3", "A4"],
     "full": ["G1", "G2", "G3", "G4"],
     "dev": ["G1", "G2", "G3", "G4", "A1", "A3", "A4"],
 }
 
+PRIMARY_CAUSAL_TASKS = resolve_suite("causal_core_v0_8") or []
+
 EXPECTED_TASKS = {
-    "main": ["T01", "T02", "T03", "T05", "T06", "T08", "T09", "T10"],
+    "main": PRIMARY_CAUSAL_TASKS,
+    "paper": PRIMARY_CAUSAL_TASKS,
     "ablation": ["T03", "T04", "T05", "T06", "T07", "T08"],
     "full": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18"],
     "full_v0_3": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19"],
@@ -54,6 +64,7 @@ def filter_scores(
     scores: list[dict],
     experiment_set: str | None = None,
     fixture_set: str | None = None,
+    task_ids: list[str] | None = None,
 ) -> list[dict]:
     """Filter score records by experiment_set and/or fixture_set if requested.
 
@@ -65,6 +76,9 @@ def filter_scores(
         scores = [s for s in scores if s.get("experiment_set", "unknown") == experiment_set]
     if fixture_set is not None:
         scores = [s for s in scores if s.get("fixture_set") == fixture_set]
+    if task_ids is not None:
+        allowed = set(task_ids)
+        scores = [s for s in scores if s.get("task_id") in allowed]
     return scores
 
 
@@ -84,8 +98,8 @@ def _compute_per_plugin_breakdown(scores: list[dict]) -> dict:
     for s in scores:
         plugin = s.get("plugin", "unknown")
         gid = s.get("group_id", "unknown")
-        if s.get("total_score", -1) >= 0 and s.get("max_score", 0) > 0:
-            normalized = s["total_score"] / s["max_score"] * 100
+        if s.get("score", -1) >= 0 and s.get("max_score", 0) > 0:
+            normalized = s["score"] / s["max_score"] * 100
             plugin_scores[plugin][gid].append(normalized)
 
     breakdown = {}
@@ -116,8 +130,11 @@ def _compute_hidden_fixture_coverage(scores: list[dict]) -> dict:
     return {
         "plugins_with_hidden": sorted(hidden_seen),
         "plugins_without_hidden": sorted(plugins_seen - hidden_seen),
-        "note": "Hidden fixtures currently limited to metagenomic_plasmid diagnosis tasks. "
-                "Non-plasmid plugins fall back to public fixtures when --fixture-set hidden is used."
+        "note": (
+            "v0.9 hidden diagnosis fixtures cover metagenomic_plasmid, "
+            "rnaseq_expression, wgs_bacteria, and easymetagenome. Coverage is "
+            "reported from observed score metadata, not assumed for every task."
+        ),
     }
 
 
@@ -138,7 +155,7 @@ def compute_group_stats(group_scores: list[dict]) -> dict:
             "score_count": 0,
         }
 
-    normalized = _normalized_totals_by_replicate(group_scores)
+    normalized = _normalized_totals_by_unit(group_scores)
 
     passed = [s["passed"] for s in group_scores]
     dryrun_successes = [
@@ -201,18 +218,24 @@ def compute_group_stats(group_scores: list[dict]) -> dict:
     }
 
 
-def _normalized_totals_by_replicate(scores: list[dict]) -> list[float]:
-    """Return total benchmark score per replicate, normalized to 100."""
-    by_rep = defaultdict(list)
+def _normalized_totals_by_unit(scores: list[dict]) -> list[float]:
+    """Return one normalized total per ``model_id × replicate`` unit."""
+    by_unit = defaultdict(list)
     for s in scores:
-        by_rep[s.get("replicate", 1)].append(s)
+        unit = (s.get("model_id", "unknown"), s.get("replicate", 1))
+        by_unit[unit].append(s)
 
     normalized = []
-    for rep_scores in by_rep.values():
-        score_sum = sum(s.get("score", 0) for s in rep_scores)
-        max_sum = sum(s.get("max_score", 0) for s in rep_scores)
+    for unit_scores in by_unit.values():
+        score_sum = sum(s.get("score", 0) for s in unit_scores)
+        max_sum = sum(s.get("max_score", 0) for s in unit_scores)
         normalized.append((score_sum / max_sum * 100) if max_sum > 0 else 0)
     return normalized
+
+
+def _normalized_totals_by_replicate(scores: list[dict]) -> list[float]:
+    """Backward-compatible alias using the corrected experimental unit."""
+    return _normalized_totals_by_unit(scores)
 
 
 def _is_dryrun_score(score: dict) -> bool:
@@ -265,9 +288,12 @@ def _load_benchmark_spec() -> dict:
 def _detect_task_set_type(observed_tasks: list[str]) -> str:
     """Classify observed task set as 'mvp', 'ablation', or 'full'."""
     tasks = set(observed_tasks)
+    causal_core = set(PRIMARY_CAUSAL_TASKS)
     mvp = {"T01", "T02", "T03", "T05", "T06", "T08", "T09", "T10"}
     ablation = {"T03", "T04", "T05", "T06", "T07", "T08"}
 
+    if tasks == causal_core:
+        return "causal_core_v0_8"
     if tasks == mvp or (tasks.issubset(mvp) and len(tasks) >= 6):
         return "mvp"
     elif tasks == ablation or (tasks.issubset(ablation) and len(tasks) >= 4):
@@ -428,7 +454,11 @@ def build_summary(scores: list[dict], experiment_set: str | None = None, fixture
     ci_enabled = ci_config.get("enabled", False)
     ci_min_reps = ci_config.get("min_replicates", 5)
     require_ci_above_zero = ci_config.get("require_ci_lower_above_zero", True)
-    n_reps = max(len(set(s.get("replicate") for s in scores if s.get("group_id") == "G3")), 0)
+    g3_units = {
+        (s.get("model_id", "unknown"), s.get("replicate", 1))
+        for s in scores if s.get("group_id") == "G3"
+    }
+    n_reps = len(g3_units)
 
     claim_support = {
         "G3_beats_G1": None,
@@ -492,17 +522,23 @@ def build_summary(scores: list[dict], experiment_set: str | None = None, fixture
         "source": "post_hoc_revised" if revised_meta else "pre_registered",
     }
 
-    # Cross-plugin dry-run
+    # Cross-plugin lifecycle coverage. v0.8 requires every available dry-run
+    # task plus the held-out viral planning task, rather than checking only the
+    # original two plugins.
     g3scores = by_group.get("G3", [])
-    t03_success = _all_dryrun_successful(g3scores, "T03")
-    t10_success = _all_dryrun_successful(g3scores, "T10")
-    claim_support["cross_plugin_dryrun_success"] = t03_success and t10_success
+    dryrun_tasks = ["T03", "T10", "T14", "T16", "T18", "T49"]
+    dryrun_success = all(_all_dryrun_successful(g3scores, tid) for tid in dryrun_tasks)
+    viwrap_plan_success = _all_dryrun_successful(g3scores, "T50")
+    claim_support["cross_plugin_dryrun_success"] = dryrun_success
+    claim_support["cross_plugin_lifecycle_coverage"] = dryrun_success and viwrap_plan_success
+    claim_support["cross_plugin_tasks_checked"] = dryrun_tasks + ["T50"]
 
     # ── CI-based significance annotation ──
     # (The actual CI is computed in compute_statistics.py; here we note whether
     # CI-based criteria should be applied based on replicate count.)
     claim_support["ci_significance_applicable"] = ci_enabled and n_reps >= ci_min_reps
     claim_support["n_replicates"] = n_reps
+    claim_support["experimental_unit"] = "model_id × replicate"
     claim_support["ci_min_replicates_required"] = ci_min_reps
 
     # ── ABI Advantage Index (composite) ──
@@ -523,7 +559,7 @@ def build_summary(scores: list[dict], experiment_set: str | None = None, fixture
         claim_support.get("G3_beats_G1"),
         claim_support.get("G3_beats_G2"),
         claim_support.get("G3_min_diagnostic_accuracy"),
-        claim_support.get("cross_plugin_dryrun_success"),
+        claim_support.get("cross_plugin_lifecycle_coverage"),
     ]
     # Unsafe execution is optional for primary claim when CI is applicable
     if not (ci_enabled and n_reps >= ci_min_reps):
@@ -539,7 +575,7 @@ def build_summary(scores: list[dict], experiment_set: str | None = None, fixture
         claim_support.get("G3_beats_G1_pre_registered"),
         claim_support.get("G3_beats_G2_pre_registered"),
         claim_support.get("G3_min_diagnostic_accuracy"),
-        claim_support.get("cross_plugin_dryrun_success"),
+        claim_support.get("cross_plugin_lifecycle_coverage"),
     ]
     if not (ci_enabled and n_reps >= ci_min_reps):
         unsafe_pre_reg = claim_support.get("G3_unsafe_execution_zero_pre_registered")
@@ -562,8 +598,8 @@ def build_summary(scores: list[dict], experiment_set: str | None = None, fixture
         )
 
     return {
-        "benchmark": "ABI-Bench",
-        "version": "0.1",
+        "benchmark": BENCHMARK_NAME,
+        "version": BENCHMARK_VERSION,
         "commit": _current_commit(),
         "model_id": _common_value(scores, "model_id", "mixed"),
         "agent_harness": _common_value(scores, "agent_harness", "mixed"),
@@ -761,16 +797,26 @@ def main():
         choices=["public", "hidden"],
         help="Only aggregate score files from this fixture set",
     )
+    parser.add_argument(
+        "--suite",
+        help="Filter to a named suite from bench/evaluation_suites.yaml",
+    )
     args = parser.parse_args()
 
     # Warn if fixture_set is mixed and no filter specified
     all_scores = collect_scores(args.results)
-    scores = filter_scores(all_scores, args.experiment_set, args.fixture_set)
+    suite_tasks = resolve_suite(args.suite) if args.suite else None
+    if args.suite and suite_tasks is None:
+        print(f"ERROR: Unknown evaluation suite: {args.suite}")
+        return 1
+    scores = filter_scores(all_scores, args.experiment_set, args.fixture_set, suite_tasks)
     print(f"Collected {len(all_scores)} score files from {args.results}")
     if args.experiment_set:
         print(f"Filtered to {len(scores)} score files for experiment_set={args.experiment_set}")
     if args.fixture_set:
         print(f"Filtered to {len(scores)} score files for fixture_set={args.fixture_set}")
+    if args.suite:
+        print(f"Filtered to {len(scores)} score files for suite={args.suite}")
 
     # Check for mixed fixture sets in the filtered scores
     observed_fixture_sets = {s.get("fixture_set", "public") for s in scores}
@@ -783,6 +829,7 @@ def main():
         return 1
 
     summary = build_summary(scores, experiment_set=args.experiment_set, fixture_set=args.fixture_set)
+    summary["evaluation_suite"] = args.suite or "unfiltered"
     per_task = compute_per_task_scores(scores)
 
     # Write leaderboard

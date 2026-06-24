@@ -3,7 +3,7 @@ task_id: T37
 name: Figure diagnosis — identify and fix chart problems
 plugin: rnaseq_expression
 task_type: figure_diagnosis
-fixture: figure_validation
+fixture: figure_diagnosis
 max_score: 10
 timeout_minutes: 15
 max_agent_steps: 30
@@ -52,19 +52,33 @@ expected_artifacts:
 
 scoring:
   all_problems_identified:
-    points: 3
-    function: check_final_answer_has_structure
-  root_cause_accurate:
     points: 4
-    function: check_final_answer_contains
+    function: check_json_expected_records
     args:
-      required_terms: ["root_cause", "data", "rendering"]
-      min_sections: 2
+      list_path: problems_found
+      key_field: path
+      required_fields: [problem, root_cause, fix_suggestion, fixable_in_place]
+      expected_records:
+        figures/blank_plot.svg: {root_cause: data, fixable_in_place: false}
+        figures/truncated_title.svg: {root_cause: configuration, fixable_in_place: true}
+        figures/wrong_palette.svg: {root_cause: configuration, fixable_in_place: true}
+  root_cause_accurate:
+    points: 3
+    function: check_json_contract
+    args:
+      equals: {task_type: figure_diagnosis, figures_examined: 3}
+      min_items: {problems_found: 3}
   fix_suggestions_viable:
     points: 3
-    function: check_final_answer_contains
+    function: check_json_expected_records
     args:
-      required_terms: ["fix", "spec", "render"]
+      list_path: problems_found
+      key_field: path
+      required_fields: [fix_suggestion]
+      expected_records:
+        figures/blank_plot.svg: {}
+        figures/truncated_title.svg: {}
+        figures/wrong_palette.svg: {}
 
 failure_codes:
   - artifact_missing

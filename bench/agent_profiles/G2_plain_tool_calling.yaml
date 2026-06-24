@@ -6,7 +6,6 @@ allowed_tools:
   - read_file
   - list_files
   - write_file
-  - run_cli
 
 forbidden_tools:
   - abi_plan

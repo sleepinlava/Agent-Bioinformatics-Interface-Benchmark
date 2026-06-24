@@ -24,6 +24,7 @@ prompt: |
     "schema_version": "abi-bench.final_answer.v1",
     "task_type": "cross_platform",
     "platforms": ["local", "nextflow"],
+    "output_artifacts": [{"path": "plans/local_plan.json"}, {"path": "nextflow/main.nf"}],
     "step_count_match": true/false,
     "tool_order_match": true/false,
     "differences": [{"type": "<param|order|tool>", "local": "<...>", "nextflow": "<...>"}],
@@ -40,22 +41,27 @@ allowed_actions:
 expected_artifacts:
   - final_answer.md
   - final_answer.json
+  - plans/local_plan.json
+  - nextflow/main.nf
 
 scoring:
   both_plans_generated:
-    points: 3
-    function: check_final_answer_has_structure
+    points: 4
+    function: check_reported_paths_exist
+    args:
+      list_path: output_artifacts
+      path_field: path
   differences_identified:
     points: 3
-    function: check_final_answer_contains
+    function: check_json_contract
     args:
-      required_terms: ["difference", "platform", "nextflow"]
-      min_sections: 2
+      equals: {task_type: cross_platform, platforms: [local, nextflow]}
+      required_paths: [step_count_match, tool_order_match, differences]
   equivalence_assessed:
-    points: 4
-    function: check_final_answer_contains
+    points: 3
+    function: check_command_trace_evidence
     args:
-      required_terms: ["equivalent", "assess"]
+      required_patterns: ["plan", "export-nextflow"]
 
 failure_codes:
   - artifact_missing

@@ -14,7 +14,8 @@ prompt: |
   2. Identify any placeholder values or missing resources.
   3. Recommend the next safe step.
 
-  Write both final_answer.md and final_answer.json.
+  Write both final_answer.md and final_answer.json. JSON must include the status
+  counts, total_steps, execution_mode, placeholders, and safe_next_step.
 
 allowed_actions:
   read_files: true
@@ -28,10 +29,19 @@ expected_artifacts:
   - final_answer.json
 
 scoring:
-  reads_provenance_correctly: 2
-  counts_statuses_correctly: 2
-  identifies_placeholders: 2
-  gives_safe_next_step: 2
+  provenance_counts_evidence:
+    points: 4
+    function: check_json_contract
+    args:
+      equals: {dry_run_count: 4, skipped_count: 0, failed_count: 0, total_steps: 4}
+  placeholder_evidence:
+    points: 2
+    function: check_json_contract
+    args: {min_items: {placeholders: 2}}
+  safe_next_step_evidence:
+    points: 2
+    function: check_json_contract
+    args: {nonempty_paths: [safe_next_step]}
   structured_inspection: 4
   final_answer_has_structure: 1
   artifact_freshness_verified: 1

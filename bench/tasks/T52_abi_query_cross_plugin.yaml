@@ -34,9 +34,21 @@ expected_artifacts:
 
 scoring:
   query_executed: 2
-  multiple_plugins_queried: 2
-  lifecycle_stages_identified: 2
-  cross_plugin_comparison: 1
+  multiple_plugins_queried:
+    points: 2
+    function: check_json_contract
+    args:
+      unordered_equals: {plugins_compared: [metagenomic_plasmid, rnaseq_expression, amplicon_16s]}
+  lifecycle_stages_identified:
+    points: 2
+    function: check_json_contract
+    args:
+      min_items: {common_lifecycle_stages: 2}
+  cross_plugin_comparison:
+    points: 1
+    function: check_json_contract
+    args:
+      required_paths: [per_plugin_tools]
   structured_discovery: 1
 
 failure_codes:

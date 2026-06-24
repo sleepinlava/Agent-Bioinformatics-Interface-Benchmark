@@ -25,11 +25,22 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
-REQUIRED_GROUPS = {"main": ["G1", "G2", "G3"], "ablation": ["G3", "A1", "A3", "A4"]}
+from bench.harness.task_suites import load_suites, resolve_suite
+
+PRIMARY_CAUSAL_TASKS = resolve_suite("causal_core_v0_8") or []
+
+REQUIRED_GROUPS = {
+    "main": ["G1", "G2", "G3", "G4"],
+    "paper": ["G1", "G2", "G3", "G4"],
+    "ablation": ["G3", "A1", "A3", "A4"],
+}
 
 REQUIRED_TASKS = {
-    "main": ["T01", "T02", "T03", "T05", "T06", "T08", "T09", "T10"],
+    "main": PRIMARY_CAUSAL_TASKS,
+    "paper": PRIMARY_CAUSAL_TASKS,
     "ablation": ["T03", "T04", "T05", "T06", "T07", "T08"],
 }
 
@@ -164,7 +175,6 @@ def _check_consistency(scores, report, experiment_set, fixture_set):
         "fixture_set": "fixture_set",
         "agent_harness": "agent_harness",
         "agent_mode": "agent_mode",
-        "model_id": "model_id",
     }
     for label, field in meta_fields.items():
         vals = {s.get(field) for s in scores if s.get(field) is not None}
@@ -175,6 +185,13 @@ def _check_consistency(scores, report, experiment_set, fixture_set):
             report.check(f"consistent_{label}", True, f"All {label} = {vals.pop()}")
         else:
             report.check(f"consistent_{label}", True, f"No {label} values found (may be ok)")
+
+    models = sorted({s.get("model_id", "unknown") for s in scores})
+    report.check(
+        "model_ids_present",
+        bool(models),
+        f"Detected {len(models)} model(s): {models}",
+    )
 
     # Specific check: experiment_set matches CLI arg
     if experiment_set:
@@ -198,25 +215,42 @@ def _check_consistency(scores, report, experiment_set, fixture_set):
 
 
 def _check_completeness(scores, report, required_groups, required_tasks, min_replicates):
-    """Check that all required groups/tasks/replicates are present."""
-    present = defaultdict(lambda: defaultdict(set))
+    """Check every model × group × task randomized block is complete."""
+    present = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
     for s in scores:
+        model = s.get("model_id", "unknown")
         gid = s.get("group_id", "unknown")
         tid = s.get("task_id", "unknown")
         rep = s.get("replicate", 1)
-        present[gid][tid].add(rep)
+        present[model][gid][tid].add(rep)
+
+    models = sorted(present)
 
     # Check groups
-    observed_groups = set(present.keys())
-    missing_groups = set(required_groups) - observed_groups
+    observed_groups = {
+        gid for model_data in present.values() for gid in model_data
+    }
+    missing_groups = {
+        (model, gid)
+        for model in models
+        for gid in required_groups
+        if gid not in present[model]
+    }
     unknown_groups = observed_groups - set(required_groups)
+    observed_tasks = {
+        tid
+        for model_data in present.values()
+        for group_data in model_data.values()
+        for tid in group_data
+    }
+    extra_tasks = observed_tasks - set(required_tasks)
 
     if missing_groups:
         report.check("all_groups_present", False,
-                     f"Missing groups: {sorted(missing_groups)}")
+                     f"Missing model/group cells: {sorted(missing_groups)}")
     else:
         report.check("all_groups_present", True,
-                     f"All {len(required_groups)} required groups present")
+                     f"All {len(required_groups)} groups present for {len(models)} model(s)")
 
     if unknown_groups:
         report.check("no_unknown_groups", False,
@@ -225,26 +259,38 @@ def _check_completeness(scores, report, required_groups, required_tasks, min_rep
     else:
         report.check("no_unknown_groups", True, "No unknown groups")
 
+    report.check(
+        "no_extra_tasks",
+        not extra_tasks,
+        "No tasks outside the registered suite"
+        if not extra_tasks else f"Tasks outside the registered suite: {sorted(extra_tasks)}",
+    )
+
     # Check tasks for each required group
-    all_tasks_present = True
-    for gid in required_groups:
-        group_tasks = set(present.get(gid, {}).keys())
-        missing_tasks = set(required_tasks) - group_tasks
-        if missing_tasks:
-            all_tasks_present = False
-            report.check(f"tasks_present_{gid}", False,
-                         f"{gid} missing tasks: {sorted(missing_tasks)}")
-        else:
-            report.check(f"tasks_present_{gid}", True,
-                         f"{gid}: all {len(required_tasks)} tasks present")
+    missing_task_cells = []
+    for model in models:
+        for gid in required_groups:
+            group_tasks = set(present[model].get(gid, {}))
+            for tid in set(required_tasks) - group_tasks:
+                missing_task_cells.append((model, gid, tid))
+    report.check(
+        "all_tasks_present",
+        not missing_task_cells,
+        (
+            f"All {len(required_tasks)} tasks present in every model/group cell"
+            if not missing_task_cells
+            else f"Missing {len(missing_task_cells)} model/group/task cells: {missing_task_cells[:10]}"
+        ),
+    )
 
     # Cross-group task uniformity
     required_task_set = set(required_tasks)
-    task_sets = {}
-    for gid in required_groups:
-        task_sets[gid] = set(present.get(gid, {}).keys()) & required_task_set
+    task_sets = {
+        (model, gid): set(present[model].get(gid, {})) & required_task_set
+        for model in models for gid in required_groups
+    }
     if len(set(frozenset(ts) for ts in task_sets.values())) > 1:
-        lines = [f"  {gid}: {sorted(ts)}" for gid, ts in sorted(task_sets.items())]
+        lines = [f"  {model}/{gid}: {sorted(ts)}" for (model, gid), ts in sorted(task_sets.items())]
         report.check("cross_group_task_uniformity", False,
                      "Task sets differ across groups:\n" + "\n".join(lines))
     else:
@@ -253,16 +299,17 @@ def _check_completeness(scores, report, required_groups, required_tasks, min_rep
 
     # Check replicates
     rep_counts = {}
-    for gid in required_groups:
-        for tid in required_tasks:
-            reps = present.get(gid, {}).get(tid, set())
-            rep_counts[(gid, tid)] = len(reps)
+    for model in models:
+        for gid in required_groups:
+            for tid in required_tasks:
+                reps = present[model].get(gid, {}).get(tid, set())
+                rep_counts[(model, gid, tid)] = len(reps)
 
     min_observed = min(rep_counts.values()) if rep_counts else 0
     max_observed = max(rep_counts.values()) if rep_counts else 0
 
     if min_observed < min_replicates:
-        under_replicated = [(gid, tid) for (gid, tid), n in rep_counts.items() if n < min_replicates]
+        under_replicated = [cell for cell, n in rep_counts.items() if n < min_replicates]
         report.check("min_replicates", False,
                      f"Minimum {min_replicates} replicates required; "
                      f"observed {min_observed}-{max_observed}. "
@@ -283,16 +330,23 @@ def _check_completeness(scores, report, required_groups, required_tasks, min_rep
 
 def _check_quality(scores, report, require_same_agent_mode):
     """Quality checks on the score data itself."""
-    # Check no empty scores
-    zero_scores = [s for s in scores if s.get("score", 0) == 0 and s.get("max_score", 0) > 0]
-    if zero_scores:
-        report.check("no_zero_scores", False,
-                     f"{len(zero_scores)} score(s) with 0 points: "
-                     + ", ".join(f"{s.get('group_id')}/{s.get('task_id')}/rep_{s.get('replicate')}"
-                                 for s in zero_scores[:5])
-                     + ("..." if len(zero_scores) > 5 else ""))
-    else:
-        report.check("no_zero_scores", True, "No zero-score entries among scored tasks")
+    # Zero is a legitimate benchmark outcome. Reject only impossible ranges;
+    # dropping zero-score runs would bias the estimated treatment effect upward.
+    invalid_scores = [
+        s for s in scores
+        if not isinstance(s.get("score"), (int, float))
+        or s.get("score", 0) < 0
+        or s.get("score", 0) > s.get("max_score", 0)
+    ]
+    report.check(
+        "score_values_in_range",
+        not invalid_scores,
+        "All scores are within [0, max_score]"
+        if not invalid_scores else f"{len(invalid_scores)} score(s) are outside [0, max_score]",
+    )
+    zero_count = sum(s.get("score") == 0 for s in scores)
+    if zero_count:
+        report.warn(f"Retaining {zero_count} legitimate zero-score run(s) in the analysis")
 
     # Check agent_mode consistency
     if require_same_agent_mode:
@@ -329,12 +383,12 @@ def _check_aggregation_safety(scores, report, all_scores, experiment_set, fixtur
     else:
         report.check("filtered_isolation", True, "All scores match filter (single set detected)")
 
-    # Check that G1/G2 scores don't have ABI CLI traces (G3-only capability)
-    g1g2_scores = [s for s in scores if s.get("group_id") in ("G1", "G2")]
+    # Check that all baseline scores don't have ABI CLI traces (G3-only capability)
+    baseline_scores = [s for s in scores if s.get("group_id") in ("G1", "G2", "G4")]
     g3_scores = [s for s in scores if s.get("group_id") == "G3"]
 
     leaked = [
-        s for s in g1g2_scores
+        s for s in baseline_scores
         if s.get("metrics", {}).get("abi_interface_used") is True
         or "abi_interface_leakage" in s.get("failure_codes", [])
     ]
@@ -346,11 +400,11 @@ def _check_aggregation_safety(scores, report, all_scores, experiment_set, fixtur
         report.check(
             "baseline_no_abi_usage",
             False,
-            f"{len(leaked)} G1/G2 score(s) used ABI interface: {examples}"
+            f"{len(leaked)} baseline score(s) used ABI interface: {examples}"
             + ("..." if len(leaked) > 5 else ""),
         )
     else:
-        report.check("baseline_no_abi_usage", True, "No ABI interface usage detected in G1/G2")
+        report.check("baseline_no_abi_usage", True, "No ABI interface usage detected in G1/G2/G4")
 
     if g3_scores:
         report.check("g3_has_scores", True, f"G3 has {len(g3_scores)} score(s)")
@@ -394,6 +448,10 @@ def main():
         help="Comma-separated list of required tasks (overrides experiment_set default)",
     )
     parser.add_argument(
+        "--suite",
+        help="Use task and group requirements from bench/evaluation_suites.yaml",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         help="Write preflight report JSON to this path",
@@ -407,6 +465,15 @@ def main():
     required_tasks = None
     if args.tasks:
         required_tasks = [t.strip() for t in args.tasks.split(",") if t.strip()]
+
+    if args.suite:
+        suite = load_suites().get(args.suite)
+        if suite is None:
+            parser.error(f"Unknown evaluation suite: {args.suite}")
+        if required_groups is None:
+            required_groups = list(suite.get("groups", []))
+        if required_tasks is None:
+            required_tasks = list(suite.get("tasks", []))
 
     report = run_preflight(
         results_dir=args.results,

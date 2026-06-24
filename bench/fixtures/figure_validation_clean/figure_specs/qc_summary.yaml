@@ -1,0 +1,5 @@
+plot_type: bar
+source: tables/qc_summary.tsv
+x: sample_id
+y: reads_after
+title: Reads retained after QC

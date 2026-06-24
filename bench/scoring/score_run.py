@@ -27,6 +27,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from bench.scoring.checks import run_check
+from bench.metadata import BENCHMARK_NAME, BENCHMARK_VERSION
 
 
 def load_task(task_path: Path) -> dict:
@@ -122,7 +123,11 @@ def _score_real_execution(
         else:
             points_possible = int(check_value)
 
-        check_fn_name = _resolve_function_name(check_name)
+        check_fn_name = (
+            check_value.get("function")
+            if isinstance(check_value, dict) and check_value.get("function")
+            else _resolve_function_name(check_name)
+        )
         fn = getattr(checks_mod, check_fn_name, None)
 
         if fn is None:
@@ -232,8 +237,8 @@ def _score_real_execution(
         metrics["reasoning_used"] = True
 
     score = {
-        "benchmark": "ABI-Bench",
-        "version": "0.1",
+        "benchmark": BENCHMARK_NAME,
+        "version": BENCHMARK_VERSION,
         "task_id": task_id,
         "task_type": task_type,
         "experiment_set": experiment_set or metadata.get("experiment_set", "unknown"),
@@ -361,7 +366,11 @@ def score_task(
             points_possible = int(check_value)
 
         # Resolve check function name from rubric
-        check_fn_name = _resolve_function_name(check_name)
+        check_fn_name = (
+            check_value.get("function")
+            if isinstance(check_value, dict) and check_value.get("function")
+            else _resolve_function_name(check_name)
+        )
 
         # Get args
         extra_args = resolve_check_args(task, check_name, check_value)
@@ -458,8 +467,8 @@ def score_task(
         metrics["reasoning_used"] = True
 
     score = {
-        "benchmark": "ABI-Bench",
-        "version": "0.1",
+        "benchmark": BENCHMARK_NAME,
+        "version": BENCHMARK_VERSION,
         "task_id": task_id,
         "task_type": task_type,
         "experiment_set": experiment_set or metadata.get("experiment_set", "unknown"),

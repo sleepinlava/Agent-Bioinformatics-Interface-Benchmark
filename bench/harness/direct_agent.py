@@ -183,11 +183,12 @@ def _build_tools(group_id: str, allowed_actions: dict = None) -> list:
         else "Execute a shell command in the workspace. Returns stdout and stderr."
     )
 
+    command_tool_name = "run_command" if group_id == "G2" else "bash"
     tools = [
         {
             "type": "function",
             "function": {
-                "name": "bash",
+                "name": command_tool_name,
                 "description": bash_description,
                 "parameters": {
                     "type": "object",
@@ -249,10 +250,13 @@ def _build_tools(group_id: str, allowed_actions: dict = None) -> list:
     # ── Apply allowed_actions constraints ──────────────────────────────────
     is_abi = group_id in ABI_GROUPS
 
-    # Non-ABI groups with run_shell=false lose bash entirely.
+    # Non-ABI groups with run_shell=false lose their command tool entirely.
     # ABI groups always keep bash (they need it to call the ABI CLI).
     if allowed.get("run_shell") is False and not is_abi:
-        tools = [t for t in tools if t["function"]["name"] != "bash"]
+        tools = [
+            t for t in tools
+            if t["function"]["name"] not in ("bash", "run_command")
+        ]
 
     if allowed.get("write_files") is False:
         tools = [t for t in tools if t["function"]["name"] != "write_file"]
@@ -285,7 +289,7 @@ Write only the artifacts requested by the task.
   task definitions, or agent profiles) is blocked and will produce an error.""",
 
     "G2": """You are an agent operating in a bioinformatics benchmark workspace.
-Your available tools are general shell/task execution plus file read and write.
+Your available tools are a generic run_command function plus file read and write.
 You may inspect files and construct artifacts manually, but you do not receive
 ABI lifecycle operations, ABI CLI helpers, provenance reasoning interfaces, or
 structured diagnostic hints. You are FORBIDDEN from using ABI lifecycle commands,
@@ -484,7 +488,7 @@ def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G
         guard = PathGuard(workspace)
 
     try:
-        if tool_name == "bash":
+        if tool_name in ("bash", "run_command"):
             cmd = args.get("command", "")
 
             # ── Layer 1: PathGuard command scan ──────────────────────────
@@ -529,7 +533,7 @@ def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G
             # ── Layer 3: Block ABI CLI usage by non-ABI groups ──────────
             if group_id not in ABI_GROUPS and _ABI_CLI_RE.search(cmd):
                 return (
-                    "ERROR: ABI CLI access is not available to non-ABI groups (G1, G2). "
+                    "ERROR: ABI CLI access is not available to non-ABI groups. "
                     "This group does not receive ABI lifecycle commands. "
                     "Please use standard shell commands and file operations instead."
                 )
@@ -542,13 +546,21 @@ def execute_tool(tool_name: str, args: dict, workspace: Path, group_id: str = "G
                         "SAFETY BLOCK: This command uses a disallowed execution pattern. "
                         "Please use direct tool invocations."
                     )
+                if group_id not in ABI_GROUPS:
+                    return (
+                        f"SAFETY BLOCK: This command appears to execute a real "
+                        f"bioinformatics tool ({bio_blocked}). Real execution is "
+                        "disabled in this benchmark. Inspect the workspace and create "
+                        "only the requested non-executing artifacts. To check whether "
+                        "a tool exists, use: which <tool>"
+                    )
                 return (
                     f"SAFETY BLOCK: This command appears to execute a real bioinformatics "
                     f"tool ({bio_blocked}). Real execution is disabled in this benchmark.\n"
                     f"Use the ABI CLI for lifecycle operations instead:\n"
-                    f"  {ABI_CLI_CMD} plan --workspace {{workspace}}\n"
-                    f"  {ABI_CLI_CMD} dry-run --workspace {{workspace}}\n"
-                    f"  {ABI_CLI_CMD} diagnose --workspace {{workspace}}\n"
+                    f"  {_ABI_CLI_CMD} plan --workspace {{workspace}}\n"
+                    f"  {_ABI_CLI_CMD} dry-run --workspace {{workspace}}\n"
+                    f"  {_ABI_CLI_CMD} diagnose --workspace {{workspace}}\n"
                     f"If you need to check whether a tool exists, use: which <tool>"
                 )
 
@@ -1386,7 +1398,7 @@ Then write a human-readable `final_answer.md` summarizing the diagnosis."""
                     "result": result[:1000],
                 })
 
-                if tool_name == "bash":
+                if tool_name in ("bash", "run_command"):
                     commands_log.append(args.get("command", ""))
 
                 tool_results.append({

@@ -1,0 +1,15 @@
+analysis:
+  type: rnaseq_expression
+samples:
+  sample_sheet: sample_sheet.tsv
+resources:
+  genome_index:
+    path: unavailable/index_batch_73
+    type: directory
+  annotation_gtf:
+    path: resources/cohort.gtf
+    type: file
+workflow:
+  steps:
+    - {id: alignment, tool: star, database: genome_index}
+    - {id: quantification, tool: featurecounts, database: annotation_gtf}

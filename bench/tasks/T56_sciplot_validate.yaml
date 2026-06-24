@@ -2,16 +2,16 @@ task_id: T56
 name: Sciplot figure validation
 plugin: metagenomic_plasmid
 task_type: validation
-fixture: figure_validation
+fixture: figure_validation_clean
 max_score: 10
 timeout_minutes: 15
 max_agent_steps: 30
 
 prompt: |
   Use the abi-sciplot CLI to validate a scientific figure specification.
-  The workspace contains a figure.yaml file with a FigureSpec definition.
+  The workspace contains figure_specs/alpha_diversity.yaml.
 
-  1. Run: abi-sciplot validate --spec figure.yaml
+  1. Run: abi-sciplot validate --spec figure_specs/alpha_diversity.yaml
   2. Check if the spec is valid (schema, data references, plot type)
   3. Report any validation errors or warnings
   4. Write your findings to final_answer.json
@@ -29,10 +29,22 @@ expected_artifacts:
   - final_answer.json
 
 scoring:
-  sciplot_validate_executed: 3
-  validation_errors_identified: 2
-  spec_schema_checked: 2
-  data_references_verified: 2
+  sciplot_validate_executed:
+    points: 3
+    function: check_command_trace_evidence
+    args: {required_patterns: ["abi-sciplot\\s+validate"]}
+  validation_errors_identified:
+    points: 2
+    function: check_json_contract
+    args: {required_paths: [errors, warnings, valid]}
+  spec_schema_checked:
+    points: 2
+    function: check_json_contract
+    args: {required_paths: [schema_checked]}
+  data_references_verified:
+    points: 2
+    function: check_json_contract
+    args: {required_paths: [data_references_verified]}
   structured_discovery: 1
 
 failure_codes:

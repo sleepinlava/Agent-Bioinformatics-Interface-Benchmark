@@ -31,10 +31,22 @@ expected_artifacts:
   - final_answer.json
 
 scoring:
-  doctor_agent_executed: 2
-  lifecycle_understood: 2
-  tools_environments_identified: 2
-  safety_considerations: 1
+  doctor_agent_executed:
+    points: 2
+    function: check_command_trace_evidence
+    args: {required_patterns: [doctor-agent]}
+  lifecycle_understood:
+    points: 2
+    function: check_json_contract
+    args: {min_items: {lifecycle_stages: 3}}
+  tools_environments_identified:
+    points: 2
+    function: check_json_contract
+    args: {min_items: {tools: 2}}
+  safety_considerations:
+    points: 1
+    function: check_json_contract
+    args: {min_items: {safety_considerations: 1}}
   structured_discovery: 1
 
 failure_codes:

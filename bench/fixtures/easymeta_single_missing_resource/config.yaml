@@ -1,0 +1,10 @@
+analysis: {type: easymetagenome, preset: p0_taxonomy}
+resources:
+  host_db: resources/host_db
+  kraken2_db: missing/kraken_standard_16
+samples:
+  - {sample_id: META_01, read1: data/m_R1.fastq.gz, read2: data/m_R2.fastq.gz}
+workflow:
+  steps:
+    - {id: host_removal, tool: kneaddata, database: host_db}
+    - {id: taxonomy, tool: kraken2, database: kraken2_db}
