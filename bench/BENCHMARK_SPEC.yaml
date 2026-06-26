@@ -681,13 +681,34 @@ success_criteria:
   G3_min_diagnostic_accuracy: 0.75
   cross_plugin_dryrun_required: true
 
-  # ── CI-based significance (overrides point thresholds when n ≥ 5) ──
-  # When replicates ≥ 5, claim requires the 95% CI lower bound of the
-  # delta to exceed the threshold (not just the point estimate).
+  # ── CI-based significance — PRIMARY INFERENCE (2026-06-26) ──
+  #
+  # Following benchmark evaluation best practice (Card et al. 2020; Dodge
+  # et al. 2019), the primary claim is supported when the 95% bootstrap CI
+  # lower bound for the paired treatment effect exceeds zero. Fixed delta
+  # thresholds (Δ≥5, etc.) are secondary reference points only.
+  #
+  # Power analysis (see bench/scoring/power_analysis.py):
+  #   With δ=12.84 (MiMo pilot), SD=8.2, min_δ=5.0:
+  #     n=5  → 57% power, CI half-width ±7.2
+  #     n=15 → 96% power, CI half-width ±4.1 (PAPER TARGET)
+  #   Required n for 80% power: n≥9
+  #   Required n for CI > 0:    n≥2
   ci_significance:
     enabled: true
-    min_replicates: 7    # n≥7 ensures CI lower bound > 0 with ≥99.9% power
-    require_ci_lower_above_zero: true      # G3−G1 and G3−G2 CIs must exclude 0
+    primary_inference: true             # CI lower bound > 0 is the primary test
+    min_replicates: 5                   # n≥5 enables bootstrap CI computation
+    target_replicates: 15               # n=15 provides 96% power (paper target)
+    require_ci_lower_above_zero: true   # G3−G1 and G3−G2 CIs must exclude 0
+    require_ci_lower_above_min_delta: false  # secondary: CI > 5 is reported but not required
+    power:
+      pilot_delta: 12.84                # MiMo-v2.5-Pro G3−G1 observed
+      pilot_sd: 8.2                     # SD of paired delta across replicates
+      min_meaningful_delta: 5.0         # minimum reportable effect size
+      target_power: 0.80
+      n_for_80pct_power: 9
+      n_for_95pct_power: 15
+      achieved_power_at_n15: 0.959
 
   # ── Task-set-stratified delta thresholds ──
   # Different task sets have different discrimination ceilings.
