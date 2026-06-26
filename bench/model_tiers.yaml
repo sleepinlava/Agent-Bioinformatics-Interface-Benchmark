@@ -22,6 +22,7 @@ tiers:
       - deepseek-v4-pro
       - qwen3-30b-a3b-instruct
       - qwen2.5-coder-32b-instruct
+      - mimo-v2.5-pro
 
   medium:
     description: "Mid-tier models with adequate reasoning for bioinformatics tasks"

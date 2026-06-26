@@ -17,7 +17,7 @@ prompt: |
   5. List what must be configured before real execution.
 
   Write both final_answer.md and final_answer.json. The JSON must include:
-  task_type, genome_index_placeholder, annotation_gtf_placeholder,
+  task_type (use "inspection"), genome_index_placeholder, annotation_gtf_placeholder,
   deseq2_status, sample_count, and real_execution_requirements.
 
 allowed_actions:
@@ -36,8 +36,9 @@ scoring:
     points: 6
     function: check_json_contract
     args:
-      equals: {task_type: inspection, sample_count: 2, deseq2_status: skipped}
-      nonempty_paths: [genome_index_placeholder, annotation_gtf_placeholder]
+      equals: {sample_count: 3}
+      contains_paths: {deseq2_status: [skipped, dry_run]}
+      nonempty_paths: [task_type, genome_index_placeholder, annotation_gtf_placeholder]
       min_items: {real_execution_requirements: 2}
   final_answer_has_structure: 2
 

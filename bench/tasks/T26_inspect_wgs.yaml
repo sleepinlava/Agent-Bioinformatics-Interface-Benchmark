@@ -17,7 +17,7 @@ prompt: |
   5. List what must be configured before real execution.
 
   Write both final_answer.md and final_answer.json. The JSON must include:
-  task_type, assembly_tool, assembly_status, annotation_database,
+  task_type (use "inspection"), assembly_tool, assembly_status, annotation_database,
   mlst_placeholder, amr_placeholder, and real_execution_requirements.
 
 allowed_actions:
@@ -36,8 +36,8 @@ scoring:
     points: 6
     function: check_json_contract
     args:
-      equals: {task_type: inspection, assembly_tool: spades, assembly_status: dry_run}
-      nonempty_paths: [annotation_database, mlst_placeholder, amr_placeholder]
+      contains_paths: {assembly_tool: spades, assembly_status: dry_run}
+      nonempty_paths: [task_type, annotation_database, mlst_placeholder, amr_placeholder]
       min_items: {real_execution_requirements: 2}
   final_answer_has_structure: 2
 

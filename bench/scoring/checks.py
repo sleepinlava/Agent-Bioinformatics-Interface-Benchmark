@@ -2139,6 +2139,7 @@ def check_json_contract(
     unordered_equals: dict | None = None,
     min_items: dict | None = None,
     allowed_values: dict | None = None,
+    contains_paths: dict | None = None,
 ) -> bool:
     """Validate final_answer.json structurally without keyword matching."""
     data = _load_final_answer_json(trace_dir, run_dir)
@@ -2166,6 +2167,14 @@ def check_json_contract(
             return False
     for path, allowed in (allowed_values or {}).items():
         if _nested_value(data, path) not in allowed:
+            return False
+    for path, substring in (contains_paths or {}).items():
+        value = _nested_value(data, path)
+        if value is _MISSING:
+            return False
+        substrings = substring if isinstance(substring, list) else [substring]
+        value_lower = str(value).lower()
+        if not any(s.lower() in value_lower for s in substrings):
             return False
     return True
 
